@@ -1,0 +1,169 @@
+// VaultGuard — Prisma Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  AUXILIAR
+  ASSISTENTE
+  ANALISTA
+  COORDENACAO
+  DIRETORIA
+  ADMINISTRADOR
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+}
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  username      String     @unique
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  role          UserRole   @default(AUXILIAR)
+  status        UserStatus @default(PENDING)
+  totpSecret    String?
+  totpEnabled   Boolean    @default(false)
+  apiToken      String?    @unique
+  lastLogin     DateTime?
+  avatar        String?
+  // AD / LDAP
+  ldapDn        String?    @unique
+  ldapGuid      String?    @unique
+  authSource    String     @default("local")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  folderPermissions FolderPermission[]
+  auditLogs         AuditLog[]
+  apiTokens         ApiToken[]
+
+  @@index([email])
+  @@index([username])
+  @@index([ldapDn])
+}
+
+model Folder {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  icon        String?  @default("folder")
+  color       String?  @default("#6366f1")
+  parentId    String?
+  parent      Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children    Folder[] @relation("FolderTree")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  credentials Credential[]
+  permissions FolderPermission[]
+
+  @@index([parentId])
+}
+
+model FolderPermission {
+  id        String   @id @default(uuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      UserRole?
+  canView   Boolean  @default(true)
+  canEdit   Boolean  @default(false)
+  canDelete Boolean  @default(false)
+  canShare  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([folderId, userId])
+  @@unique([folderId, role])
+  @@index([folderId])
+  @@index([userId])
+}
+
+model Credential {
+  id            String   @id @default(uuid())
+  folderId      String
+  folder        Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  title         String
+  username      String?
+  encryptedPass String
+  url           String?
+  notes         String?
+  tags          String[] @default([])
+  favicon       String?
+  strength      Int?
+  lastUsed      DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([folderId])
+  @@index([url])
+}
+
+model SystemSettings {
+  id              String  @id @default("singleton")
+  siteName        String  @default("VaultGuard")
+  siteSubtitle    String  @default("Cofre de Senhas Corporativo")
+  logoUrl         String?
+  faviconUrl      String?
+  primaryColor    String  @default("#6366f1")
+  accentColor     String  @default("#8b5cf6")
+  bgColor         String  @default("#0f0f1a")
+  surfaceColor    String  @default("#1a1a2e")
+  defaultLanguage String  @default("pt-BR")
+  allowSelfReg    Boolean @default(false)
+  require2FA      Boolean @default(false)
+  sessionTimeout  Int     @default(480)
+  maxLoginAttempts Int    @default(5)
+  passwordPolicy  Json?
+  smtpConfig      Json?
+  // LDAP / Active Directory config (criptografado em JSON)
+  ldapEnabled     Boolean @default(false)
+  ldapConfig      Json?
+  updatedAt       DateTime @updatedAt
+}
+
+model ApiToken {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  token     String   @unique
+  lastUsed  DateTime?
+  expiresAt DateTime?
+  scopes    String[] @default(["read"])
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([userId])
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action       String
+  resourceId   String?
+  resourceType String?
+  details      Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}

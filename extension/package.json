@@ -1,0 +1,12 @@
+{
+  "name": "vaultguard-extension",
+  "version": "1.0.0",
+  "description": "VaultGuard Chrome Extension",
+  "scripts": {
+    "build": "node build.js",
+    "dev": "node build.js --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.20.0"
+  }
+}
