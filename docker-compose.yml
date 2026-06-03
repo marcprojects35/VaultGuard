@@ -1,0 +1,66 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vaultguard-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vaultguard
+      POSTGRES_USER: vaultguard
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-VaultGuard@Secure2024!}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - vaultguard-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaultguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: vaultguard-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://vaultguard:${DB_PASSWORD:-VaultGuard@Secure2024!}@postgres:5432/vaultguard
+      JWT_SECRET: ${JWT_SECRET:-changeme-please-use-random-64-chars-minimum}
+      NODE_ENV: production
+      PORT: 3001
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - vaultguard-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: vaultguard-nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - uploads_data:/app/uploads:ro
+    depends_on:
+      - backend
+    networks:
+      - vaultguard-net
+
+volumes:
+  postgres_data:
+  uploads_data:
+  logs_data:
+
+networks:
+  vaultguard-net:
+    driver: bridge
