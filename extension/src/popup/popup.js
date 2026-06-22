@@ -70,9 +70,7 @@ function renderSetup() {
   return `
     <div style="padding:20px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">
-        <div style="width:32px;height:32px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:8px;display:flex;align-items:center;justify-content:center">
-          <svg width="16" height="16" fill="white" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-        </div>
+        <img src="icons/icon48.png" width="32" height="32" style="border-radius:8px;object-fit:contain" />
         <div>
           <h1 style="font-size:16px;font-weight:700;color:#f1f5f9">VaultGuard</h1>
           <p style="font-size:11px;color:#64748b">Configuração inicial</p>
@@ -107,9 +105,7 @@ function renderVault() {
     <div style="display:flex;flex-direction:column;height:100%">
       <!-- Header -->
       <div style="background:#1a1d2e;padding:12px 14px;border-bottom:1px solid #1e293b;display:flex;align-items:center;gap:8px">
-        <div style="width:24px;height:24px;background:linear-gradient(135deg,#6366f1,#8b5cf6);border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
-          <svg width="12" height="12" fill="white" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-        </div>
+        <img src="icons/icon48.png" width="24" height="24" style="border-radius:6px;object-fit:contain;flex-shrink:0" />
         <span style="font-size:13px;font-weight:600;color:#f1f5f9;flex:1">VaultGuard</span>
         <button id="btnSave" title="Salvar senha da página" style="background:none;border:none;cursor:pointer;color:#64748b;padding:4px" title="Salvar senha da página atual">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>

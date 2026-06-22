@@ -1,16 +1,47 @@
 import { create } from 'zustand';
 import api from '../utils/api.js';
 
+const DARK_VARS = {
+  '--color-bg': '#0A0A0A',
+  '--color-bg-secondary': '#121212',
+  '--color-surface': '#181818',
+  '--color-surface-2': '#222222',
+  '--color-surface-hover': '#222222',
+  '--color-border': '#2A2A2A',
+  '--color-text': '#F5F5F5',
+  '--color-text-muted': '#A8A8A8',
+  '--color-muted': '#707070',
+  '--color-success': '#22C55E',
+  '--color-warning': '#F59E0B',
+  '--color-danger': '#EF4444',
+};
+
+const LIGHT_VARS = {
+  '--color-bg': '#FAFAFA',
+  '--color-bg-secondary': '#F3F4F6',
+  '--color-surface': '#FFFFFF',
+  '--color-surface-2': '#F8F8F8',
+  '--color-surface-hover': '#F8F8F8',
+  '--color-border': '#E5E7EB',
+  '--color-text': '#111827',
+  '--color-text-muted': '#4B5563',
+  '--color-muted': '#6B7280',
+  '--color-success': '#16A34A',
+  '--color-warning': '#D97706',
+  '--color-danger': '#DC2626',
+};
+
 export const useSettingsStore = create((set, get) => ({
   settings: {
     siteName: 'VaultGuard',
     siteSubtitle: 'Cofre de Senhas Corporativo',
-    logoUrl: null,
-    faviconUrl: null,
-    primaryColor: '#6366f1',
-    accentColor: '#8b5cf6',
-    bgColor: '#0f0f1a',
-    surfaceColor: '#1a1a2e',
+    logoUrl: '/logo.png',
+    faviconUrl: '/logo.png',
+    primaryColor: '#C78C00',
+    accentColor: '#AD7B04',
+    bgColor: '',
+    surfaceColor: '',
+    themeMode: 'dark',
     defaultLanguage: 'pt-BR',
   },
   loaded: false,
@@ -18,56 +49,54 @@ export const useSettingsStore = create((set, get) => ({
   loadSettings: async () => {
     try {
       const { data } = await api.get('/settings');
-      set({ settings: data, loaded: true });
-      get().applyTheme(data);
-    } catch (err) {
+      const merged = {
+        ...get().settings,
+        ...data,
+        logoUrl: data.logoUrl || '/logo.png',
+        faviconUrl: data.faviconUrl || '/logo.png',
+        themeMode: data.themeMode || 'dark',
+      };
+      set({ settings: merged, loaded: true });
+      get().applyTheme(merged);
+    } catch {
       set({ loaded: true });
+      get().applyTheme(get().settings);
     }
   },
 
   applyTheme: (settings) => {
     const root = document.documentElement;
-    root.style.setProperty('--color-primary', settings.primaryColor || '#6366f1');
-    root.style.setProperty('--color-accent', settings.accentColor || '#8b5cf6');
-    root.style.setProperty('--color-bg', settings.bgColor || '#0f0f1a');
-    root.style.setProperty('--color-surface', settings.surfaceColor || '#1a1a2e');
-    
-    // Compute surface-2 as slightly lighter
-    root.style.setProperty('--color-surface-2', adjustColor(settings.surfaceColor || '#1a1a2e', 15));
-    root.style.setProperty('--color-border', hexToRgba(settings.primaryColor || '#6366f1', 0.12));
+    const mode = settings.themeMode || 'dark';
 
-    // Update favicon
-    if (settings.faviconUrl) {
-      const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
-      link.rel = 'icon';
-      link.href = settings.faviconUrl;
-      document.head.appendChild(link);
-    }
+    root.setAttribute('data-theme', mode);
 
-    // Update title
-    if (settings.siteName) {
-      document.title = settings.siteName;
-    }
+    const themeVars = mode === 'light' ? LIGHT_VARS : DARK_VARS;
+    Object.entries(themeVars).forEach(([k, v]) => root.style.setProperty(k, v));
+
+    const primary = settings.primaryColor || '#C78C00';
+    const accent = settings.accentColor || '#AD7B04';
+    root.style.setProperty('--color-primary', primary);
+    root.style.setProperty('--color-accent', accent);
+    root.style.setProperty('--color-primary-hover', '#FFB400');
+    root.style.setProperty('--color-primary-light', '#E7A300');
+    root.style.setProperty('--color-primary-rgb', '199, 140, 0');
+
+    if (settings.bgColor) root.style.setProperty('--color-bg', settings.bgColor);
+    if (settings.surfaceColor) root.style.setProperty('--color-surface', settings.surfaceColor);
+
+    const faviconHref = settings.faviconUrl || '/logo.png';
+    const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+    link.rel = 'icon';
+    link.type = 'image/png';
+    link.href = faviconHref;
+    document.head.appendChild(link);
+
+    if (settings.siteName) document.title = settings.siteName;
   },
 
   updateSettings: (updates) => {
-    set(state => ({ settings: { ...state.settings, ...updates } }));
-    get().applyTheme({ ...get().settings, ...updates });
+    const next = { ...get().settings, ...updates };
+    set({ settings: next });
+    get().applyTheme(next);
   },
 }));
-
-function adjustColor(hex, amount) {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const r = Math.min(255, (num >> 16) + amount);
-  const g = Math.min(255, ((num >> 8) & 0xff) + amount);
-  const b = Math.min(255, (num & 0xff) + amount);
-  return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
-}
-
-function hexToRgba(hex, alpha) {
-  const num = parseInt(hex.replace('#', ''), 16);
-  const r = (num >> 16) & 255;
-  const g = (num >> 8) & 255;
-  const b = num & 255;
-  return `rgba(${r},${g},${b},${alpha})`;
-}

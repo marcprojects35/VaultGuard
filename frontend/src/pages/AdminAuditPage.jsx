@@ -8,7 +8,7 @@ const ACTION_COLORS = {
   UPDATE: 'text-blue-400 bg-blue-500/10',
   DELETE: 'text-red-400 bg-red-500/10',
   VIEW: 'text-slate-400 bg-white/5',
-  LOGIN: 'text-indigo-400 bg-indigo-500/10',
+  LOGIN: 'text-[#C78C00] bg-[#C78C00]/10',
   LOGOUT: 'text-slate-400 bg-white/5',
   FAILED_LOGIN: 'text-orange-400 bg-orange-500/10',
 };
@@ -49,7 +49,7 @@ export default function AdminAuditPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Activity size={24} className="text-indigo-400" /> Log de Auditoria</h1>
+          <h1 className="text-2xl font-bold text-white flex items-center gap-2"><Activity size={24} className="text-[#C78C00]" /> Log de Auditoria</h1>
           <p className="text-slate-400 text-sm mt-1">Histórico completo de ações no sistema</p>
         </div>
         <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-sm transition-colors">
@@ -63,12 +63,12 @@ export default function AdminAuditPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Buscar por usuário, ação, recurso..."
-            className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500" />
+            className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-[#C78C00]" />
         </div>
         <div className="relative">
           <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <select value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1); }}
-            className="bg-slate-800 border border-white/10 rounded-lg pl-9 pr-8 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            className="bg-slate-800 border border-white/10 rounded-lg pl-9 pr-8 py-2 text-sm text-white focus:outline-none focus:border-[#C78C00]">
             <option value="">Todas as ações</option>
             {Object.keys(ACTION_COLORS).map(a => <option key={a} value={a}>{a}</option>)}
           </select>

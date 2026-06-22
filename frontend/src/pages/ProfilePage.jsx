@@ -98,7 +98,7 @@ export default function ProfilePage() {
       <div className="relative">
         <input type={show ? 'text' : 'password'} value={pwForm[field]}
           onChange={e => setPwForm({ ...pwForm, [field]: e.target.value })}
-          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-10 text-white text-sm focus:outline-none focus:border-indigo-500" />
+          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 pr-10 text-white text-sm focus:outline-none focus:border-[#C78C00]" />
         <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
           {show ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
@@ -116,18 +116,18 @@ export default function ProfilePage() {
   return (
     <div className="p-6 space-y-6 max-w-3xl">
       <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-        <User size={24} className="text-indigo-400" /> Meu Perfil
+        <User size={24} className="text-[#C78C00]" /> Meu Perfil
       </h1>
 
       {/* Header card */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-5 flex items-center gap-4">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-2xl font-bold text-white flex-shrink-0">
+        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#AD7B04] to-[#C78C00] flex items-center justify-center text-2xl font-bold text-white flex-shrink-0">
           {initials}
         </div>
         <div>
           <p className="font-semibold text-white text-lg">{fullName || user?.username}</p>
           <p className="text-sm text-slate-400">{user?.email}</p>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 mt-1 inline-block">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-[#C78C00]/20 text-[#E7A300] mt-1 inline-block">
             {ROLE_LABELS[user?.role] || user?.role}
           </span>
         </div>
@@ -149,7 +149,7 @@ export default function ProfilePage() {
       <div className="flex gap-1 border-b border-white/10 pb-0">
         {TABS.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${activeTab === tab.id ? 'text-indigo-400 border-b-2 border-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}>
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${activeTab === tab.id ? 'text-[#C78C00] border-b-2 border-[#C78C00]' : 'text-slate-500 hover:text-slate-300'}`}>
             {tab.label}
           </button>
         ))}
@@ -163,12 +163,12 @@ export default function ProfilePage() {
             <div>
               <label className="text-sm text-slate-400 mb-1 block">Nome</label>
               <input value={profileForm.firstName} onChange={e => setProfileForm({ ...profileForm, firstName: e.target.value })}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]" />
             </div>
             <div>
               <label className="text-sm text-slate-400 mb-1 block">Sobrenome</label>
               <input value={profileForm.lastName} onChange={e => setProfileForm({ ...profileForm, lastName: e.target.value })}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500" />
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]" />
             </div>
           </div>
           <div>
@@ -183,7 +183,7 @@ export default function ProfilePage() {
               className="w-full bg-white/3 border border-white/5 rounded-lg px-3 py-2 text-slate-500 text-sm cursor-not-allowed" />
           </div>
           <button onClick={() => updateProfile.mutate(profileForm)} disabled={updateProfile.isPending}
-            className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+            className="mt-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
             {updateProfile.isPending ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
@@ -217,7 +217,7 @@ export default function ProfilePage() {
             </div>
             <button onClick={() => changePw.mutate(pwForm)}
               disabled={!pwForm.currentPassword || !pwForm.newPassword || pwForm.newPassword !== pwForm.confirmPassword || changePw.isPending}
-              className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+              className="mt-4 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
               {changePw.isPending ? 'Alterando...' : 'Alterar Senha'}
             </button>
           </div>
@@ -262,10 +262,10 @@ export default function ProfilePage() {
                       <div className="flex-1">
                         <p className="text-sm text-slate-400 mb-2">1. Escaneie o QR code com seu app</p>
                         <p className="text-sm text-slate-400 mb-2">2. Ou insira a chave manualmente:</p>
-                        <code className="text-xs bg-black/30 px-2 py-1 rounded font-mono text-indigo-300 break-all block">{twoFaData.secret}</code>
+                        <code className="text-xs bg-black/30 px-2 py-1 rounded font-mono text-[#E7A300] break-all block">{twoFaData.secret}</code>
                         <p className="text-sm text-slate-400 mt-3 mb-2">3. Digite o código gerado:</p>
                         <input value={twoFaCode} onChange={e => setTwoFaCode(e.target.value)} maxLength={6}
-                          className="w-32 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm text-center font-mono tracking-widest focus:outline-none focus:border-indigo-500"
+                          className="w-32 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[#C78C00]"
                           placeholder="000000" />
                         <div className="flex gap-2 mt-3">
                           <button onClick={() => { setTwoFaStep(null); setTwoFaData(null); setTwoFaCode(''); }}
@@ -298,7 +298,7 @@ export default function ProfilePage() {
           </h2>
           <p className="text-sm text-slate-400 mb-4">Use tokens para acessar a API via scripts ou integrações externas.</p>
           {tokens.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum token criado. Acesse <span className="text-indigo-400">Menu → Tokens de API</span> para criar.</p>
+            <p className="text-sm text-slate-500">Nenhum token criado. Acesse <span className="text-[#C78C00]">Menu → Tokens de API</span> para criar.</p>
           ) : (
             <div className="space-y-2">
               {tokens.map(t => (
@@ -329,7 +329,7 @@ export default function ProfilePage() {
             <div className="space-y-2">
               {auditLogs.map(log => (
                 <div key={log.id} className="flex items-start gap-3 py-2 border-b border-white/5">
-                  <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
+                  <div className="w-2 h-2 rounded-full bg-[#C78C00] mt-1.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-slate-300">{log.action}</span>
