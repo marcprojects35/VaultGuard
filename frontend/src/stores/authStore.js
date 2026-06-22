@@ -1,6 +1,28 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '../utils/api.js';
+import { deriveKeyFromPassword } from '../utils/crypto.js';
+
+// masterKey is kept ONLY in memory (never persisted) for security
+let _masterKey = null;
+
+export function getMasterKey() {
+  return _masterKey;
+}
+
+export async function deriveMasterKey(password, encryptionSalt) {
+  if (!password || !encryptionSalt) return null;
+  try {
+    _masterKey = await deriveKeyFromPassword(password, encryptionSalt);
+    return _masterKey;
+  } catch {
+    return null;
+  }
+}
+
+export function clearMasterKey() {
+  _masterKey = null;
+}
 
 export const useAuthStore = create(
   persist(
@@ -15,6 +37,7 @@ export const useAuthStore = create(
         if (get().token) {
           api.post('/auth/logout').catch(() => {});
         }
+        clearMasterKey();
         set({ user: null, token: null, isAuthenticated: false });
       },
 

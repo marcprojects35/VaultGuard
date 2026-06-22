@@ -5,7 +5,7 @@ import {
   Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server,
   LogOut, Key, ChevronDown, Menu, X, Settings, Globe,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
-  Search, Upload, Download, Star,
+  Search, Upload, Download, Star, Inbox, HelpCircle, Send,
 } from 'lucide-react';
 import { useAuthStore, useIsAdmin } from '../../stores/authStore.js';
 import { useSettingsStore } from '../../stores/settingsStore.js';
@@ -25,6 +25,9 @@ export default function VaultLayout() {
     () => location.pathname.startsWith('/admin/settings')
   );
   const [langOpen, setLangOpen] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+  const [contactForm, setContactForm] = useState({ name: '', email: '', subject: '', message: '' });
+  const [contactSent, setContactSent] = useState(false);
 
   useEffect(() => {
     if (location.pathname.startsWith('/admin/settings')) {
@@ -35,6 +38,20 @@ export default function VaultLayout() {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleContactSubmit = (e) => {
+    e.preventDefault();
+    const { name, email, subject, message } = contactForm;
+    const body = `Nome: ${name}\nE-mail: ${email}\n\n${message}`;
+    const mailto = `mailto:VaultGuard2026@outlook.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.open(mailto, '_blank');
+    setContactSent(true);
+    setTimeout(() => {
+      setContactOpen(false);
+      setContactSent(false);
+      setContactForm({ name: '', email: '', subject: '', message: '' });
+    }, 2000);
   };
 
   const currentLang = SUPPORTED_LANGUAGES.find(l => l.code === i18n.language) || SUPPORTED_LANGUAGES[0];
@@ -91,7 +108,8 @@ export default function VaultLayout() {
   );
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--color-bg)' }}>
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--color-bg)' }}>
+    <div className="flex flex-1 overflow-hidden">
       {/* Sidebar */}
       <aside
         className="flex flex-col transition-all duration-200 flex-shrink-0"
@@ -151,6 +169,8 @@ export default function VaultLayout() {
           {navItem('/', <Vault className="w-4 h-4" />, t('nav.vault'), true)}
           {navItem('/search', <Search className="w-4 h-4" />, 'Pesquisa')}
           {navItem('/favorites', <Star className="w-4 h-4" />, 'Favoritos')}
+          {navItem('/security', <ShieldCheck className="w-4 h-4" />, 'Segurança')}
+          {navItem('/access-requests', <Inbox className="w-4 h-4" />, 'Acessos')}
 
           {/* ── Ferramentas ── */}
           <div className="pt-5 pb-1">
@@ -336,6 +356,17 @@ export default function VaultLayout() {
             )}
           </button>
 
+          {/* Suporte / Contato */}
+          <button
+            onClick={() => setContactOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-all"
+            style={{ color: 'var(--color-text-muted)' }}
+            title={!sidebarOpen ? 'Suporte' : undefined}
+          >
+            <HelpCircle className="w-4 h-4 flex-shrink-0" />
+            {sidebarOpen && <span>Suporte</span>}
+          </button>
+
           {/* Logout */}
           <button
             onClick={handleLogout}
@@ -353,6 +384,195 @@ export default function VaultLayout() {
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>
+    </div>
+
+      {/* Modal de Suporte / Contato */}
+      {contactOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setContactOpen(false); }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            {/* Header */}
+            <div
+              className="flex items-center justify-between px-6 py-4 border-b"
+              style={{ borderColor: 'var(--color-border)' }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center"
+                  style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}
+                >
+                  <HelpCircle className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>
+                    Fale Conosco
+                  </h2>
+                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                    Dúvidas ou bugs? Envie uma mensagem.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setContactOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
+                style={{ color: 'var(--color-text-muted)' }}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            {contactSent ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <div
+                  className="w-12 h-12 rounded-full flex items-center justify-center"
+                  style={{ background: `${settings.primaryColor}22` }}
+                >
+                  <Send className="w-6 h-6" style={{ color: settings.primaryColor }} />
+                </div>
+                <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                  Cliente de e-mail aberto!
+                </p>
+                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Finalize o envio no seu e-mail.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleContactSubmit} className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                      Nome *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={contactForm.name}
+                      onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
+                      placeholder="Seu nome"
+                      className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
+                      style={{
+                        background: 'var(--color-bg)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-text)',
+                      }}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                      E-mail *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={contactForm.email}
+                      onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                      placeholder="seu@email.com"
+                      className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
+                      style={{
+                        background: 'var(--color-bg)',
+                        border: '1px solid var(--color-border)',
+                        color: 'var(--color-text)',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                    Assunto *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={contactForm.subject}
+                    onChange={e => setContactForm(f => ({ ...f, subject: e.target.value }))}
+                    placeholder="Ex: Bug na exportação, Dúvida sobre permissões..."
+                    className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
+                    style={{
+                      background: 'var(--color-bg)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text)',
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
+                    Mensagem *
+                  </label>
+                  <textarea
+                    required
+                    rows={4}
+                    value={contactForm.message}
+                    onChange={e => setContactForm(f => ({ ...f, message: e.target.value }))}
+                    placeholder="Descreva sua dúvida ou bug com o máximo de detalhes..."
+                    className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all resize-none"
+                    style={{
+                      background: 'var(--color-bg)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text)',
+                    }}
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setContactOpen(false)}
+                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:bg-white/5"
+                    style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                    style={{
+                      background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})`,
+                    }}
+                  >
+                    <Send className="w-4 h-4" />
+                    Enviar
+                  </button>
+                </div>
+
+                <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  Será enviado para{' '}
+                  <span className="font-medium" style={{ color: settings.primaryColor }}>
+                    VaultGuard2026@outlook.com
+                  </span>
+                </p>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Footer — não alterar */}
+      <footer
+        className="flex-shrink-0 py-2 text-center border-t"
+        style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
+      >
+        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          Desenvolvido por{' '}
+          <a
+            href="https://www.linkedin.com/in/marcoaurelioprudencio/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-semibold hover:underline transition-colors"
+            style={{ color: 'var(--color-primary, #f59e0b)' }}
+          >
+            Marco
+          </a>
+        </span>
+      </footer>
     </div>
   );
 }

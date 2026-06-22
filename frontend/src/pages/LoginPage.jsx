@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Shield, Eye, EyeOff, Lock, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
-import { useAuthStore } from '../stores/authStore.js';
+import { useAuthStore, deriveMasterKey } from '../stores/authStore.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
 
 export default function LoginPage() {
@@ -15,6 +15,7 @@ export default function LoginPage() {
 
   const [step, setStep] = useState('credentials'); // 'credentials' | '2fa'
   const [tempToken, setTempToken] = useState('');
+  const [pendingSalt, setPendingSalt] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [form, setForm] = useState({ login: '', password: '', totp: '' });
@@ -30,8 +31,10 @@ export default function LoginPage() {
 
       if (data.requires2FA) {
         setTempToken(data.tempToken);
+        setPendingSalt(data.encryptionSalt || '');
         setStep('2fa');
       } else {
+        await deriveMasterKey(form.password, data.user?.encryptionSalt);
         setAuth(data.user, data.token);
         navigate('/');
       }
@@ -50,6 +53,8 @@ export default function LoginPage() {
         token: form.totp,
         tempToken,
       });
+      // After 2FA we no longer have the raw password; use the salt from login step
+      await deriveMasterKey(form.password, data.user?.encryptionSalt || pendingSalt);
       setAuth(data.user, data.token);
       navigate('/');
     } catch (err) {

@@ -16,6 +16,9 @@ import auditRoutes from './routes/audit.js';
 import apiTokenRoutes from './routes/apiTokens.js';
 import ldapRoutes from './routes/ldap.js';
 import favoritesRoutes from './routes/favorites.js';
+import attachmentsRoutes from './routes/attachments.js';
+import accessRequestsRoutes from './routes/accessRequests.js';
+import securityDashboardRoutes from './routes/securityDashboard.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
 
@@ -48,7 +51,7 @@ app.use(cors({
 }));
 
 app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Static uploads
@@ -79,6 +82,9 @@ app.use('/api/audit', auditRoutes);
 app.use('/api/tokens', apiTokenRoutes);
 app.use('/api/ldap', ldapRoutes);
 app.use('/api/favorites', favoritesRoutes);
+app.use('/api/attachments', attachmentsRoutes);
+app.use('/api/access-requests', accessRequestsRoutes);
+app.use('/api/dashboard', securityDashboardRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

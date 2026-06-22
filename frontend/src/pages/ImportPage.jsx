@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Upload, FileText, AlertTriangle, CheckCircle, Download, X, RefreshCw } from 'lucide-react';
+import { Upload, FileText, AlertTriangle, CheckCircle, Download, X, RefreshCw, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
@@ -10,6 +10,15 @@ Gmail Corporativo,usuario@empresa.com,SenhaSuperForte@123,https://gmail.com,"ema
 VPN Empresa,admin,senha456,https://vpn.empresa.com.br,vpn,Acesso à rede interna
 Servidor Linux,root,,192.168.1.10,servidor;"linux","SSH porta 22"
 `;
+
+const IMPORT_FORMATS = [
+  { id: 'vaultguard', label: 'VaultGuard CSV', ext: '.csv', desc: 'Formato nativo do VaultGuard' },
+  { id: 'lastpass', label: 'LastPass CSV', ext: '.csv', desc: 'Exportado do LastPass (Export > CSV)' },
+  { id: 'bitwarden', label: 'Bitwarden JSON', ext: '.json', desc: 'Exportado do Bitwarden (Export > .json)' },
+  { id: 'keepass', label: 'KeePass CSV', ext: '.csv', desc: 'Exportado do KeePass (File > Export > CSV)' },
+  { id: 'chrome', label: 'Google Chrome CSV', ext: '.csv', desc: 'Exportado do Chrome (Passwords > Export)' },
+  { id: '1password', label: '1Password CSV', ext: '.csv', desc: 'Exportado do 1Password (Export CSV)' },
+];
 
 function flattenFolders(folders, level = 0) {
   const result = [];
@@ -30,6 +39,7 @@ export default function ImportPage() {
   const [parseErrors, setParseErrors] = useState([]);
   const [fileName, setFileName] = useState('');
   const [importResult, setImportResult] = useState(null);
+  const [format, setFormat] = useState('vaultguard');
 
   const { data: folders = [] } = useQuery({
     queryKey: ['folders'],
@@ -121,6 +131,114 @@ export default function ImportPage() {
     return result;
   };
 
+  const parseLastPassCSV = (text) => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return { rows: [], errors: ['Arquivo vazio'] };
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').toLowerCase());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (values[idx] || '').replace(/^"|"$/g, '').trim(); });
+      if (!row.name && !row.url) continue;
+      rows.push({
+        title: row.name || row.url,
+        username: row.username || row.login_username || '',
+        encryptedPass: row.password || row.login_password || '',
+        url: row.url || '',
+        notes: row.extra || row.note || '',
+        tags: row.grouping ? [row.grouping] : [],
+      });
+    }
+    return { rows, errors: [] };
+  };
+
+  const parseBitwardenJSON = (text) => {
+    try {
+      const data = JSON.parse(text);
+      const items = data.items || [];
+      const rows = items
+        .filter(item => item.type === 1) // Login type
+        .map(item => ({
+          title: item.name || 'Sem título',
+          username: item.login?.username || '',
+          encryptedPass: item.login?.password || '',
+          url: item.login?.uris?.[0]?.uri || '',
+          notes: item.notes || '',
+          tags: item.collectionIds?.length > 0 ? ['bitwarden'] : [],
+        }));
+      return { rows, errors: [] };
+    } catch {
+      return { rows: [], errors: ['JSON inválido do Bitwarden'] };
+    }
+  };
+
+  const parseKeePassCSV = (text) => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return { rows: [], errors: ['Arquivo vazio'] };
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').toLowerCase());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (values[idx] || '').replace(/^"|"$/g, '').trim(); });
+      if (!row.title && !row.account) continue;
+      rows.push({
+        title: row.title || row.account || 'Sem título',
+        username: row.username || row['login name'] || '',
+        encryptedPass: row.password || '',
+        url: row.url || row['web site'] || '',
+        notes: row.notes || row.comment || '',
+        tags: row.group ? [row.group] : [],
+      });
+    }
+    return { rows, errors: [] };
+  };
+
+  const parseChromeCSV = (text) => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return { rows: [], errors: ['Arquivo vazio'] };
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').toLowerCase());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (values[idx] || '').replace(/^"|"$/g, '').trim(); });
+      if (!row.name && !row.url) continue;
+      rows.push({
+        title: row.name || row.url,
+        username: row.username || '',
+        encryptedPass: row.password || '',
+        url: row.url || '',
+        notes: '',
+        tags: [],
+      });
+    }
+    return { rows, errors: [] };
+  };
+
+  const parse1PasswordCSV = (text) => {
+    const lines = text.split('\n').filter(l => l.trim());
+    if (lines.length < 2) return { rows: [], errors: ['Arquivo vazio'] };
+    const headers = lines[0].split(',').map(h => h.replace(/"/g, '').toLowerCase());
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = parseCSVLine(lines[i]);
+      const row = {};
+      headers.forEach((h, idx) => { row[h] = (values[idx] || '').replace(/^"|"$/g, '').trim(); });
+      if (!row.title) continue;
+      rows.push({
+        title: row.title,
+        username: row.username || '',
+        encryptedPass: row.password || '',
+        url: row.url || '',
+        notes: row.notes || '',
+        tags: row.tags ? row.tags.split(',').map(t => t.trim()) : [],
+      });
+    }
+    return { rows, errors: [] };
+  };
+
   const handleFile = (file) => {
     if (!file) return;
     setFileName(file.name);
@@ -128,9 +246,17 @@ export default function ImportPage() {
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target.result;
-      const { rows, errors } = parseCSV(text);
-      setParsedRows(rows);
-      setParseErrors(errors);
+      let result;
+      switch (format) {
+        case 'lastpass': result = parseLastPassCSV(text); break;
+        case 'bitwarden': result = parseBitwardenJSON(text); break;
+        case 'keepass': result = parseKeePassCSV(text); break;
+        case 'chrome': result = parseChromeCSV(text); break;
+        case '1password': result = parse1PasswordCSV(text); break;
+        default: result = parseCSV(text);
+      }
+      setParsedRows(result.rows);
+      setParseErrors(result.errors);
     };
     reader.readAsText(file, 'utf-8');
   };
@@ -165,22 +291,42 @@ export default function ImportPage() {
         </div>
       </div>
 
-      {/* Template download */}
+      {/* Format selector */}
       <div className="rounded-2xl p-5 mb-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Modelo de importação</h2>
-            <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              Baixe o modelo CSV e preencha com suas credenciais. Colunas: Título, Usuário, Senha, URL, Tags, Notas.
-            </p>
-          </div>
-          <button onClick={downloadTemplate}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
-            style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
-            <Download className="w-4 h-4" /> Baixar Modelo
-          </button>
+        <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--color-text)' }}>Formato de origem</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          {IMPORT_FORMATS.map(f => (
+            <button key={f.id} onClick={() => { setFormat(f.id); reset(); }}
+              className="p-3 rounded-xl text-left transition-all"
+              style={{
+                background: format === f.id ? `${settings.primaryColor}22` : 'var(--color-surface-2)',
+                border: `1px solid ${format === f.id ? settings.primaryColor + '66' : 'var(--color-border)'}`,
+              }}>
+              <p className="text-sm font-medium" style={{ color: format === f.id ? settings.primaryColor : 'var(--color-text)' }}>{f.label}</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{f.desc}</p>
+            </button>
+          ))}
         </div>
       </div>
+
+      {/* Template download (VaultGuard CSV only) */}
+      {format === 'vaultguard' && (
+        <div className="rounded-2xl p-5 mb-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold mb-1" style={{ color: 'var(--color-text)' }}>Modelo de importação</h2>
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                Baixe o modelo CSV e preencha com suas credenciais. Colunas: Título, Usuário, Senha, URL, Tags, Notas.
+              </p>
+            </div>
+            <button onClick={downloadTemplate}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium"
+              style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+              <Download className="w-4 h-4" /> Baixar Modelo
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Upload zone */}
       <div className="rounded-2xl p-5 mb-5" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
@@ -202,7 +348,7 @@ export default function ImportPage() {
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
             Arraste o arquivo CSV aqui ou <span style={{ color: settings.primaryColor }}>clique para selecionar</span>
           </p>
-          <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden"
+          <input ref={fileInputRef} type="file" accept=".csv,.json,text/csv,application/json" className="hidden"
             onChange={e => handleFile(e.target.files?.[0])} />
         </div>
 

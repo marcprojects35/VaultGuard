@@ -25,7 +25,7 @@ RUN apk add --no-cache vips openssl
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app .
-COPY --from=builder /frontend/dist ./dist
+COPY --from=builder /backend/dist ./dist
 
 RUN mkdir -p uploads logs
 

@@ -186,6 +186,9 @@ router.get('/users/preview', authenticate, requireAdmin, async (req, res, next) 
     res.json({ total: users.length, users });
   } catch (err) {
     logger.error('LDAP preview error', { error: err.message });
+    if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.message?.includes('connect')) {
+      return res.status(503).json({ error: `Não foi possível conectar ao servidor LDAP: ${err.message}` });
+    }
     next(err);
   }
 });
