@@ -33,10 +33,10 @@ export default function SettingsGeneralPage() {
     siteSubtitle: currentSettings.siteSubtitle || 'Cofre de Senhas Corporativo',
     defaultLanguage: currentSettings.defaultLanguage || 'pt-BR',
     timezone: 'America/Sao_Paulo',
-    sessionTimeout: 30,
+    sessionTimeout: currentSettings.sessionTimeout || 480,
     maxSessionAge: 8,
     maintenanceMode: false,
-    allowSelfRegistration: false,
+    allowSelfRegistration: currentSettings.allowSelfReg || false,
     requireEmailVerification: true,
   });
 

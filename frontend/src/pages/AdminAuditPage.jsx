@@ -98,7 +98,7 @@ export default function AdminAuditPage() {
                   {new Date(log.createdAt).toLocaleString('pt-BR')}
                 </td>
                 <td className="py-2.5 px-4 text-slate-200">
-                  {log.user?.name || <span className="text-slate-500 italic">Sistema</span>}
+                  {log.user ? `${log.user.firstName} ${log.user.lastName}` : <span className="text-slate-500 italic">Sistema</span>}
                   {log.user?.email && <div className="text-xs text-slate-500">{log.user.email}</div>}
                 </td>
                 <td className="py-2.5 px-4">

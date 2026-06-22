@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -77,29 +77,38 @@ export default function AdminFoldersPage() {
 
   const { data: foldersRaw = [] } = useQuery({
     queryKey: ['folders-admin'],
-    queryFn: () => api.get('/folders').then(r => r.data),
+    queryFn: () => api.get('/folders').then(r => {
+      // flatten tree back to array for admin
+      const flatten = (items) => items.flatMap(f => [f, ...flatten(f.children || [])]);
+      return flatten(r.data);
+    }),
   });
 
   const { data: users = [] } = useQuery({
     queryKey: ['users'],
-    queryFn: () => api.get('/users').then(r => r.data.users),
+    queryFn: () => api.get('/users').then(r => r.data),
   });
 
   const { data: permData } = useQuery({
     queryKey: ['folder-perms', permFolder?.id],
     queryFn: () => api.get(`/folders/${permFolder.id}/permissions`).then(r => r.data),
     enabled: !!permFolder,
-    onSuccess: (data) => {
-      const state = {};
-      (data.rolePermissions || []).forEach(p => {
-        state[`role_${p.role}`] = { canView: p.canView, canEdit: p.canEdit, canDelete: p.canDelete, canShare: p.canShare };
-      });
-      (data.userPermissions || []).forEach(p => {
-        state[`user_${p.userId}`] = { canView: p.canView, canEdit: p.canEdit, canDelete: p.canDelete, canShare: p.canShare };
-      });
-      setPermState(state);
-    }
   });
+
+  // Load permData into permState when it arrives
+  useEffect(() => {
+    if (!permData) return;
+    const state = {};
+    permData.forEach(p => {
+      if (p.role) {
+        state[`role_${p.role}`] = { canView: p.canView, canEdit: p.canEdit, canDelete: p.canDelete, canShare: p.canShare };
+      }
+      if (p.userId) {
+        state[`user_${p.userId}`] = { canView: p.canView, canEdit: p.canEdit, canDelete: p.canDelete, canShare: p.canShare };
+      }
+    });
+    setPermState(state);
+  }, [permData]);
 
   const createMutation = useMutation({
     mutationFn: (data) => editing ? api.put(`/folders/${editing.id}`, data) : api.post('/folders', data),
@@ -114,7 +123,7 @@ export default function AdminFoldersPage() {
   });
 
   const savePermMutation = useMutation({
-    mutationFn: (perms) => api.put(`/folders/${permFolder.id}/permissions`, perms),
+    mutationFn: (perms) => api.put(`/folders/${permFolder.id}/permissions`, { permissions: perms }),
     onSuccess: () => { toast.success('Permissões salvas!'); setShowPermModal(false); },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro'),
   });
@@ -123,7 +132,7 @@ export default function AdminFoldersPage() {
 
   const openCreate = () => { setEditing(null); setForm({ name: '', description: '', parentId: '' }); setShowModal(true); };
   const openEdit = (f) => { setEditing(f); setForm({ name: f.name, description: f.description || '', parentId: f.parentId || '' }); setShowModal(true); };
-  const openPerms = (f) => { setPermFolder(f); setShowPermModal(true); };
+  const openPerms = (f) => { setPermFolder(f); setPermState({}); setShowPermModal(true); };
   const confirmDelete = (f) => { if (confirm(`Excluir "${f.name}"?`)) deleteMutation.mutate(f.id); };
 
   const togglePerm = (key, field) => {
@@ -134,15 +143,20 @@ export default function AdminFoldersPage() {
   };
 
   const savePerms = () => {
-    const rolePermissions = ROLES.map(role => ({
-      role,
-      ...(permState[`role_${role}`] || { canView: false, canEdit: false, canDelete: false, canShare: false })
-    }));
-    const userPermissions = users.map(u => ({
-      userId: u.id,
-      ...(permState[`user_${u.id}`] || { canView: false, canEdit: false, canDelete: false, canShare: false })
-    })).filter(p => p.canView || p.canEdit || p.canDelete || p.canShare);
-    savePermMutation.mutate({ rolePermissions, userPermissions });
+    const perms = [];
+    ROLES.forEach(role => {
+      const p = permState[`role_${role}`];
+      if (p && (p.canView || p.canEdit || p.canDelete || p.canShare)) {
+        perms.push({ role, ...p });
+      }
+    });
+    users.forEach(u => {
+      const p = permState[`user_${u.id}`];
+      if (p && (p.canView || p.canEdit || p.canDelete || p.canShare)) {
+        perms.push({ userId: u.id, ...p });
+      }
+    });
+    savePermMutation.mutate(perms);
   };
 
   const PermRow = ({ label, permKey, icon }) => {
@@ -248,7 +262,7 @@ export default function AdminFoldersPage() {
                 {users.length > 0 && <>
                   <tr className="bg-white/3"><td colSpan={5} className="py-1 px-3 text-xs text-slate-500 font-semibold uppercase tracking-wider">Por Usuário</td></tr>
                   {users.map(u => (
-                    <PermRow key={u.id} label={`${u.name} (${u.email})`} permKey={`user_${u.id}`} icon={<User size={12} className="text-slate-500" />} />
+                    <PermRow key={u.id} label={`${u.firstName} ${u.lastName} (${u.email})`} permKey={`user_${u.id}`} icon={<User size={12} className="text-slate-500" />} />
                   ))}
                 </>}
               </tbody>
@@ -256,8 +270,8 @@ export default function AdminFoldersPage() {
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowPermModal(false)} className="flex-1 py-2 rounded-lg border border-white/10 text-slate-400 hover:bg-white/5 text-sm">Cancelar</button>
-              <button onClick={savePerms} className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium flex items-center justify-center gap-2">
-                <Save size={14} /> Salvar Permissões
+              <button onClick={savePerms} disabled={savePermMutation.isPending} className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
+                <Save size={14} /> {savePermMutation.isPending ? 'Salvando...' : 'Salvar Permissões'}
               </button>
             </div>
           </div>

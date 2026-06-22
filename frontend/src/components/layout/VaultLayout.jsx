@@ -5,6 +5,7 @@ import {
   Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server,
   LogOut, Key, ChevronDown, Menu, X, Settings, Globe,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
+  Search, Upload, Download, Star,
 } from 'lucide-react';
 import { useAuthStore, useIsAdmin } from '../../stores/authStore.js';
 import { useSettingsStore } from '../../stores/settingsStore.js';
@@ -148,6 +149,21 @@ export default function VaultLayout() {
         <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
           {/* Main items */}
           {navItem('/', <Vault className="w-4 h-4" />, t('nav.vault'), true)}
+          {navItem('/search', <Search className="w-4 h-4" />, 'Pesquisa')}
+          {navItem('/favorites', <Star className="w-4 h-4" />, 'Favoritos')}
+
+          {/* ── Ferramentas ── */}
+          <div className="pt-5 pb-1">
+            {sidebarOpen ? (
+              <span className="text-xs font-semibold uppercase tracking-wider px-3" style={{ color: 'var(--color-muted)' }}>
+                Ferramentas
+              </span>
+            ) : (
+              <div className="border-t mx-2 my-1" style={{ borderColor: 'var(--color-border)' }} />
+            )}
+          </div>
+          {navItem('/import', <Upload className="w-4 h-4" />, 'Importar')}
+          {navItem('/export', <Download className="w-4 h-4" />, 'Exportar')}
           {navItem('/tokens', <Key className="w-4 h-4" />, t('nav.apiTokens'))}
 
           {isAdmin && (
