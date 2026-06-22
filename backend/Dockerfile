@@ -1,9 +1,9 @@
-FROM node:20-alpine AS builder
+FROM node:20-bullseye AS builder
 
 WORKDIR /app
 
 # Dependências do sistema para Argon2 e sharp
-RUN apk add --no-cache python3 make g++ vips-dev
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ libvips-dev && rm -rf /var/lib/apt/lists/*
 
 # Build do backend
 COPY backend/package*.json ./
@@ -17,15 +17,15 @@ COPY frontend/ /frontend/
 RUN cd /frontend && npm ci && npm run build
 
 # ── Imagem final ────────────────────────────────────────────────────────────
-FROM node:20-alpine
+FROM node:20-bullseye
 
 WORKDIR /app
 
-RUN apk add --no-cache vips openssl
+RUN apt-get update && apt-get install -y --no-install-recommends libvips42 openssl curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app .
-COPY --from=builder /backend/dist ./dist
+COPY --from=builder /frontend/dist /frontend/dist
 
 RUN mkdir -p uploads logs
 
