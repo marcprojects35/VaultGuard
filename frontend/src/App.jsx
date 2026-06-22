@@ -16,6 +16,10 @@ import AdminLdapPage from './pages/AdminLdapPage.jsx';
 import SettingsGeneralPage from './pages/SettingsGeneralPage.jsx';
 import SettingsSecurityPage from './pages/SettingsSecurityPage.jsx';
 import SettingsEmailPage from './pages/SettingsEmailPage.jsx';
+import SearchPage from './pages/SearchPage.jsx';
+import ImportPage from './pages/ImportPage.jsx';
+import ExportPage from './pages/ExportPage.jsx';
+import FavoritesPage from './pages/FavoritesPage.jsx';
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
@@ -49,6 +53,10 @@ export default function App() {
         <Route index element={<VaultPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="tokens" element={<ApiTokensPage />} />
+        <Route path="search" element={<SearchPage />} />
+        <Route path="import" element={<ImportPage />} />
+        <Route path="export" element={<ExportPage />} />
+        <Route path="favorites" element={<FavoritesPage />} />
 
         {/* Admin */}
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />

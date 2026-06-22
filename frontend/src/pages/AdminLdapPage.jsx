@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Server, Shield, Users, RefreshCw, Check, X, ChevronDown, ChevronUp,
-  Eye, EyeOff, Play, AlertCircle, CheckCircle, Loader, Plus, Trash2, Info
+  Server, Shield, Users, RefreshCw, Check, X, ChevronDown,
+  Eye, EyeOff, Play, AlertCircle, CheckCircle, Loader, Plus, Trash2, Info,
+  UserCheck, Search, UserPlus,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
@@ -76,6 +77,22 @@ function Toggle({ checked, onChange, label }) {
   );
 }
 
+const VG_STATUS_BADGE = {
+  NEW:      { label: 'Novo',      cls: 'bg-indigo-500/20 text-indigo-300' },
+  ACTIVE:   { label: 'Vinculado', cls: 'bg-green-500/20 text-green-300' },
+  INACTIVE: { label: 'Inativo',   cls: 'bg-amber-500/20 text-amber-300' },
+  PENDING:  { label: 'Pendente',  cls: 'bg-slate-500/20 text-slate-400' },
+};
+
+function StatCard({ label, value, color }) {
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+      <div className={`text-2xl font-bold ${color}`}>{value}</div>
+      <div className="text-xs text-slate-500 mt-0.5">{label}</div>
+    </div>
+  );
+}
+
 export default function AdminLdapPage() {
   const qc = useQueryClient();
   const [config, setConfig] = useState(DEFAULT_CONFIG);
@@ -84,7 +101,15 @@ export default function AdminLdapPage() {
   const [testResult, setTestResult] = useState(null);
   const [adGroups, setAdGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
-  const [section, setSection] = useState('connection'); // connection | auth | sync | roles | advanced
+  const [section, setSection] = useState('connection');
+
+  // ── Estado da aba Usuários ──────────────────────────────────────────────
+  const [adUsers, setAdUsers] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [selectedEmails, setSelectedEmails] = useState(new Set());
+  const [userSearch, setUserSearch] = useState('');
+  const [linking, setLinking] = useState(false);
+  const [linkResult, setLinkResult] = useState(null);
 
   // ── Carregar config atual ───────────────────────────────────────────────
   const { isLoading } = useQuery({
@@ -126,6 +151,57 @@ export default function AdminLdapPage() {
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao sincronizar'),
   });
 
+  // ── Usuários do AD ──────────────────────────────────────────────────────
+  const loadAdUsers = async () => {
+    setLoadingUsers(true);
+    setAdUsers([]);
+    setSelectedEmails(new Set());
+    setLinkResult(null);
+    try {
+      const { data } = await api.get('/ldap/users/preview');
+      setAdUsers(data.users);
+      toast.success(`${data.total} usuários carregados do AD`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao buscar usuários');
+    }
+    setLoadingUsers(false);
+  };
+
+  const linkUsers = async (emails) => {
+    setLinking(true);
+    try {
+      const { data } = await api.post('/ldap/users/link', { emails });
+      setLinkResult(data);
+      toast.success(`${data.created + data.updated} usuário(s) vinculado(s)`);
+      await loadAdUsers();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Erro ao vincular usuários');
+    }
+    setLinking(false);
+  };
+
+  const toggleSelectUser = (email) => {
+    setSelectedEmails(prev => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  };
+
+  const filteredUsers = adUsers.filter(u => {
+    if (!userSearch) return true;
+    const q = userSearch.toLowerCase();
+    return (
+      u.username.includes(q) ||
+      u.email.includes(q) ||
+      `${u.firstName} ${u.lastName}`.toLowerCase().includes(q)
+    );
+  });
+
+  const newActiveUsers = adUsers.filter(u => u.vgStatus === 'NEW' && u.active);
+  const selectableFiltered = filteredUsers.filter(u => u.vgStatus === 'NEW' && u.active);
+
   // ── Buscar grupos do AD ──────────────────────────────────────────────────
   const loadGroups = async () => {
     setLoadingGroups(true);
@@ -162,7 +238,8 @@ export default function AdminLdapPage() {
     { id: 'connection', label: 'Conexão', icon: Server },
     { id: 'auth', label: 'Autenticação', icon: Shield },
     { id: 'sync', label: 'Sincronização', icon: RefreshCw },
-    { id: 'roles', label: 'Mapeamento de Grupos', icon: Users },
+    { id: 'roles', label: 'Grupos→Cargos', icon: Users },
+    { id: 'users', label: 'Usuários', icon: UserCheck },
     { id: 'advanced', label: 'Avançado', icon: ChevronDown },
   ];
 
@@ -461,6 +538,189 @@ export default function AdminLdapPage() {
                 ))}
               </div>
             </details>
+          )}
+        </div>
+      )}
+
+      {/* ── SEÇÃO: USUÁRIOS ─────────────────────────────────────────────────── */}
+      {section === 'users' && (
+        <div className="space-y-4">
+          {/* Barra de busca + botão buscar */}
+          <div className="flex gap-3">
+            <div className="relative flex-1">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                value={userSearch}
+                onChange={e => setUserSearch(e.target.value)}
+                placeholder="Filtrar por nome, usuário ou e-mail..."
+                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <button
+              onClick={loadAdUsers}
+              disabled={loadingUsers || !enabled}
+              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors whitespace-nowrap"
+            >
+              {loadingUsers ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              Buscar do AD
+            </button>
+          </div>
+
+          {!enabled && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-center gap-3">
+              <AlertCircle size={14} className="text-amber-400 shrink-0" />
+              <p className="text-sm text-amber-300">Habilite o LDAP antes de buscar usuários.</p>
+            </div>
+          )}
+
+          {/* Stats */}
+          {adUsers.length > 0 && (
+            <div className="grid grid-cols-4 gap-3">
+              <StatCard label="Total" value={adUsers.length} color="text-white" />
+              <StatCard label="Novos" value={newActiveUsers.length} color="text-indigo-400" />
+              <StatCard label="Vinculados" value={adUsers.filter(u => u.vgStatus === 'ACTIVE').length} color="text-green-400" />
+              <StatCard label="Inativos no AD" value={adUsers.filter(u => !u.active).length} color="text-red-400" />
+            </div>
+          )}
+
+          {/* Resultado da vinculação */}
+          {linkResult && (
+            <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 text-sm flex items-start gap-3">
+              <CheckCircle size={16} className="text-green-400 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-medium text-green-300 mb-0.5">Vinculação concluída</div>
+                <div className="text-slate-300">
+                  {linkResult.created} criados · {linkResult.updated} atualizados · {linkResult.disabled} desativados
+                  {linkResult.errors?.length > 0 && (
+                    <span className="text-red-400"> · {linkResult.errors.length} erros</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tabela de usuários */}
+          {adUsers.length > 0 ? (
+            <>
+              {/* Barra de ações */}
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={selectableFiltered.length > 0 && selectableFiltered.every(u => selectedEmails.has(u.email))}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setSelectedEmails(new Set(selectableFiltered.map(u => u.email)));
+                      } else {
+                        setSelectedEmails(new Set());
+                      }
+                    }}
+                    className="rounded border-white/20"
+                  />
+                  {selectedEmails.size > 0
+                    ? `${selectedEmails.size} selecionado(s)`
+                    : `${selectableFiltered.length} novos disponíveis`}
+                </label>
+                <div className="flex gap-2">
+                  {selectedEmails.size > 0 && (
+                    <button
+                      onClick={() => linkUsers([...selectedEmails])}
+                      disabled={linking}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
+                    >
+                      {linking ? <Loader size={14} className="animate-spin" /> : <UserPlus size={14} />}
+                      Vincular {selectedEmails.size} selecionados
+                    </button>
+                  )}
+                  {newActiveUsers.length > 0 && (
+                    <button
+                      onClick={() => linkUsers(newActiveUsers.map(u => u.email))}
+                      disabled={linking}
+                      className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-sm disabled:opacity-40 transition-colors"
+                    >
+                      {linking ? <Loader size={14} className="animate-spin" /> : <Users size={14} />}
+                      Vincular todos novos ({newActiveUsers.length})
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Tabela */}
+              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+                <div className="max-h-[480px] overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm">
+                      <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-white/10">
+                        <th className="pl-4 py-3 w-8" />
+                        <th className="py-3 px-3">Nome</th>
+                        <th className="py-3 px-3 hidden md:table-cell">Usuário</th>
+                        <th className="py-3 px-3 hidden lg:table-cell">E-mail</th>
+                        <th className="py-3 px-3">Cargo</th>
+                        <th className="py-3 px-3">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {filteredUsers.map(user => {
+                        const selectable = user.vgStatus === 'NEW' && user.active;
+                        const selected = selectedEmails.has(user.email);
+                        const badge = VG_STATUS_BADGE[user.vgStatus] || VG_STATUS_BADGE.NEW;
+                        return (
+                          <tr
+                            key={user.email}
+                            onClick={() => selectable && toggleSelectUser(user.email)}
+                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-white/5' : 'opacity-50'} ${selected ? 'bg-indigo-500/10' : ''}`}
+                          >
+                            <td className="pl-4 py-3">
+                              {selectable && (
+                                <input
+                                  type="checkbox"
+                                  checked={selected}
+                                  onChange={() => toggleSelectUser(user.email)}
+                                  onClick={e => e.stopPropagation()}
+                                  className="rounded border-white/20"
+                                />
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-semibold text-indigo-300 shrink-0">
+                                  {(user.firstName?.[0] || user.username?.[0] || '?').toUpperCase()}
+                                </div>
+                                <span className="font-medium text-white leading-tight">
+                                  {user.firstName} {user.lastName}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-3 px-3 hidden md:table-cell text-slate-400 font-mono text-xs">{user.username}</td>
+                            <td className="py-3 px-3 hidden lg:table-cell text-slate-400 text-xs truncate max-w-[180px]">{user.email}</td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${ROLE_COLORS[user.role] || 'bg-slate-500/20 text-slate-300'}`}>
+                                {ROLE_LABELS[user.role] || user.role}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${badge.cls}`}>
+                                {!user.active ? 'Desativ. no AD' : badge.label}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : (
+            !loadingUsers && (
+              <div className="py-14 text-center border-2 border-dashed border-white/10 rounded-xl">
+                <UserCheck size={36} className="mx-auto mb-3 text-slate-600" />
+                <p className="text-slate-400 text-sm">Clique em "Buscar do AD" para listar os usuários</p>
+                <p className="text-xs text-slate-600 mt-1">
+                  O sistema mostrará todos os usuários do AD e o status de cada um na plataforma.
+                </p>
+              </div>
+            )
           )}
         </div>
       )}

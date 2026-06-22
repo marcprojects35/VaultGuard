@@ -15,6 +15,7 @@ import settingsRoutes from './routes/settings.js';
 import auditRoutes from './routes/audit.js';
 import apiTokenRoutes from './routes/apiTokens.js';
 import ldapRoutes from './routes/ldap.js';
+import favoritesRoutes from './routes/favorites.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
 
@@ -77,6 +78,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/tokens', apiTokenRoutes);
 app.use('/api/ldap', ldapRoutes);
+app.use('/api/favorites', favoritesRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

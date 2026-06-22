@@ -316,6 +316,94 @@ export async function syncAllUsersFromAD(cfg) {
   return results;
 }
 
+// ── Preview de usuários do AD (sem salvar no banco) ──────────────────────────
+export async function fetchUsersForPreview(cfg) {
+  const client = createClient(cfg);
+  try {
+    await client.bind(cfg.bindDn, cfg.bindPassword);
+
+    const filter = cfg.syncFilter || '(&(objectClass=user)(objectCategory=person))';
+    const { searchEntries } = await client.search(cfg.baseDn, {
+      scope: cfg.searchScope || 'sub',
+      filter,
+      attributes: [
+        'dn', 'sAMAccountName', 'userPrincipalName', 'mail',
+        'givenName', 'sn', 'userAccountControl', 'memberOf', 'objectGUID',
+      ],
+      sizeLimit: cfg.syncMaxUsers || 5000,
+      paged: true,
+    });
+
+    await client.unbind();
+
+    return searchEntries
+      .map(e => {
+        const active = isAdUserActive(e);
+        const groups = extractGroups(e);
+        const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR');
+        const email = (e.mail || e.userPrincipalName || '').toString().toLowerCase();
+        const username = (e.sAMAccountName || '').toString().toLowerCase();
+        return {
+          dn: e.dn?.toString(),
+          username,
+          email,
+          firstName: (e.givenName || username).toString(),
+          lastName: (e.sn || '').toString(),
+          active,
+          role,
+        };
+      })
+      .filter(u => u.username && u.email);
+  } catch (err) {
+    logger.error('LDAP fetchUsersForPreview error', { error: err.message });
+    throw err;
+  } finally {
+    try { await client.unbind(); } catch { /* ignore */ }
+  }
+}
+
+// ── Vincular usuários específicos do AD ao VaultGuard ────────────────────────
+export async function linkUsersFromAD(cfg, emails) {
+  const adUsers = await fetchUsersForPreview(cfg);
+  const toLink = adUsers.filter(u => emails.includes(u.email));
+
+  const results = { created: 0, updated: 0, disabled: 0, errors: [] };
+
+  for (const u of toLink) {
+    try {
+      const existing = await prisma.user.findFirst({
+        where: { OR: [{ ldapDn: u.dn }, { email: u.email }] },
+      });
+
+      const data = {
+        email: u.email,
+        username: u.username,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        ldapDn: u.dn,
+        authSource: 'ldap',
+        status: u.active ? 'ACTIVE' : 'INACTIVE',
+        ...(cfg.syncGroups !== false ? { role: u.role } : {}),
+      };
+
+      if (existing) {
+        await prisma.user.update({ where: { id: existing.id }, data });
+        if (!u.active) results.disabled++;
+        else results.updated++;
+      } else {
+        await prisma.user.create({
+          data: { ...data, role: u.role || cfg.defaultRole || 'AUXILIAR' },
+        });
+        results.created++;
+      }
+    } catch (err) {
+      results.errors.push({ username: u.username, error: err.message });
+    }
+  }
+
+  return results;
+}
+
 // ── Buscar grupos do AD (para mapear a roles) ─────────────────────────────────
 export async function fetchADGroups(cfg) {
   const client = createClient(cfg);

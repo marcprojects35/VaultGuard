@@ -3,18 +3,22 @@ import { ShieldCheck, Save, RefreshCw, Lock, AlertTriangle, Smartphone, Eye } fr
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
+import { useSettingsStore } from '../stores/settingsStore.js';
 
 export default function SettingsSecurityPage() {
+  const currentSettings = useSettingsStore(s => s.settings);
+  const policy = currentSettings.passwordPolicy || {};
+
   const [form, setForm] = useState({
-    minPasswordLength: 10,
-    requireUppercase: true,
-    requireNumbers: true,
-    requireSymbols: true,
-    passwordExpireDays: 90,
-    preventPasswordReuse: 5,
-    maxLoginAttempts: 5,
-    lockoutDurationMin: 15,
-    require2FA: false,
+    minPasswordLength: policy.minLength || 10,
+    requireUppercase: policy.requireUppercase ?? true,
+    requireNumbers: policy.requireNumbers ?? true,
+    requireSymbols: policy.requireSymbols ?? true,
+    passwordExpireDays: policy.expireDays || 90,
+    preventPasswordReuse: policy.preventReuse || 5,
+    maxLoginAttempts: currentSettings.maxLoginAttempts || 5,
+    lockoutDurationMin: policy.lockoutDurationMin || 15,
+    require2FA: currentSettings.require2FA || false,
     allow2FARecovery: true,
     logFailedLogins: true,
     alertOnNewDevice: true,

@@ -9,7 +9,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
-import { testConnection, fetchADGroups, syncAllUsersFromAD } from '../services/ldap.js';
+import { testConnection, fetchADGroups, syncAllUsersFromAD, fetchUsersForPreview, linkUsersFromAD } from '../services/ldap.js';
 import { createAuditLog } from '../services/audit.js';
 import logger from '../utils/logger.js';
 
@@ -159,42 +159,59 @@ router.get('/sync/status', authenticate, requireAdmin, (req, res) => {
 });
 
 // ── GET /api/ldap/users/preview ───────────────────────────────────────────────
-// Previsualizar usuários que seriam importados (sem salvar)
+// Lista usuários do AD cruzando com status no VaultGuard (sem importar)
 router.get('/users/preview', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
     if (!settings?.ldapConfig) return res.status(400).json({ error: 'LDAP não configurado' });
 
-    // Reutiliza fetchADGroups com filtro de usuários
-    const { Client } = await import('ldapts');
-    const cfg = settings.ldapConfig;
-    const url = cfg.useTLS ? `ldaps://${cfg.host}:${cfg.port || 636}` : `ldap://${cfg.host}:${cfg.port || 389}`;
-    const client = new Client({ url, timeout: 10000 });
+    const adUsers = await fetchUsersForPreview(settings.ldapConfig);
 
-    try {
-      await client.bind(cfg.bindDn, cfg.bindPassword);
-      const filter = cfg.syncFilter || '(&(objectClass=user)(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))';
-      const { searchEntries } = await client.search(cfg.baseDn, {
-        scope: 'sub', filter,
-        attributes: ['sAMAccountName', 'mail', 'givenName', 'sn', 'userAccountControl', 'memberOf'],
-        sizeLimit: 100,
-      });
-      await client.unbind();
+    // Cruzar com usuários já existentes no VaultGuard
+    const vgUsers = await prisma.user.findMany({
+      where: { authSource: 'ldap' },
+      select: { email: true, username: true, status: true },
+    });
+    const vgByEmail = new Map(vgUsers.map(u => [u.email, u]));
+    const vgByUsername = new Map(vgUsers.map(u => [u.username, u]));
 
-      const preview = searchEntries.map(e => ({
-        username: (e.sAMAccountName || '').toString(),
-        email: (e.mail || '').toString(),
-        name: `${e.givenName || ''} ${e.sn || ''}`.trim(),
-        active: !(parseInt(e.userAccountControl || '0', 10) & 0x2),
-      }));
+    const users = adUsers.map(u => {
+      const existing = vgByEmail.get(u.email) || vgByUsername.get(u.username);
+      return {
+        ...u,
+        vgStatus: existing ? existing.status : 'NEW', // NEW | ACTIVE | INACTIVE | PENDING
+      };
+    });
 
-      res.json({ total: preview.length, users: preview });
-    } catch (err) {
-      await client.unbind().catch(() => {});
-      throw err;
-    }
+    res.json({ total: users.length, users });
   } catch (err) {
     logger.error('LDAP preview error', { error: err.message });
+    next(err);
+  }
+});
+
+// ── POST /api/ldap/users/link ─────────────────────────────────────────────────
+// Vincula (cria ou atualiza) usuários específicos do AD no VaultGuard
+router.post('/users/link', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+    if (!settings?.ldapConfig) return res.status(400).json({ error: 'LDAP não configurado' });
+
+    const { emails } = req.body;
+    if (!Array.isArray(emails) || emails.length === 0) {
+      return res.status(400).json({ error: 'Informe ao menos um e-mail para vincular' });
+    }
+
+    const result = await linkUsersFromAD(settings.ldapConfig, emails);
+
+    await createAuditLog(
+      req.user.id, 'ldap.users_linked', 'User', null,
+      { count: result.created + result.updated, emails },
+      req.ip, req.headers['user-agent'],
+    );
+
+    res.json(result);
+  } catch (err) {
     next(err);
   }
 });
