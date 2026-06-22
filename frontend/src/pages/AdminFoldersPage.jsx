@@ -47,7 +47,7 @@ function FolderNode({ node, depth = 0, onEdit, onDelete, onPermissions }) {
         <span className="flex-1 text-sm text-slate-200">{node.name}</span>
         {node.description && <span className="text-xs text-slate-500 truncate max-w-[200px]">{node.description}</span>}
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
-          <button onClick={() => onPermissions(node)} className="p-1 rounded hover:bg-indigo-500/20 text-indigo-400" title="Permissões">
+          <button onClick={() => onPermissions(node)} className="p-1 rounded hover:bg-[#FFB400]/20 text-[#C78C00]" title="Permissões">
             <Shield size={14} />
           </button>
           <button onClick={() => onEdit(node)} className="p-1 rounded hover:bg-blue-500/20 text-blue-400" title="Editar">
@@ -184,7 +184,7 @@ export default function AdminFoldersPage() {
           <p className="text-slate-400 text-sm mt-1">Organize a estrutura hierárquica e defina permissões por cargo</p>
         </div>
         <button onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors">
+          className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium transition-colors">
           <Plus size={16} /> Nova Pasta
         </button>
       </div>
@@ -206,17 +206,17 @@ export default function AdminFoldersPage() {
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Nome *</label>
                 <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500" placeholder="Nome da pasta" />
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]" placeholder="Nome da pasta" />
               </div>
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Descrição</label>
                 <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500" placeholder="Opcional" />
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]" placeholder="Opcional" />
               </div>
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Pasta Pai</label>
                 <select value={form.parentId} onChange={e => setForm({ ...form, parentId: e.target.value })}
-                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500">
+                  className="w-full bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
                   <option value="">— Raiz —</option>
                   {foldersRaw.filter(f => f.id !== editing?.id).map(f => (
                     <option key={f.id} value={f.id}>{f.name}</option>
@@ -227,7 +227,7 @@ export default function AdminFoldersPage() {
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowModal(false)} className="flex-1 py-2 rounded-lg border border-white/10 text-slate-400 hover:bg-white/5 text-sm">Cancelar</button>
               <button onClick={() => createMutation.mutate(form)} disabled={!form.name}
-                className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50">Salvar</button>
+                className="flex-1 py-2 rounded-lg bg-[#C78C00] hover:bg-[#FFB400] text-white text-sm font-medium disabled:opacity-50">Salvar</button>
             </div>
           </div>
         </div>
@@ -239,7 +239,7 @@ export default function AdminFoldersPage() {
           <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                <Shield size={18} className="text-indigo-400" /> Permissões: {permFolder.name}
+                <Shield size={18} className="text-[#C78C00]" /> Permissões: {permFolder.name}
               </h2>
               <button onClick={() => setShowPermModal(false)} className="text-slate-500 hover:text-white"><X size={18} /></button>
             </div>
@@ -270,7 +270,7 @@ export default function AdminFoldersPage() {
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowPermModal(false)} className="flex-1 py-2 rounded-lg border border-white/10 text-slate-400 hover:bg-white/5 text-sm">Cancelar</button>
-              <button onClick={savePerms} disabled={savePermMutation.isPending} className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
+              <button onClick={savePerms} disabled={savePermMutation.isPending} className="flex-1 py-2 rounded-lg bg-[#C78C00] hover:bg-[#FFB400] text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50">
                 <Save size={14} /> {savePermMutation.isPending ? 'Salvando...' : 'Salvar Permissões'}
               </button>
             </div>

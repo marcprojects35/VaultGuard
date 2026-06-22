@@ -45,12 +45,12 @@ export default function ApiTokensPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Key size={24} className="text-indigo-400" /> Tokens de API
+            <Key size={24} className="text-[#C78C00]" /> Tokens de API
           </h1>
           <p className="text-slate-400 text-sm mt-1">Gerencie tokens para a extensão Chrome e integrações externas</p>
         </div>
         <button onClick={() => setShowCreate(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors">
+          className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium transition-colors">
           <Plus size={16} /> Novo Token
         </button>
       </div>
@@ -128,8 +128,8 @@ export default function ApiTokensPage() {
       </div>
 
       {/* Instruções extensão */}
-      <div className="bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-indigo-300 mb-2">Como usar com a extensão Chrome</h3>
+      <div className="bg-[#C78C00]/5 border border-[#C78C00]/20 rounded-xl p-4">
+        <h3 className="text-sm font-semibold text-[#E7A300] mb-2">Como usar com a extensão Chrome</h3>
         <ol className="text-xs text-slate-400 space-y-1 list-decimal list-inside">
           <li>Instale a extensão VaultGuard no Chrome</li>
           <li>Clique no ícone da extensão e acesse Configurações</li>
@@ -148,20 +148,20 @@ export default function ApiTokensPage() {
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Nome do Token *</label>
                 <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]"
                   placeholder="Ex: Extensão Chrome - Notebook" />
               </div>
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Expirar em (dias)</label>
                 <input type="number" value={form.expiresInDays} onChange={e => setForm({ ...form, expiresInDays: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]"
                   placeholder="Deixe vazio para nunca expirar" min="1" />
               </div>
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowCreate(false)} className="flex-1 py-2 rounded-lg border border-white/10 text-slate-400 hover:bg-white/5 text-sm">Cancelar</button>
               <button onClick={() => createMutation.mutate(form)} disabled={!form.name}
-                className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium disabled:opacity-50">
+                className="flex-1 py-2 rounded-lg bg-[#C78C00] hover:bg-[#FFB400] text-white text-sm font-medium disabled:opacity-50">
                 Criar Token
               </button>
             </div>

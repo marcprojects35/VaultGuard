@@ -61,7 +61,7 @@ function Input({ value, onChange, type = 'text', placeholder, className = '', ..
     <input
       type={type} value={value} onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500 ${className}`}
+      className={`w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00] ${className}`}
       {...props}
     />
   );
@@ -70,7 +70,7 @@ function Input({ value, onChange, type = 'text', placeholder, className = '', ..
 function Toggle({ checked, onChange, label }) {
   return (
     <button onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-indigo-600' : 'bg-white/10'}`}>
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-[#C78C00]' : 'bg-white/10'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4.5' : 'translate-x-0.5'}`}
         style={{ transform: checked ? 'translateX(18px)' : 'translateX(2px)' }} />
     </button>
@@ -78,7 +78,7 @@ function Toggle({ checked, onChange, label }) {
 }
 
 const VG_STATUS_BADGE = {
-  NEW:      { label: 'Novo',      cls: 'bg-indigo-500/20 text-indigo-300' },
+  NEW:      { label: 'Novo',      cls: 'bg-[#C78C00]/20 text-[#E7A300]' },
   ACTIVE:   { label: 'Vinculado', cls: 'bg-green-500/20 text-green-300' },
   INACTIVE: { label: 'Inativo',   cls: 'bg-amber-500/20 text-amber-300' },
   PENDING:  { label: 'Pendente',  cls: 'bg-slate-500/20 text-slate-400' },
@@ -251,7 +251,7 @@ export default function AdminLdapPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Server size={24} className="text-indigo-400" /> Active Directory / LDAP
+            <Server size={24} className="text-[#C78C00]" /> Active Directory / LDAP
           </h1>
           <p className="text-slate-400 text-sm mt-1">
             Autenticação centralizada via AD. Usuários do AD fazem login com as mesmas credenciais corporativas.
@@ -277,7 +277,7 @@ export default function AdminLdapPage() {
       <div className="flex gap-1 bg-white/5 rounded-xl p-1">
         {sections.map(s => (
           <button key={s.id} onClick={() => setSection(s.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${section === s.id ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${section === s.id ? 'bg-[#C78C00] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
             <s.icon size={13} /> <span className="hidden sm:inline">{s.label}</span>
           </button>
         ))}
@@ -367,7 +367,7 @@ export default function AdminLdapPage() {
             <div className="space-y-2">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="radio" checked={!config.ldapOnly} onChange={() => set('ldapOnly', false)}
-                  className="text-indigo-600" />
+                  className="text-[#AD7B04]" />
                 <div>
                   <div className="text-sm text-slate-200">LDAP + Fallback Local</div>
                   <div className="text-xs text-slate-500">Se o AD falhar, usuários locais ainda podem entrar</div>
@@ -375,7 +375,7 @@ export default function AdminLdapPage() {
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="radio" checked={config.ldapOnly} onChange={() => set('ldapOnly', true)}
-                  className="text-indigo-600" />
+                  className="text-[#AD7B04]" />
                 <div>
                   <div className="text-sm text-slate-200">Somente LDAP</div>
                   <div className="text-xs text-slate-500">Toda autenticação passa pelo AD (exceto admin de emergência)</div>
@@ -398,7 +398,7 @@ export default function AdminLdapPage() {
 
             <Field label="Cargo padrão" description="Cargo atribuído a usuários novos sem grupo mapeado">
               <select value={config.defaultRole} onChange={e => set('defaultRole', e.target.value)}
-                className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500">
+                className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
                 {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
             </Field>
@@ -419,7 +419,7 @@ export default function AdminLdapPage() {
               <h2 className="text-sm font-semibold text-slate-300">Sincronização Manual</h2>
               <button onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending || syncStatus?.running || !enabled}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
+                className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
                 {syncStatus?.running
                   ? <><Loader size={14} className="animate-spin" /> Sincronizando...</>
                   : <><RefreshCw size={14} /> Sincronizar Agora</>}
@@ -468,7 +468,7 @@ export default function AdminLdapPage() {
                 Carregar grupos do AD
               </button>
               <button onClick={addGroupMapping}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 rounded-lg text-xs transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#C78C00]/20 hover:bg-[#C78C00]/30 border border-[#C78C00]/30 text-[#E7A300] rounded-lg text-xs transition-colors">
                 <Plus size={12} /> Adicionar
               </button>
             </div>
@@ -492,13 +492,13 @@ export default function AdminLdapPage() {
                   {adGroups.length > 0 ? (
                     <select value={group}
                       onChange={e => updateGroupMapping(group, e.target.value, role)}
-                      className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500">
+                      className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
                       {adGroups.map(g => <option key={g.dn} value={g.cn.toLowerCase()}>{g.cn}</option>)}
                     </select>
                   ) : (
                     <input value={group}
                       onChange={e => updateGroupMapping(group, e.target.value.toLowerCase(), role)}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500"
+                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]"
                       placeholder="nome_do_grupo_ad (CN, lowercase)" />
                   )}
 
@@ -506,7 +506,7 @@ export default function AdminLdapPage() {
 
                   <select value={role}
                     onChange={e => updateGroupMapping(group, group, e.target.value)}
-                    className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
+                    className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C78C00]">
                     {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                   </select>
 
@@ -532,7 +532,7 @@ export default function AdminLdapPage() {
               <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
                 {adGroups.map(g => (
                   <div key={g.dn} className="flex items-center gap-2 text-xs py-1">
-                    <span className="font-mono text-indigo-300">{g.cn}</span>
+                    <span className="font-mono text-[#E7A300]">{g.cn}</span>
                     {g.description && <span className="text-slate-500">— {g.description}</span>}
                   </div>
                 ))}
@@ -553,13 +553,13 @@ export default function AdminLdapPage() {
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
                 placeholder="Filtrar por nome, usuário ou e-mail..."
-                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-[#C78C00]"
               />
             </div>
             <button
               onClick={loadAdUsers}
               disabled={loadingUsers || !enabled}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors whitespace-nowrap"
             >
               {loadingUsers ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Buscar do AD
@@ -577,7 +577,7 @@ export default function AdminLdapPage() {
           {adUsers.length > 0 && (
             <div className="grid grid-cols-4 gap-3">
               <StatCard label="Total" value={adUsers.length} color="text-white" />
-              <StatCard label="Novos" value={newActiveUsers.length} color="text-indigo-400" />
+              <StatCard label="Novos" value={newActiveUsers.length} color="text-[#C78C00]" />
               <StatCard label="Vinculados" value={adUsers.filter(u => u.vgStatus === 'ACTIVE').length} color="text-green-400" />
               <StatCard label="Inativos no AD" value={adUsers.filter(u => !u.active).length} color="text-red-400" />
             </div>
@@ -626,7 +626,7 @@ export default function AdminLdapPage() {
                     <button
                       onClick={() => linkUsers([...selectedEmails])}
                       disabled={linking}
-                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
                     >
                       {linking ? <Loader size={14} className="animate-spin" /> : <UserPlus size={14} />}
                       Vincular {selectedEmails.size} selecionados
@@ -668,7 +668,7 @@ export default function AdminLdapPage() {
                           <tr
                             key={user.email}
                             onClick={() => selectable && toggleSelectUser(user.email)}
-                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-white/5' : 'opacity-50'} ${selected ? 'bg-indigo-500/10' : ''}`}
+                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-white/5' : 'opacity-50'} ${selected ? 'bg-[#C78C00]/10' : ''}`}
                           >
                             <td className="pl-4 py-3">
                               {selectable && (
@@ -683,7 +683,7 @@ export default function AdminLdapPage() {
                             </td>
                             <td className="py-3 px-3">
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-xs font-semibold text-indigo-300 shrink-0">
+                                <div className="w-7 h-7 rounded-full bg-[#C78C00]/20 flex items-center justify-center text-xs font-semibold text-[#E7A300] shrink-0">
                                   {(user.firstName?.[0] || user.username?.[0] || '?').toUpperCase()}
                                 </div>
                                 <span className="font-medium text-white leading-tight">
@@ -742,7 +742,7 @@ export default function AdminLdapPage() {
 
           <Field label="Escopo de busca" description="sub = toda a árvore; one = apenas um nível abaixo">
             <select value={config.searchScope} onChange={e => set('searchScope', e.target.value)}
-              className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-indigo-500">
+              className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
               <option value="sub">sub (padrão)</option>
               <option value="one">one</option>
               <option value="base">base</option>
@@ -758,7 +758,7 @@ export default function AdminLdapPage() {
       {/* ── Botões de ação ──────────────────────────────────────────────────── */}
       <div className="flex gap-3 pt-2">
         <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-          className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+          className="flex items-center gap-2 px-6 py-2.5 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
           {saveMutation.isPending ? <Loader size={14} className="animate-spin" /> : <Check size={14} />}
           Salvar Configuração
         </button>
