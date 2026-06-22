@@ -1,0 +1,23 @@
+.git
+.gitignore
+*.md
+images/
+extension/
+{backend/
+
+# Node modules — reinstalled no build
+frontend/node_modules/
+backend/node_modules/
+
+# Logs e uploads locais
+backend/logs/
+backend/uploads/
+
+# Dev files
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# Prisma migrations lock local
+backend/prisma/dev.db
