@@ -12,7 +12,7 @@ const prisma = new PrismaClient();
 // GET /api/folders — tree of folders accessible to user
 router.get('/', authenticate, async (req, res, next) => {
   try {
-    const { userId, role } = req.user;
+    const { userId, role, id: uid } = req.user;
     let folders;
 
     if (role === 'ADMINISTRADOR') {
@@ -21,39 +21,57 @@ router.get('/', authenticate, async (req, res, next) => {
           permissions: true,
           _count: { select: { credentials: true } }
         },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
+        orderBy: [{ isPersonal: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
       });
     } else {
+      // Shared folders via permissions
       const perms = await prisma.folderPermission.findMany({
         where: {
           canView: true,
-          OR: [{ userId: req.user.id }, { role }]
+          OR: [{ userId: uid }, { role }]
         },
         select: { folderId: true }
       });
-      const folderIds = [...new Set(perms.map(p => p.folderId))];
+      const sharedIds = [...new Set(perms.map(p => p.folderId))];
 
       folders = await prisma.folder.findMany({
-        where: { id: { in: folderIds } },
+        where: {
+          OR: [
+            { id: { in: sharedIds } },
+            { isPersonal: true, ownerId: uid },
+          ]
+        },
         include: { _count: { select: { credentials: true } } },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }]
+        orderBy: [{ isPersonal: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
       });
     }
 
-    // Build tree
-    const tree = buildTree(folders);
-    res.json(tree);
+    // Separate personal folders from shared tree
+    const personalFolders = folders.filter(f => f.isPersonal);
+    const sharedFolders = folders.filter(f => !f.isPersonal);
+
+    const sharedTree = buildTree(sharedFolders);
+    const personalTree = buildTree(personalFolders);
+
+    res.json({ shared: sharedTree, personal: personalTree });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/folders
-router.post('/', authenticate, requireAdmin,
+// POST /api/folders — admin creates shared folder OR any user creates personal folder
+router.post('/', authenticate,
   [body('name').notEmpty().trim()],
   validate,
   async (req, res, next) => {
     try {
+      const isPersonal = req.body.isPersonal === true;
+      const isAdmin = req.user.role === 'ADMINISTRADOR';
+
+      if (!isPersonal && !isAdmin) {
+        return res.status(403).json({ error: 'Only administrators can create shared folders' });
+      }
+
       const folder = await prisma.folder.create({
         data: {
           name: req.body.name,
@@ -62,9 +80,12 @@ router.post('/', authenticate, requireAdmin,
           color: req.body.color || '#6366f1',
           parentId: req.body.parentId || null,
           sortOrder: req.body.sortOrder || 0,
+          isPersonal,
+          ownerId: isPersonal ? req.user.id : null,
         }
       });
-      await createAuditLog(req.user.id, 'folder.create', folder.id, 'Folder', { name: folder.name }, req.ip);
+      await createAuditLog(req.user.id, isPersonal ? 'folder.create_personal' : 'folder.create',
+        folder.id, 'Folder', { name: folder.name }, req.ip);
       res.status(201).json(folder);
     } catch (err) {
       next(err);
@@ -73,12 +94,22 @@ router.post('/', authenticate, requireAdmin,
 );
 
 // PUT /api/folders/:id
-router.put('/:id', authenticate, requireAdmin,
+router.put('/:id', authenticate,
   [body('name').optional().trim()],
   validate,
   async (req, res, next) => {
     try {
-      const folder = await prisma.folder.update({
+      const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
+      if (!folder) return res.status(404).json({ error: 'Folder not found' });
+
+      const isAdmin = req.user.role === 'ADMINISTRADOR';
+      const isOwner = folder.isPersonal && folder.ownerId === req.user.id;
+
+      if (!isAdmin && !isOwner) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      const updated = await prisma.folder.update({
         where: { id: req.params.id },
         data: {
           ...(req.body.name && { name: req.body.name }),
@@ -89,7 +120,7 @@ router.put('/:id', authenticate, requireAdmin,
           ...(req.body.sortOrder !== undefined && { sortOrder: req.body.sortOrder }),
         }
       });
-      res.json(folder);
+      res.json(updated);
     } catch (err) {
       next(err);
     }
@@ -97,8 +128,18 @@ router.put('/:id', authenticate, requireAdmin,
 );
 
 // DELETE /api/folders/:id
-router.delete('/:id', authenticate, requireAdmin, async (req, res, next) => {
+router.delete('/:id', authenticate, async (req, res, next) => {
   try {
+    const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
+    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+
+    const isAdmin = req.user.role === 'ADMINISTRADOR';
+    const isOwner = folder.isPersonal && folder.ownerId === req.user.id;
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
     await prisma.folder.delete({ where: { id: req.params.id } });
     await createAuditLog(req.user.id, 'folder.delete', req.params.id, 'Folder', null, req.ip);
     res.json({ message: 'Folder deleted' });
@@ -107,13 +148,12 @@ router.delete('/:id', authenticate, requireAdmin, async (req, res, next) => {
   }
 });
 
-// PUT /api/folders/:id/permissions — set permissions for folder
+// PUT /api/folders/:id/permissions — admin only
 router.put('/:id/permissions', authenticate, requireAdmin, async (req, res, next) => {
   try {
-    const { permissions } = req.body; // Array of { userId?, role?, canView, canEdit, canDelete, canShare }
+    const { permissions } = req.body;
     const folderId = req.params.id;
 
-    // Delete existing then recreate
     await prisma.folderPermission.deleteMany({ where: { folderId } });
 
     if (permissions && permissions.length > 0) {
@@ -137,7 +177,7 @@ router.put('/:id/permissions', authenticate, requireAdmin, async (req, res, next
   }
 });
 
-// GET /api/folders/:id/permissions
+// GET /api/folders/:id/permissions — admin only
 router.get('/:id/permissions', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const perms = await prisma.folderPermission.findMany({

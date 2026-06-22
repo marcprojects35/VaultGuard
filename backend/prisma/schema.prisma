@@ -1,7 +1,8 @@
 // VaultGuard — Prisma Schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -25,30 +26,32 @@ enum UserStatus {
 }
 
 model User {
-  id            String     @id @default(uuid())
-  email         String     @unique
-  username      String     @unique
-  passwordHash  String?
-  firstName     String
-  lastName      String
-  role          UserRole   @default(AUXILIAR)
-  status        UserStatus @default(PENDING)
-  totpSecret    String?
-  totpEnabled   Boolean    @default(false)
-  apiToken      String?    @unique
-  lastLogin     DateTime?
-  avatar        String?
+  id              String     @id @default(uuid())
+  email           String     @unique
+  username        String     @unique
+  passwordHash    String?
+  firstName       String
+  lastName        String
+  role            UserRole   @default(AUXILIAR)
+  status          UserStatus @default(PENDING)
+  totpSecret      String?
+  totpEnabled     Boolean    @default(false)
+  apiToken        String?    @unique
+  lastLogin       DateTime?
+  avatar          String?
+  encryptionSalt  String?
   // AD / LDAP
-  ldapDn        String?    @unique
-  ldapGuid      String?    @unique
-  authSource    String     @default("local")
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  ldapDn          String?    @unique
+  ldapGuid        String?    @unique
+  authSource      String     @default("local")
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   folderPermissions FolderPermission[]
   auditLogs         AuditLog[]
   apiTokens         ApiToken[]
   favorites         Favorite[]
+  personalFolders   Folder[]   @relation("PersonalFolders")
 
   @@index([email])
   @@index([username])
@@ -65,6 +68,9 @@ model Folder {
   parent      Folder?  @relation("FolderTree", fields: [parentId], references: [id])
   children    Folder[] @relation("FolderTree")
   sortOrder   Int      @default(0)
+  isPersonal  Boolean  @default(false)
+  ownerId     String?
+  owner       User?    @relation("PersonalFolders", fields: [ownerId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -72,6 +78,7 @@ model Folder {
   permissions FolderPermission[]
 
   @@index([parentId])
+  @@index([ownerId])
 }
 
 model FolderPermission {
@@ -110,8 +117,36 @@ model Credential {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  customFields  CredentialField[]
+  attachments   Attachment[]
+
   @@index([folderId])
   @@index([url])
+}
+
+model CredentialField {
+  id           String     @id @default(uuid())
+  credentialId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  name         String
+  value        String
+  fieldType    String     @default("text")
+  sortOrder    Int        @default(0)
+
+  @@index([credentialId])
+}
+
+model Attachment {
+  id           String     @id @default(uuid())
+  credentialId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  fileName     String
+  mimeType     String
+  size         Int
+  data         String
+  createdAt    DateTime   @default(now())
+
+  @@index([credentialId])
 }
 
 model SystemSettings {
@@ -161,6 +196,46 @@ model Favorite {
 
   @@unique([userId, credentialId])
   @@index([userId])
+}
+
+model CredentialHistory {
+  id            String   @id @default(uuid())
+  credentialId  String
+  encryptedPass String
+  changedById   String?
+  changedAt     DateTime @default(now())
+
+  @@index([credentialId])
+  @@index([changedAt])
+}
+
+model CredentialShare {
+  id           String   @id @default(uuid())
+  credentialId String
+  sharedById   String
+  sharedWithId String
+  canEdit      Boolean  @default(false)
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+
+  @@unique([credentialId, sharedWithId])
+  @@index([credentialId])
+  @@index([sharedWithId])
+}
+
+model AccessRequest {
+  id        String   @id @default(uuid())
+  userId    String
+  folderId  String
+  message   String?
+  status    String   @default("PENDING")
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([folderId])
+  @@index([status])
 }
 
 model AuditLog {

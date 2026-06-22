@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { body } from 'express-validator';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
@@ -8,6 +9,22 @@ import { createAuditLog } from '../services/audit.js';
 
 const router = Router();
 const prisma = new PrismaClient();
+
+function generateSalt() {
+  return randomBytes(32).toString('hex');
+}
+
+async function createPersonalFolder(userId, firstName) {
+  return prisma.folder.create({
+    data: {
+      name: `Pasta de ${firstName}`,
+      icon: 'lock',
+      color: '#8b5cf6',
+      isPersonal: true,
+      ownerId: userId,
+    }
+  });
+}
 
 // GET /api/users — admin only
 router.get('/', authenticate, requireAdmin, async (req, res, next) => {
@@ -60,16 +77,21 @@ router.post('/', authenticate, requireAdmin,
       if (existing) return res.status(409).json({ error: 'Email or username already exists' });
 
       const passwordHash = await bcrypt.hash(password, 12);
+      const encryptionSalt = generateSalt();
+
       const user = await prisma.user.create({
         data: {
           email, username, passwordHash, firstName, lastName,
-          role, status: 'ACTIVE'
+          role, status: 'ACTIVE', encryptionSalt,
         },
         select: {
           id: true, email: true, username: true, firstName: true, lastName: true,
           role: true, status: true, createdAt: true
         }
       });
+
+      // Auto-create personal folder for new user
+      await createPersonalFolder(user.id, firstName);
 
       await createAuditLog(req.user.id, 'user.create', user.id, 'User', { email, role }, req.ip);
       res.status(201).json(user);
@@ -91,7 +113,6 @@ router.put('/:id', authenticate, async (req, res, next) => {
     if (req.body.lastName) updateData.lastName = req.body.lastName;
     if (req.body.avatar !== undefined) updateData.avatar = req.body.avatar;
 
-    // Only admin can change role/status
     if (isAdmin) {
       if (req.body.role) updateData.role = req.body.role;
       if (req.body.status) updateData.status = req.body.status;
@@ -132,7 +153,12 @@ router.post('/:id/reset-password', authenticate, requireAdmin,
   async (req, res, next) => {
     try {
       const hash = await bcrypt.hash(req.body.password, 12);
-      await prisma.user.update({ where: { id: req.params.id }, data: { passwordHash: hash } });
+      // Regenerate encryption salt when password is reset
+      const encryptionSalt = generateSalt();
+      await prisma.user.update({
+        where: { id: req.params.id },
+        data: { passwordHash: hash, encryptionSalt }
+      });
       await createAuditLog(req.user.id, 'user.password_reset', req.params.id, 'User', null, req.ip);
       res.json({ message: 'Password reset successfully' });
     } catch (err) {
@@ -141,4 +167,5 @@ router.post('/:id/reset-password', authenticate, requireAdmin,
   }
 );
 
+export { generateSalt, createPersonalFolder };
 export default router;

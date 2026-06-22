@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
 import QRCode from 'qrcode';
+import { randomBytes } from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { createAuditLog } from '../services/audit.js';
 import { getLdapConfig, authenticateWithAD } from '../services/ldap.js';
@@ -9,11 +10,47 @@ import logger from '../utils/logger.js';
 
 const prisma = new PrismaClient();
 
+function generateSalt() {
+  return randomBytes(32).toString('hex');
+}
+
 const signToken = (userId, expiresIn = '8h') =>
   jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn });
 
 const signTempToken = (userId) =>
   jwt.sign({ userId, temp: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
+
+function buildSafeUser(user) {
+  const { passwordHash, totpSecret, ...safe } = user;
+  return safe;
+}
+
+async function ensureUserHasSalt(userId) {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { encryptionSalt: true } });
+  if (!user.encryptionSalt) {
+    const salt = generateSalt();
+    await prisma.user.update({ where: { id: userId }, data: { encryptionSalt: salt } });
+    return salt;
+  }
+  return user.encryptionSalt;
+}
+
+async function ensureUserHasPersonalFolder(userId, firstName) {
+  const existing = await prisma.folder.findFirst({
+    where: { isPersonal: true, ownerId: userId }
+  });
+  if (!existing) {
+    await prisma.folder.create({
+      data: {
+        name: `Pasta de ${firstName}`,
+        icon: 'lock',
+        color: '#8b5cf6',
+        isPersonal: true,
+        ownerId: userId,
+      }
+    });
+  }
+}
 
 export const login = async (req, res, next) => {
   try {
@@ -29,7 +66,6 @@ export const login = async (req, res, next) => {
         const ldapUser = await authenticateWithAD(normalizedLogin, password, ip, ua);
 
         if (ldapUser === null) {
-          // Credenciais inválidas no AD — tenta fallback local se configurado
           if (!ldapCfg.ldapOnly) {
             // Continua para auth local abaixo
           } else {
@@ -40,17 +76,22 @@ export const login = async (req, res, next) => {
         } else if (ldapUser?.error) {
           return res.status(403).json({ error: ldapUser.error });
         } else if (ldapUser) {
-          // Sucesso via AD
+          // Garante salt e pasta pessoal para usuários LDAP
+          const encryptionSalt = await ensureUserHasSalt(ldapUser.id);
+          await ensureUserHasPersonalFolder(ldapUser.id, ldapUser.firstName);
+
           if (ldapUser.totpEnabled) {
             const tempToken = signTempToken(ldapUser.id);
             return res.json({ requires2FA: true, tempToken });
           }
           const token = signToken(ldapUser.id);
-          const { passwordHash, totpSecret, ...safeUser } = ldapUser;
-          return res.json({ token, user: safeUser, authMethod: 'ldap' });
+          return res.json({
+            token,
+            user: { ...buildSafeUser(ldapUser), encryptionSalt },
+            authMethod: 'ldap'
+          });
         }
       } catch (ldapErr) {
-        // Se for erro de conexão e ldapOnly=false, faz fallback local
         if (!ldapCfg.ldapOnly) {
           logger.warn('LDAP error, falling back to local auth', { error: ldapErr.message });
         } else {
@@ -86,17 +127,25 @@ export const login = async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    // Garante salt e pasta pessoal
+    const encryptionSalt = await ensureUserHasSalt(user.id);
+    await ensureUserHasPersonalFolder(user.id, user.firstName);
+
     if (user.totpEnabled) {
       const tempToken = signTempToken(user.id);
-      return res.json({ requires2FA: true, tempToken });
+      // Pass salt in temp token response so client can derive key after 2FA
+      return res.json({ requires2FA: true, tempToken, encryptionSalt });
     }
 
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
     await createAuditLog(user.id, 'user.login', null, null, { method: 'local' }, ip, ua);
 
     const token = signToken(user.id);
-    const { passwordHash, totpSecret, ...safeUser } = user;
-    res.json({ token, user: safeUser, authMethod: 'local' });
+    res.json({
+      token,
+      user: { ...buildSafeUser(user), encryptionSalt },
+      authMethod: 'local'
+    });
   } catch (err) {
     next(err);
   }
@@ -126,9 +175,12 @@ export const validate2FA = async (req, res, next) => {
     await prisma.user.update({ where: { id: user.id }, data: { lastLogin: new Date() } });
     await createAuditLog(user.id, 'user.login', null, null, { method: '2fa' }, ip, ua);
 
+    const encryptionSalt = await ensureUserHasSalt(user.id);
     const jwtToken = signToken(user.id);
-    const { passwordHash, totpSecret, ...safeUser } = user;
-    res.json({ token: jwtToken, user: safeUser });
+    res.json({
+      token: jwtToken,
+      user: { ...buildSafeUser(user), encryptionSalt }
+    });
   } catch (err) {
     next(err);
   }
@@ -152,8 +204,9 @@ export const refresh = async (req, res) => {
 };
 
 export const me = async (req, res) => {
+  const encryptionSalt = await ensureUserHasSalt(req.user.id);
   const { passwordHash, totpSecret, ...safeUser } = req.user;
-  res.json(safeUser);
+  res.json({ ...safeUser, encryptionSalt });
 };
 
 export const setup2FA = async (req, res, next) => {
@@ -212,9 +265,11 @@ export const changePassword = async (req, res, next) => {
     if (!valid) return res.status(400).json({ error: 'Current password incorrect' });
 
     const hash = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash: hash } });
+    // Regenerate salt when password changes (credentials need re-encryption on next login)
+    const encryptionSalt = generateSalt();
+    await prisma.user.update({ where: { id: req.user.id }, data: { passwordHash: hash, encryptionSalt } });
     await createAuditLog(req.user.id, 'user.password_changed', null, null, null, req.ip);
-    res.json({ message: 'Password changed successfully' });
+    res.json({ message: 'Password changed successfully', encryptionSalt });
   } catch (err) {
     next(err);
   }

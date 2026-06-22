@@ -9,35 +9,73 @@ import { createAuditLog } from '../services/audit.js';
 const router = Router();
 const prisma = new PrismaClient();
 
+const CREDENTIAL_INCLUDE = {
+  folder: { select: { id: true, name: true, color: true } },
+  customFields: { orderBy: { sortOrder: 'asc' } },
+  attachments: {
+    select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true }
+  },
+};
+
 // GET /api/credentials — list all accessible credentials
 router.get('/', authenticate, async (req, res, next) => {
   try {
-    const { search, folderId, tag } = req.query;
+    const { search, folderId, tag, expiry } = req.query;
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    // Get folders this user can access
     const accessibleFolders = await getAccessibleFolderIds(userId, userRole);
 
+    // Also get individually shared credential IDs
+    const sharedItems = await prisma.credentialShare.findMany({
+      where: {
+        sharedWithId: userId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }]
+      },
+      select: { credentialId: true }
+    });
+    const sharedIds = sharedItems.map(s => s.credentialId);
+
+    const now = new Date();
+    const expiryFilter = expiry === 'expired'
+      ? { expiresAt: { not: null, lt: now } }
+      : expiry === 'expiring'
+      ? { expiresAt: { not: null, lt: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), gt: now } }
+      : {};
+
     const where = {
-      folderId: folderId ? folderId : { in: accessibleFolders },
-      ...(search && {
-        OR: [
-          { title: { contains: search, mode: 'insensitive' } },
-          { username: { contains: search, mode: 'insensitive' } },
-          { url: { contains: search, mode: 'insensitive' } },
-        ]
-      }),
-      ...(tag && { tags: { has: tag } })
+      AND: [
+        {
+          OR: [
+            { folderId: folderId ? folderId : { in: accessibleFolders } },
+            ...(sharedIds.length > 0 ? [{ id: { in: sharedIds } }] : [])
+          ]
+        },
+        ...(search ? [{
+          OR: [
+            { title: { contains: search, mode: 'insensitive' } },
+            { username: { contains: search, mode: 'insensitive' } },
+            { url: { contains: search, mode: 'insensitive' } },
+            { notes: { contains: search, mode: 'insensitive' } },
+          ]
+        }] : []),
+        ...(tag ? [{ tags: { has: tag } }] : []),
+        ...Object.keys(expiryFilter).length > 0 ? [expiryFilter] : [],
+      ]
     };
 
     const credentials = await prisma.credential.findMany({
       where,
-      include: { folder: { select: { id: true, name: true, color: true } } },
+      include: {
+        folder: { select: { id: true, name: true, color: true } },
+        customFields: { orderBy: { sortOrder: 'asc' } },
+        attachments: {
+          select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true }
+        },
+      },
       orderBy: [{ folder: { name: 'asc' } }, { title: 'asc' }]
     });
 
-    // Never return encrypted password in list
     const safe = credentials.map(({ encryptedPass, ...c }) => c);
     res.json(safe);
   } catch (err) {
@@ -50,7 +88,13 @@ router.get('/:id', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({
       where: { id: req.params.id },
-      include: { folder: true }
+      include: {
+        folder: true,
+        customFields: { orderBy: { sortOrder: 'asc' } },
+        attachments: {
+          select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true }
+        },
+      }
     });
 
     if (!cred) return res.status(404).json({ error: 'Credential not found' });
@@ -58,7 +102,6 @@ router.get('/:id', authenticate, async (req, res, next) => {
     const canAccess = await canAccessFolder(req.user.id, req.user.role, cred.folderId);
     if (!canAccess) return res.status(403).json({ error: 'Access denied' });
 
-    // Update last used
     await prisma.credential.update({ where: { id: cred.id }, data: { lastUsed: new Date() } });
     await createAuditLog(req.user.id, 'credential.view', cred.id, 'Credential', { title: cred.title }, req.ip);
 
@@ -78,7 +121,7 @@ router.post('/', authenticate,
   validate,
   async (req, res, next) => {
     try {
-      const { folderId } = req.body;
+      const { folderId, customFields } = req.body;
       const canEdit = await canAccessFolder(req.user.id, req.user.role, folderId, 'canEdit');
       if (!canEdit) return res.status(403).json({ error: 'No edit permission on this folder' });
 
@@ -93,8 +136,18 @@ router.post('/', authenticate,
           tags: req.body.tags || [],
           strength: req.body.strength,
           expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null,
+          ...(customFields?.length > 0 && {
+            customFields: {
+              create: customFields.map((f, i) => ({
+                name: f.name,
+                value: f.value,
+                fieldType: f.fieldType || 'text',
+                sortOrder: i,
+              }))
+            }
+          })
         },
-        include: { folder: { select: { id: true, name: true } } }
+        include: CREDENTIAL_INCLUDE
       });
 
       await createAuditLog(req.user.id, 'credential.create', cred.id, 'Credential', { title: cred.title }, req.ip);
@@ -115,8 +168,32 @@ router.put('/:id', authenticate,
       const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
       if (!cred) return res.status(404).json({ error: 'Not found' });
 
-      const canEdit = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canEdit');
+      // Check permission: own folder or shared with edit
+      const canEdit = await canAccessCredential(req.user.id, req.user.role, cred, 'canEdit');
       if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+
+      const { customFields } = req.body;
+
+      // Save password history before overwriting
+      if (req.body.encryptedPass && req.body.encryptedPass !== cred.encryptedPass) {
+        await prisma.credentialHistory.create({
+          data: {
+            credentialId: cred.id,
+            encryptedPass: cred.encryptedPass,
+            changedById: req.user.id,
+          }
+        });
+        // Keep only last 10 versions
+        const history = await prisma.credentialHistory.findMany({
+          where: { credentialId: cred.id },
+          orderBy: { changedAt: 'desc' },
+          select: { id: true }
+        });
+        if (history.length > 10) {
+          const toDelete = history.slice(10).map(h => h.id);
+          await prisma.credentialHistory.deleteMany({ where: { id: { in: toDelete } } });
+        }
+      }
 
       const updated = await prisma.credential.update({
         where: { id: req.params.id },
@@ -128,8 +205,22 @@ router.put('/:id', authenticate,
           ...(req.body.notes !== undefined && { notes: req.body.notes }),
           ...(req.body.tags && { tags: req.body.tags }),
           ...(req.body.strength !== undefined && { strength: req.body.strength }),
-          ...(req.body.expiresAt !== undefined && { expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null }),
-        }
+          ...(req.body.expiresAt !== undefined && {
+            expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null
+          }),
+          ...(customFields !== undefined && {
+            customFields: {
+              deleteMany: {},
+              create: customFields.map((f, i) => ({
+                name: f.name,
+                value: f.value,
+                fieldType: f.fieldType || 'text',
+                sortOrder: i,
+              }))
+            }
+          })
+        },
+        include: CREDENTIAL_INCLUDE
       });
 
       await createAuditLog(req.user.id, 'credential.update', cred.id, 'Credential', { title: updated.title }, req.ip);
@@ -140,6 +231,120 @@ router.put('/:id', authenticate,
     }
   }
 );
+
+// GET /api/credentials/:id/history — password version history
+router.get('/:id/history', authenticate, async (req, res, next) => {
+  try {
+    const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
+    if (!cred) return res.status(404).json({ error: 'Not found' });
+    const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
+    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+
+    const history = await prisma.credentialHistory.findMany({
+      where: { credentialId: req.params.id },
+      orderBy: { changedAt: 'desc' },
+    });
+
+    // Fetch changer names
+    const changerIds = [...new Set(history.map(h => h.changedById).filter(Boolean))];
+    const changers = changerIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: changerIds } },
+          select: { id: true, firstName: true, lastName: true }
+        })
+      : [];
+    const changerMap = Object.fromEntries(changers.map(u => [u.id, u]));
+
+    res.json(history.map(h => ({
+      id: h.id,
+      encryptedPass: h.encryptedPass,
+      changedAt: h.changedAt,
+      changedBy: h.changedById ? changerMap[h.changedById] : null,
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/credentials/:id/shares
+router.get('/:id/shares', authenticate, async (req, res, next) => {
+  try {
+    const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
+    if (!cred) return res.status(404).json({ error: 'Not found' });
+    const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
+    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+
+    const shares = await prisma.credentialShare.findMany({
+      where: { credentialId: req.params.id }
+    });
+
+    const userIds = [...new Set([...shares.map(s => s.sharedWithId), ...shares.map(s => s.sharedById)])];
+    const users = userIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, firstName: true, lastName: true, email: true }
+        })
+      : [];
+    const userMap = Object.fromEntries(users.map(u => [u.id, u]));
+
+    res.json(shares.map(s => ({
+      ...s,
+      sharedWith: userMap[s.sharedWithId],
+      sharedBy: userMap[s.sharedById],
+    })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/credentials/:id/shares
+router.post('/:id/shares', authenticate, async (req, res, next) => {
+  try {
+    const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
+    if (!cred) return res.status(404).json({ error: 'Not found' });
+    const canShare = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
+    if (!canShare) return res.status(403).json({ error: 'No share permission' });
+
+    const { sharedWithId, canEdit, expiresAt } = req.body;
+    if (!sharedWithId) return res.status(400).json({ error: 'sharedWithId required' });
+
+    const targetUser = await prisma.user.findUnique({ where: { id: sharedWithId } });
+    if (!targetUser) return res.status(404).json({ error: 'Target user not found' });
+
+    const share = await prisma.credentialShare.upsert({
+      where: { credentialId_sharedWithId: { credentialId: req.params.id, sharedWithId } },
+      update: { canEdit: canEdit ?? false, expiresAt: expiresAt ? new Date(expiresAt) : null },
+      create: {
+        credentialId: req.params.id,
+        sharedById: req.user.id,
+        sharedWithId,
+        canEdit: canEdit ?? false,
+        expiresAt: expiresAt ? new Date(expiresAt) : null,
+      }
+    });
+
+    await createAuditLog(req.user.id, 'credential.share', cred.id, 'Credential',
+      { title: cred.title, sharedWith: targetUser.email }, req.ip);
+    res.status(201).json(share);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/credentials/:id/shares/:shareId
+router.delete('/:id/shares/:shareId', authenticate, async (req, res, next) => {
+  try {
+    const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
+    if (!cred) return res.status(404).json({ error: 'Not found' });
+    const canShare = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
+    if (!canShare) return res.status(403).json({ error: 'No share permission' });
+
+    await prisma.credentialShare.delete({ where: { id: req.params.shareId } });
+    res.json({ message: 'Share removed' });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // DELETE /api/credentials/:id
 router.delete('/:id', authenticate, async (req, res, next) => {
@@ -197,7 +402,30 @@ router.get('/export', authenticate, async (req, res, next) => {
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="vaultguard-export-${Date.now()}.csv"`);
-    res.send('﻿' + csv); // BOM for Excel
+    res.send('﻿' + csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/credentials/vault-export — export ALL credentials including encryptedPass (for encrypted vault backup)
+router.get('/vault-export', authenticate, async (req, res, next) => {
+  try {
+    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
+
+    const credentials = await prisma.credential.findMany({
+      where: { folderId: { in: accessibleFolders } },
+      include: {
+        folder: { select: { id: true, name: true } },
+        customFields: { orderBy: { sortOrder: 'asc' } },
+      },
+      orderBy: [{ folder: { name: 'asc' } }, { title: 'asc' }]
+    });
+
+    await createAuditLog(req.user.id, 'vault.export', null, 'Vault',
+      { count: credentials.length }, req.ip);
+
+    res.json({ credentials, exportedAt: new Date().toISOString() });
   } catch (err) {
     next(err);
   }
@@ -232,6 +460,14 @@ router.post('/import', authenticate, async (req, res, next) => {
             notes: row.notes || null,
             tags: row.tags ? row.tags.split(';').map(t => t.trim()).filter(Boolean) : [],
             strength: 0,
+            ...(row.customFields?.length > 0 && {
+              customFields: {
+                create: row.customFields.map((f, i) => ({
+                  name: f.name, value: f.value,
+                  fieldType: f.fieldType || 'text', sortOrder: i,
+                }))
+              }
+            })
           }
         });
         created.push(cred.id);
@@ -249,7 +485,7 @@ router.post('/import', authenticate, async (req, res, next) => {
   }
 });
 
-// GET /api/credentials/by-url?url=...  (for Chrome extension autofill)
+// GET /api/credentials/search/by-url (for Chrome extension autofill)
 router.get('/search/by-url', authenticate, async (req, res, next) => {
   try {
     const { url } = req.query;
@@ -273,13 +509,34 @@ router.get('/search/by-url', authenticate, async (req, res, next) => {
   }
 });
 
+async function canAccessCredential(userId, userRole, cred, permission = 'canView') {
+  // Admin can do everything
+  if (userRole === 'ADMINISTRADOR') return true;
+  // Check folder-level access
+  const folderAccess = await canAccessFolder(userId, userRole, cred.folderId, permission);
+  if (folderAccess) return true;
+  // Check individual share (view only, or edit if canEdit)
+  if (permission === 'canView' || permission === 'canEdit') {
+    const share = await prisma.credentialShare.findFirst({
+      where: {
+        credentialId: cred.id,
+        sharedWithId: userId,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        ...(permission === 'canEdit' ? { canEdit: true } : {})
+      }
+    });
+    return !!share;
+  }
+  return false;
+}
+
 async function getAccessibleFolderIds(userId, userRole) {
-  // Admin sees all
   if (userRole === 'ADMINISTRADOR') {
     const all = await prisma.folder.findMany({ select: { id: true } });
     return all.map(f => f.id);
   }
 
+  // Shared folders via permissions
   const perms = await prisma.folderPermission.findMany({
     where: {
       canView: true,
@@ -288,7 +545,17 @@ async function getAccessibleFolderIds(userId, userRole) {
     select: { folderId: true }
   });
 
-  return [...new Set(perms.map(p => p.folderId))];
+  // Personal folders owned by this user
+  const personal = await prisma.folder.findMany({
+    where: { isPersonal: true, ownerId: userId },
+    select: { id: true }
+  });
+
+  const ids = new Set([
+    ...perms.map(p => p.folderId),
+    ...personal.map(f => f.id),
+  ]);
+  return [...ids];
 }
 
 export default router;

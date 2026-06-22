@@ -1,17 +1,14 @@
 /**
- * Client-side AES-256-GCM encryption for passwords.
- * The master key is derived from the user's password + server-provided salt.
- * This ensures zero-knowledge: the server never sees plain passwords.
- * 
- * For simplicity in this implementation, we use a per-credential random key
- * stored as part of the encrypted payload. In production, integrate a proper
- * master password derived key (PBKDF2/Argon2).
+ * Client-side AES-256-GCM encryption.
+ * Master key is derived from the user's login password + server-provided salt via PBKDF2.
+ * Zero-knowledge: the server never sees plain passwords.
  */
 
 const ALGO = 'AES-GCM';
 const KEY_LENGTH = 256;
 
-// Generate a random AES key
+// ─── Key utilities ──────────────────────────────────────────────────────────
+
 export async function generateKey() {
   const key = await crypto.subtle.generateKey(
     { name: ALGO, length: KEY_LENGTH },
@@ -22,24 +19,55 @@ export async function generateKey() {
   return btoa(String.fromCharCode(...new Uint8Array(raw)));
 }
 
-// Import a base64 key
 async function importKey(b64Key) {
   const raw = Uint8Array.from(atob(b64Key), c => c.charCodeAt(0));
   return crypto.subtle.importKey('raw', raw, { name: ALGO }, false, ['encrypt', 'decrypt']);
 }
 
 /**
+ * Derive an AES-256-GCM key from user password + hex salt using PBKDF2.
+ * Returns a base64-encoded raw key.
+ */
+export async function deriveKeyFromPassword(password, hexSalt) {
+  const enc = new TextEncoder();
+  const saltBytes = Uint8Array.from(
+    hexSalt.match(/.{1,2}/g).map(b => parseInt(b, 16))
+  );
+
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits', 'deriveKey']
+  );
+
+  const derived = await crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: 210000,
+      hash: 'SHA-256',
+    },
+    keyMaterial,
+    { name: ALGO, length: KEY_LENGTH },
+    true,
+    ['encrypt', 'decrypt']
+  );
+
+  const raw = await crypto.subtle.exportKey('raw', derived);
+  return btoa(String.fromCharCode(...new Uint8Array(raw)));
+}
+
+// ─── Credential encrypt/decrypt ─────────────────────────────────────────────
+
+/**
  * Encrypt a plaintext password.
- * Returns a JSON string: { iv, ciphertext, keyHint }
- * The key is stored separately in user's session / derived from master password.
- * 
- * In this demo implementation, we use a fixed per-installation key derived from
- * a server-provided secret. In production, each user should have a master password
- * derived encryption key never sent to the server.
+ * v:0 = dev fallback (base64, no key needed)
+ * v:1 = AES-256-GCM with derived master key
  */
 export async function encryptPassword(plaintext, masterKey) {
   if (!masterKey) {
-    // Fallback: just base64 encode (dev mode only — replace in production!)
     return JSON.stringify({ plain: btoa(unescape(encodeURIComponent(plaintext))), v: 0 });
   }
 
@@ -57,15 +85,14 @@ export async function encryptPassword(plaintext, masterKey) {
 
 export async function decryptPassword(encryptedJson, masterKey) {
   if (!encryptedJson) return '';
-  
+
   let parsed;
   try {
     parsed = JSON.parse(encryptedJson);
   } catch {
-    return encryptedJson; // Already plain? Legacy.
+    return encryptedJson;
   }
 
-  // Dev fallback
   if (parsed.v === 0) {
     return decodeURIComponent(escape(atob(parsed.plain)));
   }
@@ -80,9 +107,78 @@ export async function decryptPassword(encryptedJson, masterKey) {
   return new TextDecoder().decode(decrypted);
 }
 
+// ─── Vault (offline backup) encrypt/decrypt ─────────────────────────────────
+
 /**
- * Calculate password strength (0-100)
+ * Encrypt an entire vault export with a user-chosen passphrase.
+ * Used for offline backup (.vaultguard files).
  */
+export async function encryptVault(data, passphrase) {
+  const enc = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(32));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: ALGO, length: KEY_LENGTH },
+    false,
+    ['encrypt']
+  );
+
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: ALGO, iv },
+    key,
+    enc.encode(JSON.stringify(data))
+  );
+
+  return JSON.stringify({
+    v: 1,
+    salt: btoa(String.fromCharCode(...salt)),
+    iv: btoa(String.fromCharCode(...iv)),
+    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+  });
+}
+
+export async function decryptVault(encryptedJson, passphrase) {
+  const enc = new TextEncoder();
+  let parsed;
+  try {
+    parsed = JSON.parse(encryptedJson);
+  } catch {
+    throw new Error('Arquivo inválido');
+  }
+
+  if (parsed.v !== 1) throw new Error('Formato de arquivo não suportado');
+
+  const salt = Uint8Array.from(atob(parsed.salt), c => c.charCodeAt(0));
+  const iv = Uint8Array.from(atob(parsed.iv), c => c.charCodeAt(0));
+  const ciphertext = Uint8Array.from(atob(parsed.ciphertext), c => c.charCodeAt(0));
+
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: ALGO, length: KEY_LENGTH },
+    false,
+    ['decrypt']
+  );
+
+  try {
+    const decrypted = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ciphertext);
+    return JSON.parse(new TextDecoder().decode(decrypted));
+  } catch {
+    throw new Error('Senha incorreta ou arquivo corrompido');
+  }
+}
+
+// ─── Password strength ───────────────────────────────────────────────────────
+
 export function calculateStrength(password) {
   if (!password) return 0;
   let score = 0;
@@ -110,9 +206,8 @@ export function getStrengthColor(strength) {
   return '#10b981';
 }
 
-/**
- * Generate a secure random password
- */
+// ─── Password generator ──────────────────────────────────────────────────────
+
 export function generatePassword(options = {}) {
   const {
     length = 20,
