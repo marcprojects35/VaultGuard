@@ -13,11 +13,12 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
 - [API REST](#-api-rest)
 - [Variáveis de ambiente](#-variáveis-de-ambiente)
 - [Instalação com Docker](#-instalação-com-docker)
-- [Instalação manual](#-instalação-manual)
+- [Instalação manual (sem Docker)](#-instalação-manual-sem-docker)
 - [Active Directory](#-active-directory)
 - [Hierarquia de cargos e permissões](#-hierarquia-de-cargos-e-permissões)
 - [Extensão Chrome](#-extensão-chrome)
 - [Segurança](#-segurança)
+- [Estrutura do projeto](#-estrutura-do-projeto)
 - [Comandos úteis](#-comandos-úteis)
 - [Solução de problemas](#-solução-de-problemas)
 
@@ -231,109 +232,109 @@ Todas as rotas usam prefixo `/api`. Autenticação via `Authorization: Bearer <J
 
 ## Variáveis de ambiente
 
-Crie `backend/.env` a partir de `.env.example`:
+O `install.sh` gera o `.env` automaticamente. Para configuração manual, copie o template:
 
-```env
-# Banco de dados
-DATABASE_URL="postgresql://vaultguard:SENHA@localhost:5432/vaultguard"
-
-# JWT — gere com: openssl rand -hex 64
-JWT_SECRET="string-aleatoria-64-chars-minimo"
-
-# Servidor
-PORT=3001
-NODE_ENV=production
-FRONTEND_URL=http://localhost
-
-# Active Directory (opcional — normalmente configurado pela UI)
-# LDAP_HOST=192.168.0.10
-# LDAP_PORT=389
-# LDAP_BASE_DN=DC=empresa,DC=local
-# LDAP_BIND_DN=CN=vaultguard-svc,OU=ServiceAccounts,DC=empresa,DC=local
-# LDAP_BIND_PASSWORD=senha_service_account
+```bash
+cp .env.example .env
 ```
 
-No Docker Compose as variáveis obrigatórias são:
-
-| Variável | Padrão (inseguro) | Obrigatório trocar |
+| Variável | Descrição | Obrigatório |
 |---|---|---|
-| `DB_PASSWORD` | `VaultGuard@Secure2024!` | Sim |
-| `JWT_SECRET` | `changeme-please-...` | Sim |
-| `FRONTEND_URL` | `http://localhost` | Em produção |
-| `HTTP_PORT` | `80` | Não |
-| `HTTPS_PORT` | `443` | Não |
+| `COMPANY_NAME` | Nome da empresa (aparece na interface) | Não |
+| `ADMIN_EMAIL` | E-mail do administrador inicial | Sim |
+| `ADMIN_PASSWORD` | Senha do administrador inicial | Sim |
+| `DB_PASSWORD` | Senha do PostgreSQL | Sim |
+| `JWT_SECRET` | Chave de assinatura JWT (`openssl rand -hex 64`) | Sim |
+| `FRONTEND_URL` | URL pública de acesso (ex: `http://192.168.1.10`) | Sim |
+| `HTTP_PORT` | Porta HTTP (padrão `80`) | Não |
+| `HTTPS_PORT` | Porta HTTPS (padrão `443`, só com SSL) | Não |
+| `NODE_ENV` | `production` em produção | Não |
+
+> **Nunca altere `JWT_SECRET` após instalar** — invalida todas as sessões ativas.
 
 ---
 
 ## Instalação com Docker
 
-### Pré-requisitos
+### Instalação automática (recomendado)
 
-```bash
-# Ubuntu/Debian
-sudo apt update && sudo apt install -y docker.io docker-compose-plugin git
-sudo usermod -aG docker $USER && newgrp docker
-```
-
-### Subir o sistema
+Execute num servidor **Ubuntu 20+**, **Debian 11+** ou **CentOS 7+**:
 
 ```bash
 git clone https://github.com/seu-org/vaultguard.git
 cd vaultguard
-
-# Edite as variáveis obrigatórias
-cp backend/.env.example .env
-nano .env   # Defina DB_PASSWORD e JWT_SECRET
-
-docker compose up -d
-docker compose logs -f backend   # Aguarde "VaultGuard backend running on port 3001"
+bash install.sh
 ```
 
-### Acesso inicial
+O assistente vai guiar cada etapa:
 
-| | |
+| Etapa | O que acontece |
 |---|---|
-| URL | `http://IP_DO_SERVIDOR` |
-| Usuário | `admin@vaultguard.local` |
-| Senha | `Admin@123456` |
+| Pré-requisitos | Detecta e instala Docker automaticamente se necessário |
+| Dados da empresa | Nome da empresa, e-mail e senha do admin (com validação de força) |
+| Rede | Detecta o IP do servidor; verifica se a porta 80 está livre |
+| HTTPS | Opcional: gera certificado autoassinado ou usa um existente |
+| Build | `docker compose up --build` |
+| Verificação | Aguarda o health check e exibe URL + credenciais no terminal |
 
-> Troque a senha no primeiro acesso. O seed usa `upsert` e é idempotente — pode rodar múltiplas vezes sem duplicar dados.
+> `JWT_SECRET` e `DB_PASSWORD` são gerados aleatoriamente pelo script e salvos em `.env`. Guarde este arquivo em local seguro.
+
+### Desinstalar
+
+```bash
+bash uninstall.sh
+```
+
+Pergunta separadamente sobre remoção de containers, volumes de dados e imagens.
+
+### HTTPS
+
+Durante a instalação, ao responder **s** para HTTPS:
+
+- O script gera `ssl/cert.pem` + `ssl/key.pem` (autoassinado, 10 anos) ou copia um certificado existente
+- Ativa `docker-compose.ssl.yml` via `COMPOSE_FILE` no `.env`
+- `nginx-https.conf` faz redirect HTTP → HTTPS + TLS 1.2/1.3
+
+Para trocar o certificado depois (Let's Encrypt, CA corporativa):
+
+```bash
+cp /caminho/cert.pem ssl/cert.pem
+cp /caminho/key.pem  ssl/key.pem
+docker compose restart nginx
+```
 
 ### O que o container executa na inicialização
 
 ```
-npx prisma migrate deploy   → aplica todas as migrations pendentes
-node src/prisma/seed.js     → cria ou atualiza o usuário admin
-node src/server.js          → inicia o servidor
+docker-entrypoint.sh:
+  npx prisma migrate deploy   → aplica migrations (com retry automático)
+  node src/prisma/seed.js     → cria empresa e admin (idempotente)
+  node src/server.js          → inicia o servidor
 ```
 
 ---
 
-## Instalação manual
+## Instalação manual (sem Docker)
 
 ### Requisitos
 
 - Node.js 20+
 - PostgreSQL 16+
-- (Recomendado) Nginx como proxy reverso
+- Nginx (recomendado como proxy reverso)
 
 ### Backend
 
 ```bash
 cd backend
 cp ../.env.example .env
-# Configure DATABASE_URL e JWT_SECRET no .env
+# Configure DATABASE_URL, JWT_SECRET e as variáveis de admin no .env
 
 npm install
 npx prisma migrate deploy
-npx prisma generate
 node src/prisma/seed.js
 
-# Desenvolvimento
-npm run dev     # nodemon com hot reload
-
-# Produção
-npm start
+npm run dev    # desenvolvimento (nodemon)
+npm start      # produção
 ```
 
 ### Frontend
@@ -341,27 +342,18 @@ npm start
 ```bash
 cd frontend
 npm install
-npm run build       # Gera dist/ — backend serve em produção
-
-# Desenvolvimento
-npm run dev         # http://localhost:5173 com proxy para :3001
+npm run build       # gera dist/ — servido pelo backend em produção
+npm run dev         # dev server em http://localhost:5173
 ```
 
-### Nginx (produção)
+### Nginx
 
-O arquivo `nginx.conf` incluso configura:
+O repositório inclui dois arquivos prontos:
 
-- Proxy reverso para o backend na porta 3001
-- Rate limit extra em `/api/auth/login` (5 req/min por IP)
-- Rate limit geral em `/api/*` (30 req/min por IP)
-- Cache de 7 dias para uploads estáticos
-- Gzip para JSON, CSS e JS
-- Headers CORS para a extensão Chrome
-- Suporte a HTTPS (certificado em `ssl/cert.pem` e `ssl/key.pem`)
-
-```bash
-# HTTPS: descomente as linhas ssl_* no nginx.conf e coloque os certificados em ./ssl/
-```
+| Arquivo | Uso |
+|---|---|
+| `nginx.conf` | HTTP (porta 80) |
+| `nginx-https.conf` | HTTPS com redirect HTTP → HTTPS |
 
 ---
 
@@ -524,10 +516,20 @@ node build.js     # Gera extension/dist/
 
 ```
 vaultguard/
+├── install.sh                           # Assistente de instalação (executa primeiro)
+├── uninstall.sh                         # Remoção limpa com confirmações
+├── docker-compose.yml                   # postgres + backend + nginx (HTTP)
+├── docker-compose.ssl.yml               # Overlay HTTPS (ativado pelo install.sh)
+├── nginx.conf                           # Nginx HTTP
+├── nginx-https.conf                     # Nginx HTTPS + redirect HTTP→HTTPS
+├── .env.example                         # Template de variáveis de ambiente
+├── ssl/                                 # Certificados TLS (gerados pelo install.sh)
 ├── backend/
-│   ├── Dockerfile                       # Multi-stage build (builder + alpine final)
+│   ├── Dockerfile                       # Multi-stage: builder (Node+Vite) → slim final
+│   ├── docker-entrypoint.sh             # Migrate (com retry) + seed + server
 │   ├── prisma/
-│   │   └── schema.prisma                # Modelos: User, Folder, Credential, AuditLog...
+│   │   ├── schema.prisma                # Modelos: User, Folder, Credential, AuditLog...
+│   │   └── migrations/                  # Migrations versionadas
 │   └── src/
 │       ├── server.js                    # Entry point: Express, middleware, rotas
 │       ├── routes/
@@ -550,7 +552,7 @@ vaultguard/
 │       ├── utils/
 │       │   └── logger.js                # Winston com transports arquivo
 │       └── prisma/
-│           └── seed.js                  # Cria admin padrão (idempotente)
+│           └── seed.js                  # Cria empresa e admin (lê COMPANY_NAME/ADMIN_*)
 ├── frontend/
 │   ├── vite.config.js
 │   ├── tailwind.config.js
@@ -558,14 +560,11 @@ vaultguard/
 │       ├── App.jsx                      # Roteamento principal
 │       ├── pages/                       # VaultPage, UsersPage, AdminLdapPage...
 │       └── components/                  # Componentes reutilizáveis
-├── extension/
-│   ├── manifest.json                    # Chrome MV3
-│   ├── popup.html
-│   ├── build.js                         # Script de build da extensão
-│   └── icons/
-├── docker-compose.yml                   # postgres + backend + nginx
-├── nginx.conf                           # Proxy reverso + rate limit + SSL
-└── .env.example                         # Template de variáveis de ambiente
+└── extension/
+    ├── manifest.json                    # Chrome MV3
+    ├── popup.html
+    ├── build.js                         # Script de build da extensão
+    └── icons/
 ```
 
 ---
@@ -573,23 +572,41 @@ vaultguard/
 ## Comandos úteis
 
 ```bash
+# Instalar / reinstalar
+bash install.sh
+
+# Desinstalar
+bash uninstall.sh
+
 # Logs em tempo real
 docker compose logs -f backend
+
+# Ver status dos containers
+docker compose ps
 
 # Acessar o PostgreSQL
 docker compose exec postgres psql -U vaultguard
 
-# Rodar migrations manualmente
+# Aplicar migrations manualmente
 docker compose exec backend npx prisma migrate deploy
 
-# Abrir Prisma Studio (explorador visual do banco)
+# Explorador visual do banco (Prisma Studio)
 docker compose exec backend npx prisma studio
 
 # Rebuild após mudanças no código
 docker compose up -d --build backend
 
-# Recriar apenas o container do frontend (após npm run build)
+# Reiniciar nginx (ex: após trocar certificado SSL)
 docker compose restart nginx
+
+# Parar tudo
+docker compose down
+
+# Backup do banco
+docker compose exec postgres pg_dump -U vaultguard vaultguard > backup_$(date +%Y%m%d).sql
+
+# Restaurar backup
+cat backup_20240101.sql | docker compose exec -T postgres psql -U vaultguard vaultguard
 ```
 
 ---
@@ -621,10 +638,26 @@ Verifique se a service account não expirou e se tem permissão de leitura no AD
 **Backend não inicia**
 ```bash
 docker compose logs backend
+docker compose logs postgres
 # Causas comuns:
-# - DATABASE_URL incorreta (senha errada ou host inacessível)
-# - JWT_SECRET muito curto (mínimo recomendado: 64 chars)
-# - Migration pendente (o CMD tenta rodar automaticamente)
+# - DB_PASSWORD diferente do que foi usado na criação do volume
+#   → solução: docker compose down -v && bash install.sh
+# - JWT_SECRET muito curto (mínimo: 64 chars)
+# - Porta 80 ocupada por outro serviço
+#   → solução: definir HTTP_PORT=8080 no .env e reiniciar
+```
+
+**Aviso de certificado no navegador (HTTPS autoassinado)**
+
+Comportamento esperado. Para eliminar:
+- Em ambiente interno: importe `ssl/cert.pem` como CA confiável nas máquinas dos usuários
+- Em produção com domínio público: substitua por certificado Let's Encrypt
+
+```bash
+# Trocar certificado e aplicar sem downtime
+cp novo-cert.pem ssl/cert.pem
+cp nova-chave.pem ssl/key.pem
+docker compose restart nginx
 ```
 
 **Upload de logo falha**

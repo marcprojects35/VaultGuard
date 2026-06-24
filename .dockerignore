@@ -3,7 +3,6 @@
 *.md
 images/
 extension/
-{backend/
 
 # Node modules — reinstalled no build
 frontend/node_modules/
@@ -13,11 +12,13 @@ backend/node_modules/
 backend/logs/
 backend/uploads/
 
-# Dev files
+# Dev files — vars são passadas via docker-compose env
+.env
+.env.*
 backend/.env
 backend/.env.*
 frontend/.env
 frontend/.env.*
 
-# Prisma migrations lock local
+# Prisma dev artifacts
 backend/prisma/dev.db
