@@ -3,13 +3,89 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server,
-  LogOut, Key, ChevronDown, Menu, X, Settings, Globe,
+  LogOut, Key, ChevronDown, Settings, Globe,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
   Search, Upload, Download, Star, Inbox, HelpCircle, Send,
+  PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { useAuthStore, useIsAdmin } from '../../stores/authStore.js';
 import { useSettingsStore } from '../../stores/settingsStore.js';
 import { SUPPORTED_LANGUAGES } from '../../i18n/index.js';
+
+/* ── Sidebar width constants ─────────────────── */
+const W_OPEN   = 248;
+const W_CLOSED = 64;
+
+/* ── Single nav item ─────────────────────────── */
+function NavItem({ to, icon, label, open, exact = false }) {
+  return (
+    <NavLink
+      to={to}
+      end={exact}
+      title={!open ? label : undefined}
+      style={({ isActive }) => ({
+        display: 'flex', alignItems: 'center',
+        gap: open ? '9px' : 0,
+        padding: open ? '7px 10px' : '9px 0',
+        justifyContent: open ? 'flex-start' : 'center',
+        borderRadius: '9px',
+        fontSize: '0.875rem', fontWeight: 500,
+        textDecoration: 'none',
+        overflow: 'hidden', whiteSpace: 'nowrap',
+        transition: 'color 150ms ease, background 150ms ease',
+        color: isActive ? 'var(--color-primary)' : 'var(--color-text-muted)',
+        background: isActive ? 'rgba(var(--color-primary-rgb),0.12)' : 'transparent',
+      })}
+      className={({ isActive }) => isActive ? '' : 'sidebar-hover-item'}
+    >
+      <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
+      {open && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>}
+    </NavLink>
+  );
+}
+
+/* ── Settings sub-item ───────────────────────── */
+function SettingsItem({ to, icon, label, open }) {
+  return (
+    <NavLink
+      to={to}
+      title={!open ? label : undefined}
+      style={({ isActive }) => ({
+        display: 'flex', alignItems: 'center',
+        gap: open ? '8px' : 0,
+        padding: open ? '6px 10px' : '8px 0',
+        justifyContent: open ? 'flex-start' : 'center',
+        borderRadius: '8px',
+        fontSize: '0.8125rem', fontWeight: 500,
+        textDecoration: 'none',
+        overflow: 'hidden', whiteSpace: 'nowrap',
+        transition: 'color 150ms ease, background 150ms ease',
+        color: isActive ? 'var(--color-primary)' : 'var(--color-text-muted)',
+        background: isActive ? 'rgba(var(--color-primary-rgb),0.12)' : 'transparent',
+      })}
+      className={({ isActive }) => isActive ? '' : 'sidebar-hover-item'}
+    >
+      <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>
+      {open && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>}
+    </NavLink>
+  );
+}
+
+/* ── Section label ───────────────────────────── */
+function SectionLabel({ label, open }) {
+  if (!open) return (
+    <div style={{ height: '1px', background: 'var(--color-border)', margin: '8px 10px' }} />
+  );
+  return (
+    <div style={{
+      fontSize: '0.6875rem', fontWeight: 600, letterSpacing: '0.07em',
+      textTransform: 'uppercase', color: 'var(--color-muted)',
+      padding: '14px 10px 5px', userSelect: 'none',
+    }}>
+      {label}
+    </div>
+  );
+}
 
 export default function VaultLayout() {
   const { t, i18n } = useTranslation();
@@ -20,8 +96,8 @@ export default function VaultLayout() {
   const isAdmin = useIsAdmin();
   const settings = useSettingsStore(s => s.settings);
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [settingsExpanded, setSettingsExpanded] = useState(
+  const [open, setOpen] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(
     () => location.pathname.startsWith('/admin/settings')
   );
   const [langOpen, setLangOpen] = useState(false);
@@ -30,299 +106,284 @@ export default function VaultLayout() {
   const [contactSent, setContactSent] = useState(false);
 
   useEffect(() => {
-    if (location.pathname.startsWith('/admin/settings')) {
-      setSettingsExpanded(true);
-    }
+    if (location.pathname.startsWith('/admin/settings')) setSettingsOpen(true);
   }, [location.pathname]);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  const handleLogout = () => { logout(); navigate('/login'); };
 
   const handleContactSubmit = (e) => {
     e.preventDefault();
     const { name, email, subject, message } = contactForm;
     const body = `Nome: ${name}\nE-mail: ${email}\n\n${message}`;
-    const mailto = `mailto:VaultGuard2026@outlook.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    window.open(mailto, '_blank');
+    window.open(`mailto:VaultGuard2026@outlook.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
     setContactSent(true);
     setTimeout(() => {
       setContactOpen(false);
       setContactSent(false);
       setContactForm({ name: '', email: '', subject: '', message: '' });
-    }, 2000);
+    }, 2200);
   };
 
   const currentLang = SUPPORTED_LANGUAGES.find(l => l.code === i18n.language) || SUPPORTED_LANGUAGES[0];
-
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join('') || '?';
+  const hasCustomLogo = settings.logoUrl && settings.logoUrl !== '/logo.png';
 
-  const navItem = (to, icon, label, exact = false) => (
-    <NavLink
-      to={to}
-      end={exact}
-      title={!sidebarOpen ? label : undefined}
-      className={({ isActive }) =>
-        `flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
-          isActive ? 'text-white' : 'hover:bg-white/5'
-        }`
-      }
-      style={({ isActive }) =>
-        isActive
-          ? {
-              background: `linear-gradient(135deg, ${settings.primaryColor}33, ${settings.accentColor}22)`,
-              color: settings.primaryColor,
-              boxShadow: `0 0 0 1px ${settings.primaryColor}33`,
-            }
-          : { color: 'var(--color-text-muted)' }
-      }
-    >
-      <span className="flex-shrink-0">{icon}</span>
-      {sidebarOpen && <span className="truncate">{label}</span>}
-    </NavLink>
-  );
+  /* ── Sidebar background  ─────────────────────
+     Always dark regardless of app theme so it
+     contrasts with the content area.             */
+  const sidebarBg     = '#111111';
+  const sidebarBorder = '#1E1E1E';
 
-  const settingsNavItem = (to, icon, label) => (
-    <NavLink
-      to={to}
-      title={!sidebarOpen ? label : undefined}
-      className={({ isActive }) =>
-        `flex items-center gap-3 rounded-lg text-sm font-medium transition-all duration-150 ${
-          sidebarOpen ? 'px-3 py-2' : 'px-3 py-2.5'
-        } ${isActive ? 'text-white' : 'hover:bg-white/5'}`
-      }
-      style={({ isActive }) =>
-        isActive
-          ? {
-              background: `linear-gradient(135deg, ${settings.primaryColor}33, ${settings.accentColor}22)`,
-              color: settings.primaryColor,
-              boxShadow: `0 0 0 1px ${settings.primaryColor}33`,
-            }
-          : { color: 'var(--color-text-muted)' }
-      }
-    >
-      <span className="flex-shrink-0">{icon}</span>
-      {sidebarOpen && <span className="truncate">{label}</span>}
-    </NavLink>
-  );
+  const iconSize = { width: '16px', height: '16px' };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--color-bg)' }}>
-    <div className="flex flex-1 overflow-hidden">
-      {/* Sidebar */}
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--color-bg)' }}>
+
+      {/* ═══════════ Sidebar ═══════════ */}
       <aside
-        className="flex flex-col transition-all duration-200 flex-shrink-0"
         style={{
-          width: sidebarOpen ? '240px' : '68px',
-          background: 'var(--color-surface)',
-          borderRight: '1px solid var(--color-border)',
+          width: open ? W_OPEN : W_CLOSED,
+          minWidth: open ? W_OPEN : W_CLOSED,
+          background: sidebarBg,
+          borderRight: `1px solid ${sidebarBorder}`,
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'width 220ms cubic-bezier(0.4,0,0.2,1), min-width 220ms cubic-bezier(0.4,0,0.2,1)',
+          overflow: 'hidden',
+          position: 'relative',
+          zIndex: 10,
         }}
       >
-        {/* Logo / Header */}
-        <div
-          className="flex items-center gap-3 p-4 border-b flex-shrink-0"
-          style={{ borderColor: 'var(--color-border)', minHeight: '65px' }}
-        >
-          {settings.logoUrl ? (
+        {/* ── Logo / Header ── */}
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          padding: open ? '14px 14px 14px 14px' : '14px 0',
+          justifyContent: open ? 'flex-start' : 'center',
+          borderBottom: `1px solid ${sidebarBorder}`,
+          minHeight: '62px', flexShrink: 0, gap: '10px',
+        }}>
+          {hasCustomLogo ? (
             <img
               src={settings.logoUrl}
               alt={settings.siteName}
-              className="h-8 object-contain flex-shrink-0"
-              style={{ maxWidth: sidebarOpen ? '140px' : '36px' }}
+              style={{ height: '28px', objectFit: 'contain', flexShrink: 0, maxWidth: open ? '140px' : '32px' }}
             />
           ) : (
             <>
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})`,
-                }}
-              >
-                <Shield className="w-5 h-5 text-white" />
+              <div style={{
+                width: '32px', height: '32px', borderRadius: '9px', flexShrink: 0,
+                background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 2px 8px rgba(199,140,0,0.25)',
+              }}>
+                <Shield style={{ width: '16px', height: '16px', color: '#fff' }} />
               </div>
-              {sidebarOpen && (
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold truncate" style={{ color: 'var(--color-text)' }}>
-                    {settings.siteName}
+              {open && (
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{
+                    fontSize: '0.875rem', fontWeight: 700, color: '#F0F0EE',
+                    letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}>
+                    {settings.siteName || 'VaultGuard'}
                   </div>
-                  <div className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
-                    {settings.siteSubtitle}
+                  <div style={{
+                    fontSize: '0.6875rem', color: '#636360',
+                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    marginTop: '1px',
+                  }}>
+                    {settings.siteSubtitle || 'Cofre de Senhas'}
                   </div>
                 </div>
               )}
             </>
           )}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="flex-shrink-0 p-1 rounded-lg hover:bg-white/5 transition-colors"
-            style={{ color: 'var(--color-text-muted)', marginLeft: sidebarOpen ? 'auto' : undefined }}
-            title={sidebarOpen ? 'Recolher menu' : 'Expandir menu'}
-          >
-            {sidebarOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
-          </button>
+
+          {/* Collapse / expand toggle */}
+          {open && (
+            <button
+              onClick={() => setOpen(false)}
+              title="Recolher menu"
+              style={{
+                marginLeft: 'auto', flexShrink: 0,
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: '#636360', padding: '4px', borderRadius: '6px',
+                display: 'flex', alignItems: 'center',
+                transition: 'color 150ms ease',
+              }}
+              onMouseEnter={e => e.currentTarget.style.color = '#A0A09E'}
+              onMouseLeave={e => e.currentTarget.style.color = '#636360'}
+            >
+              <PanelLeftClose style={{ width: '15px', height: '15px' }} />
+            </button>
+          )}
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto p-3 space-y-0.5">
-          {/* Main items */}
-          {navItem('/', <Vault className="w-4 h-4" />, t('nav.vault'), true)}
-          {navItem('/search', <Search className="w-4 h-4" />, 'Pesquisa')}
-          {navItem('/favorites', <Star className="w-4 h-4" />, 'Favoritos')}
-          {navItem('/security', <ShieldCheck className="w-4 h-4" />, 'Segurança')}
-          {navItem('/access-requests', <Inbox className="w-4 h-4" />, 'Acessos')}
+        {/* Expand button when collapsed */}
+        {!open && (
+          <button
+            onClick={() => setOpen(true)}
+            title="Expandir menu"
+            style={{
+              position: 'absolute', top: '14px', right: '-13px',
+              width: '26px', height: '26px', borderRadius: '6px',
+              background: '#1E1E1E', border: `1px solid #2A2A2A`,
+              cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#A0A09E', zIndex: 20,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              transition: 'color 150ms ease',
+            }}
+            onMouseEnter={e => e.currentTarget.style.color = '#F0F0EE'}
+            onMouseLeave={e => e.currentTarget.style.color = '#A0A09E'}
+          >
+            <PanelLeftOpen style={{ width: '13px', height: '13px' }} />
+          </button>
+        )}
 
-          {/* ── Ferramentas ── */}
-          <div className="pt-5 pb-1">
-            {sidebarOpen ? (
-              <span className="text-xs font-semibold uppercase tracking-wider px-3" style={{ color: 'var(--color-muted)' }}>
-                Ferramentas
-              </span>
-            ) : (
-              <div className="border-t mx-2 my-1" style={{ borderColor: 'var(--color-border)' }} />
-            )}
-          </div>
-          {navItem('/import', <Upload className="w-4 h-4" />, 'Importar')}
-          {navItem('/export', <Download className="w-4 h-4" />, 'Exportar')}
-          {navItem('/tokens', <Key className="w-4 h-4" />, t('nav.apiTokens'))}
+        {/* ── Navigation ── */}
+        <nav style={{
+          flex: 1, overflowY: 'auto', overflowX: 'hidden',
+          padding: open ? '10px 10px' : '10px 8px',
+          display: 'flex', flexDirection: 'column', gap: '2px',
+        }}>
+          {/* ─ Main ─ */}
+          <NavItem to="/" icon={<Vault style={iconSize} />} label={t('nav.vault')} open={open} exact />
+          <NavItem to="/search" icon={<Search style={iconSize} />} label="Pesquisa" open={open} />
+          <NavItem to="/favorites" icon={<Star style={iconSize} />} label="Favoritos" open={open} />
+          <NavItem to="/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={open} />
+          <NavItem to="/access-requests" icon={<Inbox style={iconSize} />} label="Acessos" open={open} />
 
+          {/* ─ Ferramentas ─ */}
+          <SectionLabel label="Ferramentas" open={open} />
+          <NavItem to="/import" icon={<Upload style={iconSize} />} label="Importar" open={open} />
+          <NavItem to="/export" icon={<Download style={iconSize} />} label="Exportar" open={open} />
+          <NavItem to="/tokens" icon={<Key style={iconSize} />} label={t('nav.apiTokens')} open={open} />
+
+          {/* ─ Admin ─ */}
           {isAdmin && (
             <>
-              {/* ── Administração ── */}
-              <div className="pt-5 pb-1">
-                {sidebarOpen ? (
-                  <span
-                    className="text-xs font-semibold uppercase tracking-wider px-3"
-                    style={{ color: 'var(--color-muted)' }}
-                  >
-                    {t('nav.admin')}
-                  </span>
-                ) : (
-                  <div className="border-t mx-2 my-1" style={{ borderColor: 'var(--color-border)' }} />
-                )}
-              </div>
+              <SectionLabel label={t('nav.admin')} open={open} />
+              <NavItem to="/admin/users" icon={<Users style={iconSize} />} label={t('nav.users')} open={open} />
+              <NavItem to="/admin/folders" icon={<FolderOpen style={iconSize} />} label={t('nav.folders')} open={open} />
+              <NavItem to="/admin/audit" icon={<ScrollText style={iconSize} />} label={t('nav.audit')} open={open} />
 
-              {navItem('/admin/users', <Users className="w-4 h-4" />, t('nav.users'))}
-              {navItem('/admin/folders', <FolderOpen className="w-4 h-4" />, t('nav.folders'))}
-              {navItem('/admin/audit', <ScrollText className="w-4 h-4" />, t('nav.audit'))}
+              {/* Settings group */}
+              <SectionLabel label={t('nav.settings')} open={open} />
 
-              {/* ── Configurações ── */}
-              <div className="pt-5 pb-1">
-                {sidebarOpen ? (
+              {open ? (
+                <>
                   <button
-                    onClick={() => setSettingsExpanded(v => !v)}
-                    className="w-full flex items-center gap-2 px-3 py-1 rounded-lg hover:bg-white/5 transition-all"
-                    style={{ color: 'var(--color-muted)' }}
+                    onClick={() => setSettingsOpen(v => !v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '9px',
+                      padding: '7px 10px', borderRadius: '9px',
+                      fontSize: '0.875rem', fontWeight: 500,
+                      color: 'var(--color-text-muted)',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      width: '100%', textAlign: 'left',
+                      transition: 'color 150ms ease, background 150ms ease',
+                    }}
+                    className="sidebar-hover-item"
                   >
-                    <Settings className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="text-xs font-semibold uppercase tracking-wider flex-1 text-left">
-                      {t('nav.settings')}
-                    </span>
-                    <ChevronDown
-                      className="w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200"
-                      style={{ transform: settingsExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
-                    />
+                    <Settings style={iconSize} />
+                    <span style={{ flex: 1 }}>Configurações</span>
+                    <ChevronDown style={{
+                      width: '13px', height: '13px', flexShrink: 0,
+                      transition: 'transform 200ms ease',
+                      transform: settingsOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    }} />
                   </button>
-                ) : (
-                  <button
-                    onClick={() => { setSidebarOpen(true); setSettingsExpanded(true); }}
-                    className="w-full flex items-center justify-center py-1 rounded-lg hover:bg-white/5 transition-all"
-                    style={{ color: 'var(--color-muted)' }}
-                    title={t('nav.settings')}
-                  >
-                    <Settings className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              {/* Settings sub-items */}
-              {(settingsExpanded || !sidebarOpen) && (
-                <div
-                  className="space-y-0.5"
-                  style={
-                    sidebarOpen
-                      ? {
-                          marginLeft: '10px',
-                          paddingLeft: '10px',
-                          borderLeft: '1px solid var(--color-border)',
-                        }
-                      : {}
-                  }
-                >
-                  {settingsNavItem(
-                    '/admin/settings/appearance',
-                    <Palette className="w-4 h-4" />,
-                    'Aparência'
+                  {settingsOpen && (
+                    <div style={{ paddingLeft: '14px', borderLeft: `1px solid #2A2A2A`, marginLeft: '18px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                      <SettingsItem to="/admin/settings/appearance" icon={<Palette style={iconSize} />} label="Aparência" open={open} />
+                      <SettingsItem to="/admin/settings/ldap" icon={<Server style={iconSize} />} label="Active Directory" open={open} />
+                      <SettingsItem to="/admin/settings/general" icon={<SlidersHorizontal style={iconSize} />} label="Geral" open={open} />
+                      <SettingsItem to="/admin/settings/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={open} />
+                      <SettingsItem to="/admin/settings/email" icon={<Mail style={iconSize} />} label="E-mail" open={open} />
+                    </div>
                   )}
-                  {settingsNavItem(
-                    '/admin/settings/ldap',
-                    <Server className="w-4 h-4" />,
-                    'Active Directory'
-                  )}
-                  {settingsNavItem(
-                    '/admin/settings/general',
-                    <SlidersHorizontal className="w-4 h-4" />,
-                    'Geral'
-                  )}
-                  {settingsNavItem(
-                    '/admin/settings/security',
-                    <ShieldCheck className="w-4 h-4" />,
-                    'Segurança'
-                  )}
-                  {settingsNavItem(
-                    '/admin/settings/email',
-                    <Mail className="w-4 h-4" />,
-                    'E-mail'
-                  )}
-                </div>
+                </>
+              ) : (
+                /* Collapsed: show all settings icons directly */
+                <>
+                  <SettingsItem to="/admin/settings/appearance" icon={<Palette style={iconSize} />} label="Aparência" open={false} />
+                  <SettingsItem to="/admin/settings/ldap" icon={<Server style={iconSize} />} label="Active Directory" open={false} />
+                  <SettingsItem to="/admin/settings/general" icon={<SlidersHorizontal style={iconSize} />} label="Geral" open={false} />
+                  <SettingsItem to="/admin/settings/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={false} />
+                  <SettingsItem to="/admin/settings/email" icon={<Mail style={iconSize} />} label="E-mail" open={false} />
+                </>
               )}
             </>
           )}
         </nav>
 
-        {/* Bottom: language + user + logout */}
-        <div className="p-3 border-t space-y-0.5 flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+        {/* ── Bottom area ── */}
+        <div style={{
+          padding: open ? '8px 10px' : '8px',
+          borderTop: `1px solid ${sidebarBorder}`,
+          display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0,
+        }}>
           {/* Language selector */}
-          <div className="relative">
+          <div style={{ position: 'relative' }}>
             <button
-              onClick={() => setLangOpen(!langOpen)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-all"
-              style={{ color: 'var(--color-text-muted)' }}
-              title={!sidebarOpen ? 'Idioma' : undefined}
+              onClick={() => setLangOpen(v => !v)}
+              title={!open ? 'Idioma' : undefined}
+              style={{
+                display: 'flex', alignItems: 'center',
+                gap: open ? '9px' : 0,
+                padding: open ? '7px 10px' : '9px 0',
+                justifyContent: open ? 'flex-start' : 'center',
+                borderRadius: '9px', width: '100%',
+                fontSize: '0.875rem', fontWeight: 500,
+                color: 'var(--color-text-muted)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                transition: 'color 150ms ease, background 150ms ease',
+              }}
+              className="sidebar-hover-item"
             >
-              <Globe className="w-4 h-4 flex-shrink-0" />
-              {sidebarOpen && (
+              <Globe style={iconSize} />
+              {open && (
                 <>
-                  <span className="flex-1 text-left truncate">
+                  <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {currentLang.flag} {currentLang.name.split(' ')[0]}
                   </span>
-                  <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                  <ChevronDown style={{ width: '12px', height: '12px', flexShrink: 0 }} />
                 </>
               )}
             </button>
+
             {langOpen && (
               <div
-                className="absolute bottom-full left-0 w-64 rounded-xl shadow-2xl overflow-y-auto mb-1 animate-fadeIn"
+                className="animate-fadeInScale"
                 style={{
-                  background: 'var(--color-surface)',
-                  border: '1px solid var(--color-border)',
-                  maxHeight: '280px',
-                  zIndex: 100,
+                  position: 'absolute', bottom: 'calc(100% + 4px)',
+                  left: 0, width: '220px',
+                  background: '#1A1A1A', border: '1px solid #2A2A2A',
+                  borderRadius: '12px',
+                  maxHeight: '260px', overflowY: 'auto',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                  zIndex: 50,
                 }}
               >
                 {SUPPORTED_LANGUAGES.map(lang => (
                   <button
                     key={lang.code}
                     onClick={() => { i18n.changeLanguage(lang.code); setLangOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-white/5 transition-colors text-left"
                     style={{
-                      color: lang.code === i18n.language ? settings.primaryColor : 'var(--color-text)',
+                      display: 'flex', alignItems: 'center', gap: '10px',
+                      width: '100%', padding: '9px 14px',
+                      fontSize: '0.8125rem', fontWeight: 500,
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: lang.code === i18n.language ? 'var(--color-primary)' : '#A0A09E',
+                      transition: 'color 100ms ease, background 100ms ease',
+                      textAlign: 'left',
                     }}
+                    className="sidebar-hover-item"
                   >
                     <span>{lang.flag}</span>
-                    <span>{lang.name}</span>
+                    <span style={{ flex: 1 }}>{lang.name}</span>
                     {lang.code === i18n.language && (
-                      <span className="ml-auto text-xs">✓</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)' }}>✓</span>
                     )}
                   </button>
                 ))}
@@ -333,221 +394,304 @@ export default function VaultLayout() {
           {/* User profile */}
           <button
             onClick={() => navigate('/profile')}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/5 transition-all"
-            title={!sidebarOpen ? `${user?.firstName} ${user?.lastName}` : undefined}
+            title={!open ? `${user?.firstName} ${user?.lastName}` : undefined}
+            style={{
+              display: 'flex', alignItems: 'center',
+              gap: open ? '9px' : 0,
+              padding: open ? '7px 10px' : '9px 0',
+              justifyContent: open ? 'flex-start' : 'center',
+              borderRadius: '9px', width: '100%',
+              background: 'none', border: 'none', cursor: 'pointer',
+              transition: 'background 150ms ease',
+            }}
+            className="sidebar-hover-item"
           >
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 text-xs font-bold text-white"
-              style={{
-                background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})`,
-              }}
-            >
+            <div style={{
+              width: '26px', height: '26px', borderRadius: '50%',
+              background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '0.6875rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+            }}>
               {userInitials}
             </div>
-            {sidebarOpen && (
-              <div className="flex-1 min-w-0 text-left">
-                <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>
+            {open && (
+              <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
+                <div style={{
+                  fontSize: '0.8125rem', fontWeight: 600, color: '#F0F0EE',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
                   {user?.firstName} {user?.lastName}
                 </div>
-                <div className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
+                <div style={{
+                  fontSize: '0.6875rem', color: '#636360',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '1px',
+                }}>
                   {t(`user.roles.${user?.role}`)}
                 </div>
               </div>
             )}
           </button>
 
-          {/* Suporte / Contato */}
+          {/* Support */}
           <button
             onClick={() => setContactOpen(true)}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-all"
-            style={{ color: 'var(--color-text-muted)' }}
-            title={!sidebarOpen ? 'Suporte' : undefined}
+            title={!open ? 'Suporte' : undefined}
+            style={{
+              display: 'flex', alignItems: 'center',
+              gap: open ? '9px' : 0,
+              padding: open ? '7px 10px' : '9px 0',
+              justifyContent: open ? 'flex-start' : 'center',
+              borderRadius: '9px', width: '100%',
+              fontSize: '0.875rem', fontWeight: 500,
+              color: '#636360',
+              background: 'none', border: 'none', cursor: 'pointer',
+              transition: 'color 150ms ease, background 150ms ease',
+            }}
+            className="sidebar-hover-item"
           >
-            <HelpCircle className="w-4 h-4 flex-shrink-0" />
-            {sidebarOpen && <span>Suporte</span>}
+            <HelpCircle style={iconSize} />
+            {open && <span>Suporte</span>}
           </button>
 
           {/* Logout */}
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm hover:bg-red-500/10 transition-all"
-            style={{ color: '#ef4444' }}
-            title={!sidebarOpen ? t('auth.logout') : undefined}
+            title={!open ? t('auth.logout') : undefined}
+            style={{
+              display: 'flex', alignItems: 'center',
+              gap: open ? '9px' : 0,
+              padding: open ? '7px 10px' : '9px 0',
+              justifyContent: open ? 'flex-start' : 'center',
+              borderRadius: '9px', width: '100%',
+              fontSize: '0.875rem', fontWeight: 500,
+              color: '#EF4444',
+              background: 'none', border: 'none', cursor: 'pointer',
+              transition: 'background 150ms ease',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,68,68,0.10)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'none'}
           >
-            <LogOut className="w-4 h-4 flex-shrink-0" />
-            {sidebarOpen && <span>{t('auth.logout')}</span>}
+            <LogOut style={iconSize} />
+            {open && <span>{t('auth.logout')}</span>}
           </button>
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
-    </div>
+      {/* ═══════════ Main Content ═══════════ */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        <main
+          key={location.pathname}
+          className="page-enter"
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
+        >
+          <Outlet />
+        </main>
 
-      {/* Modal de Suporte / Contato */}
+        {/* Footer */}
+        <footer style={{
+          flexShrink: 0, padding: '7px 16px', textAlign: 'center',
+          borderTop: '1px solid var(--color-border)',
+          background: 'var(--color-surface)',
+        }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)' }}>
+            Desenvolvido por{' '}
+            <a
+              href="https://www.linkedin.com/in/marcoaurelioprudencio/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontWeight: 600, color: 'var(--color-primary)',
+                textDecoration: 'none', transition: 'opacity 150ms ease',
+              }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+            >
+              Marco
+            </a>
+          </span>
+        </footer>
+      </div>
+
+      {/* ═══════════ Contact Modal ═══════════ */}
       {contactOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
-          onClick={(e) => { if (e.target === e.currentTarget) setContactOpen(false); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem',
+            background: 'rgba(0,0,0,0.60)',
+            backdropFilter: 'blur(6px)',
+          }}
+          onClick={e => { if (e.target === e.currentTarget) setContactOpen(false); }}
         >
           <div
-            className="w-full max-w-md rounded-2xl shadow-2xl overflow-hidden"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+            className="animate-fadeInScale"
+            style={{
+              width: '100%', maxWidth: '460px',
+              background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '20px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            }}
           >
             {/* Header */}
-            <div
-              className="flex items-center justify-between px-6 py-4 border-b"
-              style={{ borderColor: 'var(--color-border)' }}
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center"
-                  style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}
-                >
-                  <HelpCircle className="w-4 h-4 text-white" />
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '18px 20px',
+              borderBottom: '1px solid var(--color-border)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '10px',
+                  background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <HelpCircle style={{ width: '18px', height: '18px', color: '#fff' }} />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold" style={{ color: 'var(--color-text)' }}>
-                    Fale Conosco
-                  </h2>
-                  <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  <div style={{ fontSize: '0.9375rem', fontWeight: 700, color: 'var(--color-text)' }}>Fale Conosco</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '1px' }}>
                     Dúvidas ou bugs? Envie uma mensagem.
-                  </p>
+                  </div>
                 </div>
               </div>
               <button
                 onClick={() => setContactOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
-                style={{ color: 'var(--color-text-muted)' }}
+                style={{
+                  width: '30px', height: '30px', borderRadius: '8px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--color-text-muted)', fontSize: '1.125rem',
+                  transition: 'background 150ms ease',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--color-surface-hover)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
-                <X className="w-4 h-4" />
+                ✕
               </button>
             </div>
 
             {/* Body */}
             {contactSent ? (
-              <div className="flex flex-col items-center justify-center py-12 gap-3">
-                <div
-                  className="w-12 h-12 rounded-full flex items-center justify-center"
-                  style={{ background: `${settings.primaryColor}22` }}
-                >
-                  <Send className="w-6 h-6" style={{ color: settings.primaryColor }} />
+              <div style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                justifyContent: 'center', padding: '3rem 1rem', gap: '12px',
+              }}>
+                <div style={{
+                  width: '52px', height: '52px', borderRadius: '50%',
+                  background: `rgba(var(--color-primary-rgb),0.12)`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Send style={{ width: '24px', height: '24px', color: 'var(--color-primary)' }} />
                 </div>
-                <p className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+                <div style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--color-text)' }}>
                   Cliente de e-mail aberto!
-                </p>
-                <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                </div>
+                <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
                   Finalize o envio no seu e-mail.
-                </p>
+                </div>
               </div>
             ) : (
-              <form onSubmit={handleContactSubmit} className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                      Nome *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={contactForm.name}
-                      onChange={e => setContactForm(f => ({ ...f, name: e.target.value }))}
-                      placeholder="Seu nome"
-                      className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
-                      style={{
-                        background: 'var(--color-bg)',
-                        border: '1px solid var(--color-border)',
-                        color: 'var(--color-text)',
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                      E-mail *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={contactForm.email}
-                      onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
-                      placeholder="seu@email.com"
-                      className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
-                      style={{
-                        background: 'var(--color-bg)',
-                        border: '1px solid var(--color-border)',
-                        color: 'var(--color-text)',
-                      }}
-                    />
-                  </div>
+              <form onSubmit={handleContactSubmit} style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {[
+                    { key: 'name', label: 'Nome *', placeholder: 'Seu nome', type: 'text' },
+                    { key: 'email', label: 'E-mail *', placeholder: 'seu@email.com', type: 'email' },
+                  ].map(({ key, label, placeholder, type }) => (
+                    <div key={key}>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '5px' }}>
+                        {label}
+                      </label>
+                      <input
+                        type={type}
+                        required
+                        value={contactForm[key]}
+                        onChange={e => setContactForm(f => ({ ...f, [key]: e.target.value }))}
+                        placeholder={placeholder}
+                        style={{
+                          width: '100%', padding: '8px 10px', borderRadius: '8px',
+                          fontSize: '0.8125rem', outline: 'none',
+                          background: 'var(--color-bg)',
+                          border: '1px solid var(--color-border)',
+                          color: 'var(--color-text)',
+                          fontFamily: 'Outfit, sans-serif',
+                        }}
+                      />
+                    </div>
+                  ))}
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                    Assunto *
-                  </label>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '5px' }}>Assunto *</label>
                   <input
-                    type="text"
-                    required
+                    type="text" required
                     value={contactForm.subject}
                     onChange={e => setContactForm(f => ({ ...f, subject: e.target.value }))}
-                    placeholder="Ex: Bug na exportação, Dúvida sobre permissões..."
-                    className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all"
+                    placeholder="Ex: Bug na exportação, dúvida sobre permissões..."
                     style={{
+                      width: '100%', padding: '8px 10px', borderRadius: '8px',
+                      fontSize: '0.8125rem', outline: 'none',
                       background: 'var(--color-bg)',
                       border: '1px solid var(--color-border)',
                       color: 'var(--color-text)',
+                      fontFamily: 'Outfit, sans-serif',
                     }}
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
-                    Mensagem *
-                  </label>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 500, color: 'var(--color-text-muted)', marginBottom: '5px' }}>Mensagem *</label>
                   <textarea
-                    required
-                    rows={4}
+                    required rows={4}
                     value={contactForm.message}
                     onChange={e => setContactForm(f => ({ ...f, message: e.target.value }))}
                     placeholder="Descreva sua dúvida ou bug com o máximo de detalhes..."
-                    className="w-full px-3 py-2 rounded-lg text-sm outline-none transition-all resize-none"
                     style={{
+                      width: '100%', padding: '8px 10px', borderRadius: '8px',
+                      fontSize: '0.8125rem', outline: 'none', resize: 'none',
                       background: 'var(--color-bg)',
                       border: '1px solid var(--color-border)',
                       color: 'var(--color-text)',
+                      fontFamily: 'Outfit, sans-serif',
                     }}
                   />
                 </div>
 
-                <div className="flex items-center gap-3 pt-1">
+                <div style={{ display: 'flex', gap: '10px', paddingTop: '2px' }}>
                   <button
                     type="button"
                     onClick={() => setContactOpen(false)}
-                    className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:bg-white/5"
-                    style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}
+                    style={{
+                      flex: 1, padding: '10px', borderRadius: '10px',
+                      fontSize: '0.875rem', fontWeight: 500,
+                      color: 'var(--color-text-muted)',
+                      background: 'var(--color-surface-2)',
+                      border: '1px solid var(--color-border)',
+                      cursor: 'pointer',
+                      fontFamily: 'Outfit, sans-serif',
+                    }}
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
                     style={{
-                      background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})`,
+                      flex: 1, padding: '10px', borderRadius: '10px',
+                      fontSize: '0.875rem', fontWeight: 600, color: '#fff',
+                      background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                      border: 'none', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                      fontFamily: 'Outfit, sans-serif',
                     }}
                   >
-                    <Send className="w-4 h-4" />
+                    <Send style={{ width: '14px', height: '14px' }} />
                     Enviar
                   </button>
                 </div>
 
-                <p className="text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  Será enviado para{' '}
-                  <span className="font-medium" style={{ color: settings.primaryColor }}>
-                    VaultGuard2026@outlook.com
-                  </span>
+                <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--color-muted)', marginTop: '-4px' }}>
+                  Enviado para{' '}
+                  <span style={{ fontWeight: 500, color: 'var(--color-primary)' }}>VaultGuard2026@outlook.com</span>
                 </p>
               </form>
             )}
@@ -555,24 +699,13 @@ export default function VaultLayout() {
         </div>
       )}
 
-      {/* Footer — não alterar */}
-      <footer
-        className="flex-shrink-0 py-2 text-center border-t"
-        style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}
-      >
-        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          Desenvolvido por{' '}
-          <a
-            href="https://www.linkedin.com/in/marcoaurelioprudencio/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-semibold hover:underline transition-colors"
-            style={{ color: 'var(--color-primary, #f59e0b)' }}
-          >
-            Marco
-          </a>
-        </span>
-      </footer>
+      {/* Global hover style injected */}
+      <style>{`
+        .sidebar-hover-item:hover {
+          background: rgba(255,255,255,0.055) !important;
+          color: #F0F0EE !important;
+        }
+      `}</style>
     </div>
   );
 }
