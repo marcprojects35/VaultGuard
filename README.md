@@ -667,4 +667,3 @@ docker compose restart nginx
 
 ---
 
-*VaultGuard — desenvolvido para Grupo FGF*
