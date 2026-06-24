@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app .
 COPY --from=builder /frontend/dist /frontend/dist
+RUN test -d /frontend/dist && test -f /frontend/dist/index.html || (echo "ERROR: Frontend build missing!" && exit 1)
 
 COPY backend/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && mkdir -p uploads logs

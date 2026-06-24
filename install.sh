@@ -397,16 +397,32 @@ if [ "$READY" = true ]; then
     echo "  ╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
 
+    # Validar que o frontend está sendo servido
+    if curl -sf "http://localhost:${HTTP_PORT}/" >/dev/null 2>&1; then
+        ok "Frontend servido corretamente"
+    else
+        warn "Frontend não respondeu em http://localhost:${HTTP_PORT}/ — verifique os logs do nginx"
+    fi
+    echo
     echo -e "  ${W}Acesso ao sistema:${NC}"
     echo -e "    URL:   ${C}${HTTP_URL}${NC}"
     [ "$ENABLE_HTTPS" = true ] && \
     echo -e "    HTTPS: ${C}${HTTPS_URL}${NC}"
     echo
-    echo -e "  ${W}Credenciais de administrador:${NC}"
-    echo -e "    E-mail: ${Y}${ADMIN_EMAIL}${NC}"
-    echo -e "    Senha:  ${Y}${ADMIN_PASSWORD}${NC}"
+    sep
     echo
-    echo -e "  ${R}  Salve estas credenciais em local seguro!${NC}"
+    echo -e "  ${Y}┌─────────────────────────────────────────────────────────┐${NC}"
+    echo -e "  ${Y}│            CREDENCIAIS DE PRIMEIRO ACESSO               │${NC}"
+    echo -e "  ${Y}├─────────────────────────────────────────────────────────┤${NC}"
+    echo -e "  ${Y}│${NC}  Use estes dados para entrar no sistema pela 1ª vez:    ${Y}│${NC}"
+    echo -e "  ${Y}│${NC}                                                         ${Y}│${NC}"
+    echo -e "  ${Y}│${NC}  Usuário:  ${W}${ADMIN_EMAIL}${NC}"
+    echo -e "  ${Y}│${NC}  Senha:    ${W}${ADMIN_PASSWORD}${NC}"
+    echo -e "  ${Y}│${NC}                                                         ${Y}│${NC}"
+    echo -e "  ${Y}│${NC}  ${R}Troque a senha após o primeiro login!${NC}                ${Y}│${NC}"
+    echo -e "  ${Y}└─────────────────────────────────────────────────────────┘${NC}"
+    echo
+    echo -e "  ${DIM}Anote estas credenciais — elas não serão exibidas novamente.${NC}"
     echo
     sep
     echo -e "  ${W}Comandos úteis:${NC}"
