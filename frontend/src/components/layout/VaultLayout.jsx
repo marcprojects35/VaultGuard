@@ -126,13 +126,13 @@ export default function VaultLayout() {
 
   const currentLang = SUPPORTED_LANGUAGES.find(l => l.code === i18n.language) || SUPPORTED_LANGUAGES[0];
   const userInitials = [user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join('') || '?';
-  const hasCustomLogo = settings.logoUrl && settings.logoUrl !== '/logo.png';
+  const logoSrc = settings.logoUrl || '/logo.png';
 
   /* ── Sidebar background  ─────────────────────
      Always dark regardless of app theme so it
      contrasts with the content area.             */
-  const sidebarBg     = '#111111';
-  const sidebarBorder = '#1E1E1E';
+  const sidebarBg     = '#0D0D0D';
+  const sidebarBorder = '#1F1F1F';
 
   const iconSize = { width: '16px', height: '16px' };
 
@@ -162,41 +162,35 @@ export default function VaultLayout() {
           borderBottom: `1px solid ${sidebarBorder}`,
           minHeight: '62px', flexShrink: 0, gap: '10px',
         }}>
-          {hasCustomLogo ? (
-            <img
-              src={settings.logoUrl}
-              alt={settings.siteName}
-              style={{ height: '28px', objectFit: 'contain', flexShrink: 0, maxWidth: open ? '140px' : '32px' }}
-            />
-          ) : (
-            <>
+          <img
+            src={logoSrc}
+            alt="VaultGuard"
+            style={{
+              height: '30px', objectFit: 'contain', flexShrink: 0,
+              maxWidth: open ? '120px' : '30px',
+              filter: 'drop-shadow(0 0 6px rgba(199,140,0,0.30))',
+            }}
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+          {open && (
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{
-                width: '32px', height: '32px', borderRadius: '9px', flexShrink: 0,
-                background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                boxShadow: '0 2px 8px rgba(199,140,0,0.25)',
+                fontSize: '0.9rem', fontWeight: 800, color: '#F5F5F3',
+                letterSpacing: '-0.025em', whiteSpace: 'nowrap', overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                background: 'linear-gradient(90deg, #F5F5F3 0%, #C78C00 100%)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               }}>
-                <Shield style={{ width: '16px', height: '16px', color: '#fff' }} />
+                VaultGuard
               </div>
-              {open && (
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{
-                    fontSize: '0.875rem', fontWeight: 700, color: '#F0F0EE',
-                    letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}>
-                    {settings.siteName || 'VaultGuard'}
-                  </div>
-                  <div style={{
-                    fontSize: '0.6875rem', color: '#636360',
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    marginTop: '1px',
-                  }}>
-                    {settings.siteSubtitle || 'Cofre de Senhas'}
-                  </div>
-                </div>
-              )}
-            </>
+              <div style={{
+                fontSize: '0.65rem', color: '#555552',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                marginTop: '1px', letterSpacing: '0.02em', textTransform: 'uppercase',
+              }}>
+                {settings.siteSubtitle || 'Cofre de Senhas'}
+              </div>
+            </div>
           )}
 
           {/* Collapse / expand toggle */}
@@ -702,7 +696,7 @@ export default function VaultLayout() {
       {/* Global hover style injected */}
       <style>{`
         .sidebar-hover-item:hover {
-          background: rgba(255,255,255,0.055) !important;
+          background: rgba(199,140,0,0.08) !important;
           color: #F0F0EE !important;
         }
       `}</style>
