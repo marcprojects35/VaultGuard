@@ -1,36 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, Eye, EyeOff, Lock, Mail } from 'lucide-react';
+import { Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useAuthStore, deriveMasterKey } from '../stores/authStore.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-
-const INPUT_BASE = {
-  width: '100%',
-  paddingTop: '0.75rem',
-  paddingBottom: '0.75rem',
-  paddingLeft: '2.75rem',
-  paddingRight: '1rem',
-  borderRadius: '10px',
-  fontSize: '0.875rem',
-  background: '#F9F8F4',
-  border: '1.5px solid #E4E2DC',
-  color: '#1A1916',
-  outline: 'none',
-  fontFamily: 'Outfit, system-ui, sans-serif',
-  transition: 'border-color 150ms ease, box-shadow 150ms ease',
-};
-
-function onFocus(e) {
-  e.target.style.borderColor = '#C78C00';
-  e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.13)';
-}
-function onBlur(e) {
-  e.target.style.borderColor = '#E4E2DC';
-  e.target.style.boxShadow = 'none';
-}
 
 export default function LoginPage() {
   const { t } = useTranslation();
@@ -44,6 +19,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [form, setForm] = useState({ login: '', password: '', totp: '' });
+
+  const logoSrc = settings.logoUrl || '/logo.png';
 
   const handleCredentials = async (e) => {
     e.preventDefault();
@@ -81,98 +58,133 @@ export default function LoginPage() {
     }
   };
 
-  const hasCustomLogo = settings.logoUrl && settings.logoUrl !== '/logo.png';
-
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#F5F4EF',
-        backgroundImage: [
-          'linear-gradient(rgba(0,0,0,0.055) 1px, transparent 1px)',
-          'linear-gradient(90deg, rgba(0,0,0,0.055) 1px, transparent 1px)',
-        ].join(','),
-        backgroundSize: '40px 40px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '1.5rem',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Subtle radial accent */}
+    <div style={{
+      minHeight: '100vh',
+      background: '#080808',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '1.5rem',
+      position: 'relative',
+      overflow: 'hidden',
+      fontFamily: 'Outfit, system-ui, sans-serif',
+    }}>
+      {/* Ambient glow top */}
       <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        background: [
-          'radial-gradient(ellipse 600px 400px at 50% 40%, rgba(199,140,0,0.055) 0%, transparent 70%)',
-          'radial-gradient(ellipse 400px 300px at 80% 70%, rgba(199,140,0,0.03) 0%, transparent 60%)',
-        ].join(','),
+        position: 'absolute', top: '-120px', left: '50%', transform: 'translateX(-50%)',
+        width: '700px', height: '400px', borderRadius: '50%', pointerEvents: 'none',
+        background: 'radial-gradient(ellipse at center, rgba(199,140,0,0.12) 0%, transparent 70%)',
+        filter: 'blur(40px)',
       }} />
 
-      {/* Brand above card */}
+      {/* Ambient glow bottom-left */}
+      <div style={{
+        position: 'absolute', bottom: '-80px', left: '-100px', pointerEvents: 'none',
+        width: '400px', height: '300px', borderRadius: '50%',
+        background: 'radial-gradient(ellipse at center, rgba(199,140,0,0.06) 0%, transparent 70%)',
+        filter: 'blur(40px)',
+      }} />
+
+      {/* Fine grid overlay */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none',
+        backgroundImage: [
+          'linear-gradient(rgba(199,140,0,0.03) 1px, transparent 1px)',
+          'linear-gradient(90deg, rgba(199,140,0,0.03) 1px, transparent 1px)',
+        ].join(','),
+        backgroundSize: '48px 48px',
+      }} />
+
+      {/* ── Brand header ── */}
       <div className="animate-slideUp" style={{
-        display: 'flex', alignItems: 'center', gap: '10px',
-        marginBottom: '28px', position: 'relative',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        gap: '12px', marginBottom: '32px', position: 'relative',
       }}>
-        {hasCustomLogo ? (
-          <img src={settings.logoUrl} alt={settings.siteName} style={{ height: '36px', objectFit: 'contain' }} />
-        ) : (
-          <>
-            <div style={{
-              width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-              background: 'linear-gradient(135deg, #C78C00 0%, #AD7B04 100%)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: '0 2px 10px rgba(199,140,0,0.32)',
-            }}>
-              <Shield style={{ width: '18px', height: '18px', color: '#fff' }} />
-            </div>
-            <span style={{
-              fontSize: '1.0625rem', fontWeight: 700, color: '#1A1916',
-              letterSpacing: '-0.02em', fontFamily: 'Outfit, sans-serif',
-            }}>
-              {settings.siteName || 'VaultGuard'}
-            </span>
-          </>
-        )}
+        <div style={{
+          width: '64px', height: '64px', borderRadius: '18px',
+          background: 'linear-gradient(135deg, #1A1A1A 0%, #0D0D0D 100%)',
+          border: '1px solid rgba(199,140,0,0.25)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 0 24px rgba(199,140,0,0.15), 0 4px 20px rgba(0,0,0,0.5)',
+          overflow: 'hidden',
+        }}>
+          <img
+            src={logoSrc}
+            alt="VaultGuard"
+            style={{ width: '40px', height: '40px', objectFit: 'contain' }}
+            onError={e => {
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.nextSibling.style.display = 'flex';
+            }}
+          />
+          <ShieldCheck style={{ display: 'none', width: '28px', height: '28px', color: '#C78C00' }} />
+        </div>
+
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.035em',
+            background: 'linear-gradient(135deg, #FFFFFF 0%, #C78C00 60%, #E7A300 100%)',
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            lineHeight: 1.1,
+          }}>
+            VaultGuard
+          </div>
+          <div style={{
+            fontSize: '0.75rem', color: '#4A4A47', marginTop: '4px',
+            letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500,
+          }}>
+            {settings.siteSubtitle || 'Cofre de Senhas Corporativo'}
+          </div>
+        </div>
       </div>
 
-      {/* Login card */}
+      {/* ── Login card ── */}
       <div
         className="animate-fadeInScale"
         style={{
           position: 'relative', width: '100%', maxWidth: '400px',
-          background: '#FFFFFF', borderRadius: '20px', padding: '2.5rem',
-          boxShadow: '0 8px 40px rgba(0,0,0,0.09), 0 0 0 1px rgba(0,0,0,0.05)',
+          background: 'rgba(14,14,14,0.95)',
+          backdropFilter: 'blur(24px)',
+          borderRadius: '20px', padding: '2rem',
+          border: '1px solid rgba(199,140,0,0.12)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(199,140,0,0.06)',
         }}
       >
+        {/* Top gold accent line */}
+        <div style={{
+          position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+          width: '60%', height: '1px',
+          background: 'linear-gradient(90deg, transparent, rgba(199,140,0,0.5), transparent)',
+        }} />
+
         {step === 'credentials' ? (
           <>
             <h1 style={{
-              fontSize: '1.5rem', fontWeight: 700, color: '#1A1916',
-              letterSpacing: '-0.025em', marginBottom: '6px', fontFamily: 'Outfit, sans-serif',
+              fontSize: '1.25rem', fontWeight: 700, color: '#F0F0EE',
+              letterSpacing: '-0.025em', marginBottom: '4px',
               lineHeight: 1.2,
             }}>
               {t('auth.welcomeBack')}
             </h1>
-            <p style={{ fontSize: '0.875rem', color: '#706F6A', marginBottom: '1.75rem', lineHeight: 1.55 }}>
-              {settings.siteSubtitle || t('auth.loginSubtitle')}
+            <p style={{ fontSize: '0.8125rem', color: '#555552', marginBottom: '1.5rem', lineHeight: 1.55 }}>
+              {t('auth.loginSubtitle')}
             </p>
 
-            <form onSubmit={handleCredentials} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {/* Username / email */}
+            <form onSubmit={handleCredentials} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+              {/* Username */}
               <div>
                 <label style={{
-                  display: 'block', fontSize: '0.8125rem', fontWeight: 500,
-                  color: '#4B4A47', marginBottom: '6px', fontFamily: 'Outfit, sans-serif',
+                  display: 'block', fontSize: '0.75rem', fontWeight: 600,
+                  color: '#6B6B68', marginBottom: '6px', letterSpacing: '0.03em', textTransform: 'uppercase',
                 }}>
                   {t('auth.username')}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Mail style={{
                     position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
-                    width: '15px', height: '15px', color: '#B0AEA9', pointerEvents: 'none',
+                    width: '14px', height: '14px', color: '#4A4A47', pointerEvents: 'none',
                   }} />
                   <input
                     type="text"
@@ -181,9 +193,26 @@ export default function LoginPage() {
                     placeholder="usuario@empresa.com"
                     required
                     autoFocus
-                    style={INPUT_BASE}
-                    onFocus={onFocus}
-                    onBlur={onBlur}
+                    style={{
+                      width: '100%',
+                      padding: '0.7rem 1rem 0.7rem 2.5rem',
+                      borderRadius: '10px',
+                      fontSize: '0.875rem',
+                      background: '#111111',
+                      border: '1px solid #222222',
+                      color: '#F0F0EE',
+                      outline: 'none',
+                      fontFamily: 'Outfit, system-ui, sans-serif',
+                      transition: 'border-color 150ms ease, box-shadow 150ms ease',
+                    }}
+                    onFocus={e => {
+                      e.target.style.borderColor = 'rgba(199,140,0,0.5)';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.08)';
+                    }}
+                    onBlur={e => {
+                      e.target.style.borderColor = '#222222';
+                      e.target.style.boxShadow = 'none';
+                    }}
                   />
                 </div>
               </div>
@@ -191,15 +220,15 @@ export default function LoginPage() {
               {/* Password */}
               <div>
                 <label style={{
-                  display: 'block', fontSize: '0.8125rem', fontWeight: 500,
-                  color: '#4B4A47', marginBottom: '6px', fontFamily: 'Outfit, sans-serif',
+                  display: 'block', fontSize: '0.75rem', fontWeight: 600,
+                  color: '#6B6B68', marginBottom: '6px', letterSpacing: '0.03em', textTransform: 'uppercase',
                 }}>
                   {t('auth.password')}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Lock style={{
                     position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
-                    width: '15px', height: '15px', color: '#B0AEA9', pointerEvents: 'none',
+                    width: '14px', height: '14px', color: '#4A4A47', pointerEvents: 'none',
                   }} />
                   <input
                     type={showPass ? 'text' : 'password'}
@@ -208,12 +237,25 @@ export default function LoginPage() {
                     placeholder="••••••••"
                     required
                     style={{
-                      ...INPUT_BASE,
-                      paddingRight: '3rem',
-                      fontFamily: showPass ? 'Outfit, sans-serif' : 'monospace',
+                      width: '100%',
+                      padding: '0.7rem 3rem 0.7rem 2.5rem',
+                      borderRadius: '10px',
+                      fontSize: '0.875rem',
+                      background: '#111111',
+                      border: '1px solid #222222',
+                      color: '#F0F0EE',
+                      outline: 'none',
+                      fontFamily: showPass ? 'Outfit, system-ui, sans-serif' : 'monospace',
+                      transition: 'border-color 150ms ease, box-shadow 150ms ease',
                     }}
-                    onFocus={onFocus}
-                    onBlur={onBlur}
+                    onFocus={e => {
+                      e.target.style.borderColor = 'rgba(199,140,0,0.5)';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.08)';
+                    }}
+                    onBlur={e => {
+                      e.target.style.borderColor = '#222222';
+                      e.target.style.boxShadow = 'none';
+                    }}
                   />
                   <button
                     type="button"
@@ -221,12 +263,15 @@ export default function LoginPage() {
                     style={{
                       position: 'absolute', right: '11px', top: '50%', transform: 'translateY(-50%)',
                       background: 'none', border: 'none', cursor: 'pointer',
-                      color: '#B0AEA9', padding: '4px', display: 'flex', alignItems: 'center',
+                      color: '#4A4A47', padding: '4px', display: 'flex', alignItems: 'center',
+                      transition: 'color 150ms ease',
                     }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#C78C00'}
+                    onMouseLeave={e => e.currentTarget.style.color = '#4A4A47'}
                   >
                     {showPass
-                      ? <EyeOff style={{ width: '15px', height: '15px' }} />
-                      : <Eye style={{ width: '15px', height: '15px' }} />}
+                      ? <EyeOff style={{ width: '14px', height: '14px' }} />
+                      : <Eye style={{ width: '14px', height: '14px' }} />}
                   </button>
                 </div>
               </div>
@@ -236,32 +281,34 @@ export default function LoginPage() {
                 type="submit"
                 disabled={loading}
                 style={{
-                  marginTop: '0.5rem', width: '100%', padding: '0.9rem',
-                  borderRadius: '12px', fontWeight: 600, fontSize: '0.9375rem', color: '#fff',
-                  background: 'linear-gradient(135deg, #C78C00 0%, #AD7B04 100%)',
+                  marginTop: '0.25rem', width: '100%', padding: '0.85rem',
+                  borderRadius: '12px', fontWeight: 700, fontSize: '0.9rem',
+                  color: '#0D0D0D',
+                  background: loading
+                    ? 'rgba(199,140,0,0.4)'
+                    : 'linear-gradient(135deg, #E7A300 0%, #C78C00 50%, #AD7B04 100%)',
                   border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-                  opacity: loading ? 0.72 : 1,
-                  boxShadow: loading ? 'none' : '0 4px 18px rgba(199,140,0,0.30)',
-                  fontFamily: 'Outfit, sans-serif', letterSpacing: '-0.01em',
+                  boxShadow: loading ? 'none' : '0 4px 20px rgba(199,140,0,0.35)',
+                  fontFamily: 'Outfit, sans-serif', letterSpacing: '0.01em',
                   transition: 'transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                 }}
                 onMouseEnter={e => {
                   if (!loading) {
                     e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 6px 24px rgba(199,140,0,0.40)';
+                    e.currentTarget.style.boxShadow = '0 6px 28px rgba(199,140,0,0.50)';
                   }
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = loading ? 'none' : '0 4px 18px rgba(199,140,0,0.30)';
+                  e.currentTarget.style.boxShadow = loading ? 'none' : '0 4px 20px rgba(199,140,0,0.35)';
                 }}
               >
                 {loading && (
                   <span style={{
                     width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
-                    border: '2px solid rgba(255,255,255,0.30)',
-                    borderTop: '2px solid #fff',
+                    border: '2px solid rgba(0,0,0,0.20)',
+                    borderTop: '2px solid #0D0D0D',
                     animation: 'spin 0.8s linear infinite',
                   }} />
                 )}
@@ -272,28 +319,29 @@ export default function LoginPage() {
         ) : (
           /* ── 2FA Step ── */
           <>
-            <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+            <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
               <div style={{
-                width: '56px', height: '56px', borderRadius: '16px',
-                background: 'rgba(199,140,0,0.09)', border: '1.5px solid rgba(199,140,0,0.20)',
+                width: '52px', height: '52px', borderRadius: '14px',
+                background: 'rgba(199,140,0,0.08)',
+                border: '1px solid rgba(199,140,0,0.18)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 16px',
+                margin: '0 auto 14px',
               }}>
-                <Shield style={{ width: '26px', height: '26px', color: '#C78C00' }} />
+                <ShieldCheck style={{ width: '24px', height: '24px', color: '#C78C00' }} />
               </div>
               <h1 style={{
-                fontSize: '1.375rem', fontWeight: 700, color: '#1A1916',
-                letterSpacing: '-0.025em', marginBottom: '6px',
-                fontFamily: 'Outfit, sans-serif', lineHeight: 1.2,
+                fontSize: '1.25rem', fontWeight: 700, color: '#F0F0EE',
+                letterSpacing: '-0.025em', marginBottom: '4px',
+                lineHeight: 1.2,
               }}>
                 {t('auth.twoFactor')}
               </h1>
-              <p style={{ fontSize: '0.875rem', color: '#706F6A', lineHeight: 1.55 }}>
+              <p style={{ fontSize: '0.8125rem', color: '#555552', lineHeight: 1.55 }}>
                 {t('auth.twoFactorCode')}
               </p>
             </div>
 
-            <form onSubmit={handle2FA} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handle2FA} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
               <input
                 type="text"
                 value={form.totp}
@@ -303,31 +351,44 @@ export default function LoginPage() {
                 autoFocus
                 required
                 style={{
-                  ...INPUT_BASE,
-                  paddingLeft: '1rem',
+                  width: '100%',
+                  padding: '0.875rem 1rem',
+                  borderRadius: '10px',
                   textAlign: 'center',
-                  fontSize: '1.875rem',
+                  fontSize: '2rem',
                   letterSpacing: '0.45em',
                   fontFamily: 'JetBrains Mono, monospace',
                   fontWeight: 500,
+                  background: '#111111',
+                  border: '1px solid #222222',
+                  color: '#F0F0EE',
+                  outline: 'none',
+                  transition: 'border-color 150ms ease, box-shadow 150ms ease',
                 }}
-                onFocus={onFocus}
-                onBlur={onBlur}
+                onFocus={e => {
+                  e.target.style.borderColor = 'rgba(199,140,0,0.5)';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.08)';
+                }}
+                onBlur={e => {
+                  e.target.style.borderColor = '#222222';
+                  e.target.style.boxShadow = 'none';
+                }}
               />
 
               <button
                 type="submit"
                 disabled={loading || form.totp.length !== 6}
                 style={{
-                  width: '100%', padding: '0.9rem', borderRadius: '12px',
-                  fontWeight: 600, fontSize: '0.9375rem', color: '#fff',
-                  background: 'linear-gradient(135deg, #C78C00 0%, #AD7B04 100%)',
+                  width: '100%', padding: '0.85rem', borderRadius: '12px',
+                  fontWeight: 700, fontSize: '0.9rem', color: '#0D0D0D',
+                  background: (loading || form.totp.length !== 6)
+                    ? 'rgba(199,140,0,0.3)'
+                    : 'linear-gradient(135deg, #E7A300 0%, #C78C00 50%, #AD7B04 100%)',
                   border: 'none',
                   cursor: (loading || form.totp.length !== 6) ? 'not-allowed' : 'pointer',
-                  opacity: (loading || form.totp.length !== 6) ? 0.60 : 1,
-                  boxShadow: '0 4px 18px rgba(199,140,0,0.25)',
+                  boxShadow: '0 4px 20px rgba(199,140,0,0.25)',
                   fontFamily: 'Outfit, sans-serif',
-                  transition: 'opacity 150ms ease',
+                  transition: 'opacity 150ms ease, box-shadow 150ms ease',
                 }}
               >
                 {loading ? t('common.loading') : t('common.confirm')}
@@ -339,9 +400,12 @@ export default function LoginPage() {
                 style={{
                   width: '100%', padding: '0.625rem',
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '0.875rem', color: '#706F6A',
+                  fontSize: '0.8125rem', color: '#555552',
                   fontFamily: 'Outfit, sans-serif',
+                  transition: 'color 150ms ease',
                 }}
+                onMouseEnter={e => e.currentTarget.style.color = '#A0A09E'}
+                onMouseLeave={e => e.currentTarget.style.color = '#555552'}
               >
                 ← {t('common.back')}
               </button>
@@ -353,12 +417,15 @@ export default function LoginPage() {
       {/* Footer */}
       <p className="animate-slideUp delay-300" style={{
         position: 'relative', marginTop: '1.5rem',
-        fontSize: '0.8125rem', color: '#9C9B97', fontFamily: 'Outfit, sans-serif',
+        fontSize: '0.75rem', color: '#333330', fontFamily: 'Outfit, sans-serif',
+        textAlign: 'center',
       }}>
         Suporte:{' '}
         <a
           href="mailto:VaultGuard2026@outlook.com"
-          style={{ color: '#706F6A', textDecoration: 'underline', textUnderlineOffset: '3px' }}
+          style={{ color: '#4A4A47', textDecoration: 'underline', textUnderlineOffset: '3px', transition: 'color 150ms ease' }}
+          onMouseEnter={e => e.currentTarget.style.color = '#C78C00'}
+          onMouseLeave={e => e.currentTarget.style.color = '#4A4A47'}
         >
           VaultGuard2026@outlook.com
         </a>

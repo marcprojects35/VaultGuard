@@ -31,6 +31,14 @@ const LIGHT_VARS = {
   '--color-danger':        '#DC2626',
 };
 
+function hexToRgb(hex) {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
 export const useSettingsStore = create((set, get) => ({
   settings: {
     siteName: 'VaultGuard',
@@ -54,7 +62,11 @@ export const useSettingsStore = create((set, get) => ({
         ...data,
         logoUrl: data.logoUrl || '/logo.png',
         faviconUrl: data.faviconUrl || '/logo.png',
+        primaryColor: data.primaryColor || '#C78C00',
+        accentColor: data.accentColor || '#AD7B04',
         themeMode: data.themeMode || 'dark',
+        bgColor: data.bgColor || '',
+        surfaceColor: data.surfaceColor || '',
       };
       set({ settings: merged, loaded: true });
       get().applyTheme(merged);
@@ -79,17 +91,20 @@ export const useSettingsStore = create((set, get) => ({
     root.style.setProperty('--color-accent', accent);
     root.style.setProperty('--color-primary-hover', '#FFB400');
     root.style.setProperty('--color-primary-light', '#E7A300');
-    root.style.setProperty('--color-primary-rgb', '199, 140, 0');
+    root.style.setProperty('--color-primary-rgb', hexToRgb(primary));
 
     if (settings.bgColor) root.style.setProperty('--color-bg', settings.bgColor);
     if (settings.surfaceColor) root.style.setProperty('--color-surface', settings.surfaceColor);
 
     const faviconHref = settings.faviconUrl || '/logo.png';
-    const link = document.querySelector("link[rel~='icon']") || document.createElement('link');
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      document.head.appendChild(link);
+    }
     link.rel = 'icon';
     link.type = 'image/png';
     link.href = faviconHref;
-    document.head.appendChild(link);
 
     if (settings.siteName) document.title = settings.siteName;
   },
