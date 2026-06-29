@@ -496,17 +496,17 @@ export default function VaultLayout() {
         {/* Footer */}
         <footer style={{
           flexShrink: 0, padding: '7px 16px', textAlign: 'center',
-          borderTop: '1px solid var(--color-border)',
-          background: 'var(--color-surface)',
+          borderTop: '1px solid #1A1A1A',
+          background: '#030303',
         }}>
-          <span style={{ fontSize: '0.75rem', color: 'var(--color-muted)' }}>
+          <span style={{ fontSize: '0.75rem', color: '#C78C00' }}>
             Desenvolvido por{' '}
             <a
               href="https://www.linkedin.com/in/marcoaurelioprudencio/"
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontWeight: 600, color: 'var(--color-primary)',
+                fontWeight: 700, color: '#E7A300',
                 textDecoration: 'none', transition: 'opacity 150ms ease',
               }}
               onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
