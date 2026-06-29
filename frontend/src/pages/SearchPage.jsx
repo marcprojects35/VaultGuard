@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -33,7 +33,7 @@ export default function SearchPage() {
   const [expiry, setExpiry] = useState(searchParams.get('expiry') || '');
   const [copied, setCopied] = useState(null);
   const [showFilters, setShowFilters] = useState(!!(searchParams.get('tag') || searchParams.get('expiry')));
-  const [debounceTimer, setDebounceTimer] = useState(null);
+  const debounceRef = useRef(null);
 
   // Sync URL params
   useEffect(() => {
@@ -46,9 +46,8 @@ export default function SearchPage() {
 
   const handleSearch = (val) => {
     setSearch(val);
-    if (debounceTimer) clearTimeout(debounceTimer);
-    const t = setTimeout(() => setDebouncedSearch(val), 400);
-    setDebounceTimer(t);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(val), 350);
   };
 
   const hasFilters = debouncedSearch.trim().length >= 2 || tag || expiry;

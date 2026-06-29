@@ -139,7 +139,7 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
       className="w-full flex items-center gap-3 px-4 py-3 text-left transition-all cursor-pointer"
       style={{
         background: isSelected ? `${settings.primaryColor}15` : 'transparent',
-        borderBottom: '1px solid var(--color-border)',
+        borderBottom: '1px solid #1E1E1E',
         borderLeft: isSelected ? `3px solid ${settings.primaryColor}` : '3px solid transparent',
       }}
       onClick={() => onClick(cred)}
@@ -151,7 +151,7 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
         </button>
       )}
       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: 'var(--color-surface-2)' }}>
+        style={{ background: '#1E1E1E' }}>
         {cred.url ? (
           <img src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(cred.url).hostname; } catch { return ''; } })()}&sz=16`}
             className="w-4 h-4"
@@ -176,7 +176,7 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
           </span>
         )}
         {cred.strength != null && (
-          <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: 'var(--color-surface-2)' }}>
+          <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: '#2A2A2A' }}>
             <div className="h-full rounded-full" style={{ width: `${cred.strength}%`, background: getStrengthColor(cred.strength) }} />
           </div>
         )}
@@ -280,7 +280,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
   );
 
   const Field = ({ icon: Icon, label, children }) => (
-    <div className="flex items-start py-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
+    <div className="flex items-start py-3" style={{ borderBottom: '1px solid #252525' }}>
       <div className="w-28 flex items-center gap-2 flex-shrink-0 pt-0.5">
         {Icon && <Icon className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />}
         <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
@@ -290,8 +290,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
   );
 
   return (
-    <div className="flex flex-col h-full" style={{ background: 'var(--color-bg)' }}>
-      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+    <div className="flex flex-col h-full" style={{ background: '#0D0D0D' }}>
+      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid #1E1E1E', background: '#111111' }}>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: 'var(--color-muted)' }}>
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -320,7 +320,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
         </div>
       )}
 
-      <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+      <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto" style={{ borderBottom: '1px solid #1E1E1E', background: '#111111' }}>
         {[
           { icon: Edit2, label: 'Editar', action: () => onEdit(cred), color: 'var(--color-text-muted)' },
           { icon: Trash2, label: 'Excluir', action: () => onDelete(cred), color: '#ef4444' },
@@ -339,7 +339,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
       <div className="flex-1 overflow-y-auto p-5">
         {activeView === 'detail' ? (
           <>
-            <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+            <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
               <div className="px-5">
                 <Field icon={Key} label="Senha">
                   <div className="flex items-center gap-2">
@@ -385,8 +385,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             </div>
 
             {cred.customFields?.length > 0 && (
-              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-                <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--color-border)' }}>
+              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
+                <div className="px-4 py-2 border-b" style={{ borderColor: '#252525' }}>
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Campos Personalizados</span>
                 </div>
                 <div className="px-5">
@@ -418,7 +418,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
 
             {cred.notes && (
-              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />
                   <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Anotações</span>
@@ -428,8 +428,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
 
             {cred.attachments?.length > 0 && (
-              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-                <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--color-border)' }}>
+              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
+                <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: '#252525' }}>
                   <Paperclip className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
                     Anexos ({cred.attachments.length})
@@ -452,14 +452,14 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
 
             {cred.strength != null && (
-              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Força da Senha</span>
                   <span className="text-xs font-semibold" style={{ color: getStrengthColor(cred.strength) }}>
                     {getStrengthLabel(cred.strength)} ({cred.strength}%)
                   </span>
                 </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-surface-2)' }}>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: '#2A2A2A' }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${cred.strength}%`, background: getStrengthColor(cred.strength) }} />
                 </div>
               </div>
@@ -504,7 +504,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             ) : (
               <div className="space-y-2">
                 {history.map((entry, idx) => (
-                  <div key={entry.id} className="rounded-xl p-3" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                  <div key={entry.id} className="rounded-xl p-3" style={{ background: '#161616', border: '1px solid #252525' }}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
                         Versão {history.length - idx}{entry.changedBy && ` • ${entry.changedBy.firstName} ${entry.changedBy.lastName}`}
@@ -577,11 +577,11 @@ function SharesView({ credId, shares, sharesLoading, refetchShares, settings, sh
       </div>
 
       {showShareModal && (
-        <div className="rounded-xl p-4 mb-4" style={{ background: 'var(--color-surface-2)', border: `1px solid ${settings.primaryColor}44` }}>
+        <div className="rounded-xl p-4 mb-4" style={{ background: '#1A1A1A', border: `1px solid ${settings.primaryColor}44` }}>
           <p className="text-xs font-medium mb-3" style={{ color: 'var(--color-text)' }}>Compartilhar com usuário</p>
           <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}
             className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-2"
-            style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+            style={{ background: '#111111', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
             <option value="">— Selecione um usuário —</option>
             {allUsers.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.email})</option>)}
           </select>
@@ -592,7 +592,7 @@ function SharesView({ credId, shares, sharesLoading, refetchShares, settings, sh
           <div className="flex gap-2">
             <button onClick={() => setShowShareModal(false)}
               className="flex-1 py-1.5 rounded-lg text-xs hover:bg-white/5"
-              style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+              style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
             <button onClick={() => shareMutation.mutate()} disabled={shareMutation.isPending || !selectedUserId}
               className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
               style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
@@ -615,7 +615,7 @@ function SharesView({ credId, shares, sharesLoading, refetchShares, settings, sh
         <div className="space-y-2">
           {shares.map(s => (
             <div key={s.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+              style={{ background: '#111111', border: '1px solid #252525' }}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                 style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
                 {s.sharedWith?.firstName?.[0]}{s.sharedWith?.lastName?.[0]}
@@ -735,34 +735,34 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
     e.target.value = '';
   };
 
-  const inputStyle = { background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
+  const inputStyle = { background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-xl rounded-2xl animate-fadeIn max-h-[90vh] flex flex-col"
-        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+        style={{ background: '#111111', border: '1px solid #252525' }}>
 
-        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: '#252525' }}>
           <h2 className="text-lg font-bold">{isEdit ? 'Editar Credencial' : 'Nova Credencial'}</h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5" style={{ color: 'var(--color-muted)' }}><X className="w-4 h-4" /></button>
         </div>
 
         {!isEdit && (
-          <div className="flex items-center gap-2 px-4 py-2 border-b overflow-x-auto flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+          <div className="flex items-center gap-2 px-4 py-2 border-b overflow-x-auto flex-shrink-0" style={{ borderColor: '#252525' }}>
             <LayoutTemplate className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--color-muted)' }} />
             {CREDENTIAL_TEMPLATES.map(tpl => (
               <button key={tpl.id} onClick={() => { setSelectedTemplate(tpl.id); setCustomFields(tpl.fields.length > 0 ? tpl.fields.map((f, i) => ({ ...f, sortOrder: i })) : []); }}
                 className="px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex-shrink-0"
-                style={{ background: selectedTemplate === tpl.id ? `${settings.primaryColor}22` : 'var(--color-surface-2)', color: selectedTemplate === tpl.id ? settings.primaryColor : 'var(--color-text-muted)', border: `1px solid ${selectedTemplate === tpl.id ? settings.primaryColor + '44' : 'var(--color-border)'}` }}>
+                style={{ background: selectedTemplate === tpl.id ? `${settings.primaryColor}22` : '#1A1A1A', color: selectedTemplate === tpl.id ? settings.primaryColor : 'var(--color-text-muted)', border: `1px solid ${selectedTemplate === tpl.id ? settings.primaryColor + '44' : '#2A2A2A'}` }}>
                 {tpl.label}
               </button>
             ))}
           </div>
         )}
 
-        <div className="flex gap-1 px-4 py-2 border-b flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="flex gap-1 px-4 py-2 border-b flex-shrink-0" style={{ borderColor: '#252525' }}>
           <Tab id="basic" label="Básico" />
           <Tab id="custom" label={`Campos (${customFields.length})`} />
           <Tab id="attachments" label={`Anexos (${attachments.filter(a => !deletedAttachmentIds.includes(a.id)).length + newFiles.length})`} />
@@ -809,7 +809,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                   </div>
                   {form.password && (
                     <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1 rounded-full" style={{ background: 'var(--color-surface-2)' }}>
+                      <div className="flex-1 h-1 rounded-full" style={{ background: '#2A2A2A' }}>
                         <div className="h-full rounded-full transition-all" style={{ width: `${form.strength}%`, background: getStrengthColor(form.strength) }} />
                       </div>
                       <span className="text-xs" style={{ color: getStrengthColor(form.strength) }}>{form.strength}%</span>
@@ -854,16 +854,16 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 </button>
               </div>
               {customFields.length === 0 ? (
-                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed var(--color-border)' }}>
+                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed #2A2A2A' }}>
                   <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Nenhum campo personalizado</p>
                 </div>
               ) : customFields.map((cf, idx) => (
-                <div key={idx} className="rounded-xl p-3 space-y-2" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                <div key={idx} className="rounded-xl p-3 space-y-2" style={{ background: '#1A1A1A', border: '1px solid #2A2A2A' }}>
                   <div className="flex gap-2">
                     <input value={cf.name} onChange={e => setCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, name: e.target.value } : f))}
-                      className="flex-1 px-3 py-2 rounded-lg text-sm outline-none" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} placeholder="Nome do campo" />
+                      className="flex-1 px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#0D0D0D', border: '1px solid #2A2A2A', color: 'var(--color-text)' }} placeholder="Nome do campo" />
                     <select value={cf.fieldType} onChange={e => setCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, fieldType: e.target.value } : f))}
-                      className="px-2 py-2 rounded-lg text-xs outline-none" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                      className="px-2 py-2 rounded-lg text-xs outline-none" style={{ background: '#0D0D0D', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
                       <option value="text">Texto</option>
                       <option value="password">Senha</option>
                       <option value="url">URL</option>
@@ -875,7 +875,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                   <input value={cf.value} onChange={e => setCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, value: e.target.value } : f))}
                     type={cf.fieldType === 'password' ? 'password' : 'text'}
                     className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono"
-                    style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} placeholder="Valor" />
+                    style={{ background: '#0D0D0D', border: '1px solid #2A2A2A', color: 'var(--color-text)' }} placeholder="Valor" />
                 </div>
               ))}
             </div>
@@ -893,7 +893,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
               </div>
               {attachments.filter(a => !deletedAttachmentIds.includes(a.id)).map(att => (
-                <div key={att.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+                <div key={att.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: '#1A1A1A', border: '1px solid #2A2A2A' }}>
                   <Paperclip className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-muted)' }} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate" style={{ color: 'var(--color-text)' }}>{att.fileName}</div>
@@ -919,7 +919,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 </div>
               ))}
               {attachments.filter(a => !deletedAttachmentIds.includes(a.id)).length === 0 && newFiles.length === 0 && (
-                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed var(--color-border)' }}>
+                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed #2A2A2A' }}>
                   <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Nenhum anexo</p>
                 </div>
               )}
@@ -927,9 +927,9 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
           )}
         </div>
 
-        <div className="flex gap-3 px-6 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="flex gap-3 px-6 py-4 border-t flex-shrink-0" style={{ borderColor: '#252525' }}>
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors hover:bg-white/5"
-            style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>Cancelar</button>
+            style={{ color: 'var(--color-text-muted)', border: '1px solid #2A2A2A' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.title || !form.folderId}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
             style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
@@ -968,12 +968,12 @@ function NewFolderModal({ onClose, isAdmin }) {
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+        style={{ background: '#111111', border: '1px solid #252525' }}>
         <h2 className="text-base font-bold mb-4" style={{ color: 'var(--color-text)' }}>Nova Pasta</h2>
 
         <input value={name} onChange={e => setName(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4"
-          style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+          style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}
           placeholder="Nome da pasta" autoFocus />
 
         <p className="text-xs mb-3 font-medium" style={{ color: 'var(--color-text-muted)' }}>Visibilidade</p>
@@ -985,8 +985,8 @@ function NewFolderModal({ onClose, isAdmin }) {
             <button key={opt.id} onClick={() => setVisibility(opt.id)}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center transition-all"
               style={{
-                background: visibility === opt.id ? `${settings.primaryColor}22` : 'var(--color-surface-2)',
-                border: `1.5px solid ${visibility === opt.id ? settings.primaryColor : 'var(--color-border)'}`,
+                background: visibility === opt.id ? `${settings.primaryColor}22` : '#1A1A1A',
+                border: `1.5px solid ${visibility === opt.id ? settings.primaryColor : '#2A2A2A'}`,
               }}>
               <span className="text-xl">{opt.icon}</span>
               <span className="text-xs font-semibold" style={{ color: visibility === opt.id ? settings.primaryColor : 'var(--color-text)' }}>{opt.title}</span>
@@ -997,7 +997,7 @@ function NewFolderModal({ onClose, isAdmin }) {
 
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-colors"
-            style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+            style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !name.trim()}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
             style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
@@ -1028,15 +1028,15 @@ function PersonalFolderRenameModal({ onClose, folder }) {
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+        style={{ background: '#111111', border: '1px solid #252525' }}>
         <h2 className="text-base font-bold mb-4">Renomear Pasta</h2>
         <input value={name} onChange={e => setName(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4"
-          style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+          style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}
           autoFocus />
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-            style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+            style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !name.trim()}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
             style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
@@ -1240,9 +1240,9 @@ export default function VaultPage() {
 
       {/* ── Credentials list ─────────────────────────────────────────────── */}
       <div className={`flex-shrink-0 border-r flex flex-col overflow-hidden ${hasDetail ? 'w-64' : 'flex-1'}`}
-        style={{ borderColor: 'var(--color-border)' }}>
+        style={{ borderColor: '#1E1E1E', background: '#111111' }}>
         {/* Search + actions bar */}
-        <div className="flex items-center gap-2 p-3 border-b" style={{ borderColor: 'var(--color-border)' }}>
+        <div className="flex items-center gap-2 p-3 border-b" style={{ borderColor: '#1E1E1E', background: '#111111' }}>
           {!bulkMode ? (
             <>
               <div className="flex-1 relative">
@@ -1250,7 +1250,7 @@ export default function VaultPage() {
                 <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Pesquisar..."
                   className="w-full pl-9 pr-4 py-2 rounded-xl text-xs outline-none"
-                  style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} />
+                  style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }} />
                 {search && (
                   <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-muted)' }}>
                     <X className="w-3 h-3" />
@@ -1291,7 +1291,7 @@ export default function VaultPage() {
           )}
         </div>
 
-        <div className="px-4 py-1.5 text-xs" style={{ color: 'var(--color-muted)', borderBottom: '1px solid var(--color-border)' }}>
+        <div className="px-4 py-1.5 text-xs" style={{ color: '#4A4A47', borderBottom: '1px solid #1E1E1E' }}>
           {credentials.length} ite{credentials.length !== 1 ? 'ns' : 'm'}
           {bulkMode && selectedIds.size > 0 && ` • ${selectedIds.size} selecionado(s)`}
         </div>
@@ -1368,7 +1368,7 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            style={{ background: '#111111', border: '1px solid #252525' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
@@ -1380,7 +1380,7 @@ export default function VaultPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => deleteMutation.mutate(deleteTarget.id)} disabled={deleteMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {deleteMutation.isPending ? '...' : 'Excluir'}
@@ -1395,7 +1395,7 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            style={{ background: '#111111', border: '1px solid #252525' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
@@ -1410,7 +1410,7 @@ export default function VaultPage() {
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteFolderTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => deleteFolderMutation.mutate(deleteFolderTarget.id)} disabled={deleteFolderMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {deleteFolderMutation.isPending ? '...' : 'Excluir'}
@@ -1425,7 +1425,7 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            style={{ background: '#111111', border: '1px solid #252525' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
@@ -1437,7 +1437,7 @@ export default function VaultPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDeletingPersonalFolder(null)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => deleteFolderMutation.mutate(deletingPersonalFolder.id)} disabled={deleteFolderMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {deleteFolderMutation.isPending ? '...' : 'Excluir'}
@@ -1452,7 +1452,7 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            style={{ background: '#111111', border: '1px solid #252525' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
@@ -1464,7 +1464,7 @@ export default function VaultPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setBulkDeleteConfirm(false)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => bulkDeleteMutation.mutate([...selectedIds])} disabled={bulkDeleteMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {bulkDeleteMutation.isPending ? 'Excluindo...' : 'Excluir tudo'}
