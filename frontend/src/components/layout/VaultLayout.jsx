@@ -400,14 +400,26 @@ export default function VaultLayout() {
             }}
             className="sidebar-hover-item"
           >
-            <div style={{
-              width: '26px', height: '26px', borderRadius: '50%',
-              background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '0.6875rem', fontWeight: 700, color: '#fff', flexShrink: 0,
-            }}>
-              {userInitials}
-            </div>
+            {user?.avatar ? (
+              <img
+                src={user.avatar}
+                alt="avatar"
+                style={{
+                  width: '26px', height: '26px', borderRadius: '50%',
+                  objectFit: 'cover', flexShrink: 0,
+                  border: '1.5px solid rgba(199,140,0,0.4)',
+                }}
+              />
+            ) : (
+              <div style={{
+                width: '26px', height: '26px', borderRadius: '50%',
+                background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.6875rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+              }}>
+                {userInitials}
+              </div>
+            )}
             {open && (
               <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                 <div style={{

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Mail, Save, RefreshCw, Send, Server, Bell,
   CheckCircle, XCircle, Cloud, Link, Unlink, Info,
@@ -65,6 +65,7 @@ const NOTIFICATION_EVENTS = [
 export default function SettingsEmailPage() {
   const [provider, setProvider] = useState('smtp');
   const [emailEnabled, setEmailEnabled] = useState(true);
+  const [loaded, setLoaded] = useState(false);
 
   const [smtp, setSmtp] = useState({
     host: '',
@@ -91,6 +92,30 @@ export default function SettingsEmailPage() {
 
   const [testEmail, setTestEmail] = useState('');
   const [testStatus, setTestStatus] = useState(null);
+
+  /* ── Load saved config ── */
+  const { data: savedConfig } = useQuery({
+    queryKey: ['email-config'],
+    queryFn: () => api.get('/settings/email').then(r => r.data),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!savedConfig || loaded) return;
+    setLoaded(true);
+    setEmailEnabled(savedConfig.emailEnabled ?? true);
+    setProvider(savedConfig.provider ?? 'smtp');
+    if (savedConfig.smtp) setSmtp(s => ({ ...s, ...savedConfig.smtp }));
+    setSender({ fromName: savedConfig.fromName || 'VaultGuard', fromEmail: savedConfig.fromEmail || '' });
+    setNotifications(prev => {
+      const updated = { ...prev };
+      NOTIFICATION_EVENTS.forEach(ev => {
+        if (savedConfig[ev.key] !== undefined) updated[ev.key] = savedConfig[ev.key];
+      });
+      return updated;
+    });
+  }, [savedConfig]);
 
   /* ── OAuth status (Office 365) ── */
   const { data: o365Status, refetch: refetchO365Status } = useQuery({

@@ -71,6 +71,18 @@ validate_password() {
     [[ "$p" =~ [0-9] ]]
 }
 
+# ── Modo de instalação ───────────────────────────────────────────────────────
+echo -e "  Como você quer instalar o VaultGuard?"
+echo -e "  ${W}1)${NC} Servidor / produção  (porta 80/443, IP externo, suporte a SSL)"
+echo -e "  ${W}2)${NC} Máquina local        (porta 8080, localhost, sem configuração SSL)"
+echo
+ask "Opção [1]: "
+read -r INSTALL_MODE
+INSTALL_MODE="${INSTALL_MODE:-1}"
+
+IS_LOCAL=false
+[ "$INSTALL_MODE" = "2" ] && IS_LOCAL=true
+
 # ── Verificar se já está instalado ───────────────────────────────────────────
 ALREADY_INSTALLED=false
 if [ -f .env ] && docker ps 2>/dev/null | grep -q "vaultguard"; then
@@ -219,83 +231,94 @@ step "3/6 — Configuração de rede"
 sep
 echo
 
-# IP do servidor
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d ' ')
-[ -z "$SERVER_IP" ] && SERVER_IP="localhost"
-
-ask "IP ou domínio do servidor [$SERVER_IP]: "
-read -r INPUT_IP
-SERVER_IP="${INPUT_IP:-$SERVER_IP}"
-
-# Porta HTTP
-HTTP_PORT=80
-if port_in_use 80; then
-    warn "Porta 80 em uso."
-    HTTP_PORT=8080
-    while port_in_use "$HTTP_PORT"; do
-        HTTP_PORT=$((HTTP_PORT + 1))
-    done
-fi
-ask "Porta HTTP [$HTTP_PORT]: "
-read -r INPUT_PORT
-HTTP_PORT="${INPUT_PORT:-$HTTP_PORT}"
-
-# HTTPS
 ENABLE_HTTPS=false
 HTTPS_PORT=443
 HTTPS_URL=""
 mkdir -p ssl
 
-echo
-if confirm "Habilitar HTTPS (SSL)?"; then
-    ENABLE_HTTPS=true
+if [ "$IS_LOCAL" = true ]; then
+    # ── Modo local: localhost, porta 8080, sem SSL ────────────────────────
+    SERVER_IP="localhost"
+    HTTP_PORT=8080
+    while port_in_use "$HTTP_PORT"; do
+        HTTP_PORT=$((HTTP_PORT + 1))
+    done
+    ask "Porta local [$HTTP_PORT]: "
+    read -r INPUT_PORT
+    HTTP_PORT="${INPUT_PORT:-$HTTP_PORT}"
+    ok "Modo local: http://localhost:${HTTP_PORT}"
+else
+    # ── Modo servidor: pergunta IP, porta, SSL ────────────────────────────
+    SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d ' ')
+    [ -z "$SERVER_IP" ] && SERVER_IP="localhost"
 
-    if port_in_use 443; then
-        warn "Porta 443 em uso."
-        HTTPS_PORT=8443
-        while port_in_use "$HTTPS_PORT"; do
-            HTTPS_PORT=$((HTTPS_PORT + 1))
+    ask "IP ou domínio do servidor [$SERVER_IP]: "
+    read -r INPUT_IP
+    SERVER_IP="${INPUT_IP:-$SERVER_IP}"
+
+    HTTP_PORT=80
+    if port_in_use 80; then
+        warn "Porta 80 em uso."
+        HTTP_PORT=8080
+        while port_in_use "$HTTP_PORT"; do
+            HTTP_PORT=$((HTTP_PORT + 1))
         done
     fi
-    ask "Porta HTTPS [$HTTPS_PORT]: "
-    read -r INPUT_HTTPS
-    HTTPS_PORT="${INPUT_HTTPS:-$HTTPS_PORT}"
+    ask "Porta HTTP [$HTTP_PORT]: "
+    read -r INPUT_PORT
+    HTTP_PORT="${INPUT_PORT:-$HTTP_PORT}"
 
     echo
-    echo -e "  Como configurar o certificado SSL?"
-    echo -e "  ${W}1)${NC} Gerar certificado autoassinado (recomendado para uso interno)"
-    echo -e "  ${W}2)${NC} Usar certificado existente (Let's Encrypt ou CA própria)"
-    ask "Opção [1]: "
-    read -r SSL_OPT
-    SSL_OPT="${SSL_OPT:-1}"
+    if confirm "Habilitar HTTPS (SSL)?"; then
+        ENABLE_HTTPS=true
 
-    if [ "$SSL_OPT" = "2" ]; then
-        ask "Caminho do certificado (.pem ou .crt): "
-        read -r CERT_PATH
-        ask "Caminho da chave privada (.key): "
-        read -r KEY_PATH
-        if [ -f "$CERT_PATH" ] && [ -f "$KEY_PATH" ]; then
-            cp "$CERT_PATH" ssl/cert.pem
-            cp "$KEY_PATH" ssl/key.pem
-            ok "Certificado copiado para ssl/"
-        else
-            err "Arquivos não encontrados. Gerando autoassinado como fallback."
-            SSL_OPT="1"
+        if port_in_use 443; then
+            warn "Porta 443 em uso."
+            HTTPS_PORT=8443
+            while port_in_use "$HTTPS_PORT"; do
+                HTTPS_PORT=$((HTTPS_PORT + 1))
+            done
         fi
-    fi
+        ask "Porta HTTPS [$HTTPS_PORT]: "
+        read -r INPUT_HTTPS
+        HTTPS_PORT="${INPUT_HTTPS:-$HTTPS_PORT}"
 
-    if [ "$SSL_OPT" = "1" ]; then
-        ok "Gerando certificado autoassinado (válido por 10 anos)..."
-        openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-            -keyout ssl/key.pem -out ssl/cert.pem \
-            -subj "/CN=${SERVER_IP}/O=${COMPANY_NAME}/C=BR" \
-            2>/dev/null
-        ok "Certificado gerado em ssl/"
-        warn "Certificado autoassinado: o navegador vai exibir aviso de segurança."
-        warn "Para produção, substitua ssl/cert.pem e ssl/key.pem e reinicie o nginx."
-    fi
+        echo
+        echo -e "  Como configurar o certificado SSL?"
+        echo -e "  ${W}1)${NC} Gerar certificado autoassinado (recomendado para uso interno)"
+        echo -e "  ${W}2)${NC} Usar certificado existente (Let's Encrypt ou CA própria)"
+        ask "Opção [1]: "
+        read -r SSL_OPT
+        SSL_OPT="${SSL_OPT:-1}"
 
-    HTTPS_URL="https://${SERVER_IP}:${HTTPS_PORT}"
+        if [ "$SSL_OPT" = "2" ]; then
+            ask "Caminho do certificado (.pem ou .crt): "
+            read -r CERT_PATH
+            ask "Caminho da chave privada (.key): "
+            read -r KEY_PATH
+            if [ -f "$CERT_PATH" ] && [ -f "$KEY_PATH" ]; then
+                cp "$CERT_PATH" ssl/cert.pem
+                cp "$KEY_PATH" ssl/key.pem
+                ok "Certificado copiado para ssl/"
+            else
+                err "Arquivos não encontrados. Gerando autoassinado como fallback."
+                SSL_OPT="1"
+            fi
+        fi
+
+        if [ "$SSL_OPT" = "1" ]; then
+            ok "Gerando certificado autoassinado (válido por 10 anos)..."
+            openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+                -keyout ssl/key.pem -out ssl/cert.pem \
+                -subj "/CN=${SERVER_IP}/O=${COMPANY_NAME}/C=BR" \
+                2>/dev/null
+            ok "Certificado gerado em ssl/"
+            warn "Certificado autoassinado: o navegador vai exibir aviso de segurança."
+            warn "Para produção, substitua ssl/cert.pem e ssl/key.pem e reinicie o nginx."
+        fi
+
+        HTTPS_URL="https://${SERVER_IP}:${HTTPS_PORT}"
+    fi
 fi
 
 HTTP_URL="http://${SERVER_IP}:${HTTP_PORT}"
@@ -342,8 +365,12 @@ JWT_SECRET="${JWT_SECRET}"
 NODE_ENV=production
 EOF
 
-# Se HTTPS, ativa o docker-compose.ssl.yml via COMPOSE_FILE
-if [ "$ENABLE_HTTPS" = true ]; then
+# Define qual compose usar
+if [ "$IS_LOCAL" = true ]; then
+    echo "" >> .env
+    echo "# ── Modo local (sem Nginx) ───────────────────────────────────────────────────" >> .env
+    echo "COMPOSE_FILE=docker-compose.local.yml" >> .env
+elif [ "$ENABLE_HTTPS" = true ]; then
     echo "" >> .env
     echo "# ── Ativa overlay SSL (não remova esta linha) ───────────────────────────────" >> .env
     echo "COMPOSE_FILE=docker-compose.yml:docker-compose.ssl.yml" >> .env
@@ -377,8 +404,11 @@ MAX_WAIT=240
 WAITED=0
 READY=false
 
+HEALTH_PORT="${HTTP_PORT}"
+# No modo servidor com Nginx, o backend fica na porta HTTP_PORT via proxy
+# No modo local, o backend responde diretamente na porta HTTP_PORT
 while [ $WAITED -lt $MAX_WAIT ]; do
-    if curl -sf "http://localhost:${HTTP_PORT}/api/health" >/dev/null 2>&1; then
+    if curl -sf "http://localhost:${HEALTH_PORT}/api/health" >/dev/null 2>&1; then
         READY=true
         break
     fi
@@ -401,7 +431,11 @@ if [ "$READY" = true ]; then
     if curl -sf "http://localhost:${HTTP_PORT}/" >/dev/null 2>&1; then
         ok "Frontend servido corretamente"
     else
-        warn "Frontend não respondeu em http://localhost:${HTTP_PORT}/ — verifique os logs do nginx"
+        if [ "$IS_LOCAL" = true ]; then
+            warn "Frontend não respondeu em http://localhost:${HTTP_PORT}/ — verifique: $COMPOSE logs backend"
+        else
+            warn "Frontend não respondeu em http://localhost:${HTTP_PORT}/ — verifique os logs do nginx"
+        fi
     fi
     echo
     echo -e "  ${W}Acesso ao sistema:${NC}"

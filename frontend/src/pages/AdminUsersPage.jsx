@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Edit2, Trash2, Key, Search, X, Shield, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Plus, Edit2, Trash2, Key, Search, X, Shield, AlertTriangle, CheckCircle, Clock, RefreshCw, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
@@ -151,6 +151,37 @@ export default function AdminUsersPage() {
     onError: () => toast.error('Erro ao redefinir senha'),
   });
 
+  const [showAdSync, setShowAdSync] = useState(false);
+  const [syncJobId, setSyncJobId] = useState(null);
+
+  const adSyncMutation = useMutation({
+    mutationFn: () => api.post('/ldap/sync').then(r => r.data),
+    onSuccess: (data) => {
+      setSyncJobId(data.jobId || 'running');
+      toast.success('Sincronização com AD iniciada!');
+    },
+    onError: (err) => toast.error(err.response?.data?.error || 'Erro ao iniciar sync com AD'),
+  });
+
+  const { data: syncStatus } = useQuery({
+    queryKey: ['ldap-sync-status', syncJobId],
+    queryFn: () => api.get('/ldap/sync/status').then(r => r.data),
+    enabled: !!syncJobId,
+    refetchInterval: syncJobId ? 3000 : false,
+  });
+
+  useEffect(() => {
+    if (!syncStatus) return;
+    if (syncStatus.status === 'completed' || syncStatus.status === 'done') {
+      setSyncJobId(null);
+      qc.invalidateQueries({ queryKey: ['users'] });
+      toast.success(`Sync concluído! ${syncStatus.created || 0} criados, ${syncStatus.updated || 0} atualizados.`);
+    } else if (syncStatus.status === 'error' || syncStatus.status === 'failed') {
+      setSyncJobId(null);
+      toast.error('Sync com AD falhou: ' + (syncStatus.error || 'erro desconhecido'));
+    }
+  }, [syncStatus]);
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -160,12 +191,26 @@ export default function AdminUsersPage() {
             {users.length} usuários cadastrados
           </p>
         </div>
-        <button onClick={() => { setEditUser(null); setShowModal(true); }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-          style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
-          <Plus className="w-4 h-4" />
-          {t('user.newUser')}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => adSyncMutation.mutate()}
+            disabled={adSyncMutation.isPending || !!syncJobId}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-60"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+            title="Sincronizar usuários com Active Directory">
+            {(adSyncMutation.isPending || syncJobId) ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Users className="w-4 h-4" />
+            )}
+            Sincronizar com AD
+          </button>
+          <button onClick={() => { setEditUser(null); setShowModal(true); }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
+            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            <Plus className="w-4 h-4" />
+            {t('user.newUser')}
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

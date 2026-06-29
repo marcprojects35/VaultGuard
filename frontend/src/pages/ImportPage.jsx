@@ -41,12 +41,16 @@ export default function ImportPage() {
   const [importResult, setImportResult] = useState(null);
   const [format, setFormat] = useState('vaultguard');
 
-  const { data: folders = [] } = useQuery({
+  const { data: foldersRaw = { shared: [], personal: [] } } = useQuery({
     queryKey: ['folders'],
     queryFn: () => api.get('/folders').then(r => r.data),
   });
 
-  const flatFolders = flattenFolders(folders);
+  const foldersData = Array.isArray(foldersRaw) ? { shared: foldersRaw, personal: [] } : foldersRaw;
+  const flatFolders = [
+    ...flattenFolders(foldersData.shared || []),
+    ...flattenFolders(foldersData.personal || []).map(f => ({ ...f, name: `🔒 ${f.name}` })),
+  ];
 
   const importMutation = useMutation({
     mutationFn: () => api.post('/credentials/import', {

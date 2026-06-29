@@ -1,6 +1,9 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
+
+// Allow ±1 TOTP period (30s window) to tolerate minor clock skew
+authenticator.options = { window: 1 };
 import QRCode from 'qrcode';
 import { randomBytes } from 'crypto';
 import { PrismaClient } from '@prisma/client';

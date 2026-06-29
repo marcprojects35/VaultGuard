@@ -1,7 +1,10 @@
-import { useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useState, useRef } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { User, Lock, Shield, Eye, EyeOff, Check, X, Smartphone, Key, Clock, Activity } from 'lucide-react';
+import {
+  User, Lock, Shield, Eye, EyeOff, Check, X, Smartphone, Key,
+  Activity, Camera, Plus, Trash2, RefreshCw, Copy,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useAuthStore } from '../stores/authStore';
@@ -14,6 +17,8 @@ const ROLE_LABELS = {
 export default function ProfilePage() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
+  const qc = useQueryClient();
+  const avatarInputRef = useRef(null);
 
   const fullName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
   const initials = [user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join('') || '?';
@@ -29,7 +34,15 @@ export default function ProfilePage() {
   const [twoFaCode, setTwoFaCode] = useState('');
   const [activeTab, setActiveTab] = useState('info');
 
-  const { data: tokens = [] } = useQuery({
+  // New token form
+  const [newTokenName, setNewTokenName] = useState('');
+  const [newTokenExpiry, setNewTokenExpiry] = useState('');
+  const [showCreateToken, setShowCreateToken] = useState(false);
+  const [createdToken, setCreatedToken] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [deleteTokenTarget, setDeleteTokenTarget] = useState(null);
+
+  const { data: tokens = [], isLoading: tokensLoading } = useQuery({
     queryKey: ['api-tokens'],
     queryFn: () => api.get('/tokens').then(r => r.data),
     enabled: activeTab === 'tokens',
@@ -66,7 +79,7 @@ export default function ProfilePage() {
       updateUser({ totpEnabled: true });
       setTwoFaStep(null); setTwoFaData(null); setTwoFaCode('');
     },
-    onError: () => toast.error('Código inválido'),
+    onError: () => toast.error('Código inválido. Verifique se o horário do dispositivo está correto.'),
   });
 
   const disable2fa = useMutation({
@@ -78,6 +91,53 @@ export default function ProfilePage() {
     },
     onError: () => toast.error('Código inválido'),
   });
+
+  const createToken = useMutation({
+    mutationFn: () => api.post('/tokens', {
+      name: newTokenName,
+      expiresAt: newTokenExpiry || null,
+    }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['api-tokens'] });
+      setCreatedToken(res.data);
+      setNewTokenName('');
+      setNewTokenExpiry('');
+      setShowCreateToken(false);
+      toast.success('Token criado! Copie agora — não será exibido novamente.');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao criar token'),
+  });
+
+  const revokeToken = useMutation({
+    mutationFn: (id) => api.delete(`/tokens/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['api-tokens'] });
+      toast.success('Token revogado!');
+      setDeleteTokenTarget(null);
+    },
+    onError: () => toast.error('Erro ao revogar token'),
+  });
+
+  const handleAvatarSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error('Foto muito grande. Máx 2MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const base64 = ev.target.result;
+      updateProfile.mutate({ ...profileForm, avatar: base64 });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const copyToken = async (value, id) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch { toast.error('Erro ao copiar'); }
+  };
 
   const pwStrength = (pw) => {
     let s = 0;
@@ -121,8 +181,22 @@ export default function ProfilePage() {
 
       {/* Header card */}
       <div className="bg-white/5 border border-white/10 rounded-xl p-5 flex items-center gap-4">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#AD7B04] to-[#C78C00] flex items-center justify-center text-2xl font-bold text-white flex-shrink-0">
-          {initials}
+        <div className="relative flex-shrink-0">
+          {user?.avatar ? (
+            <img src={user.avatar} alt="avatar"
+              className="w-16 h-16 rounded-full object-cover ring-2 ring-[#C78C00]/40" />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#AD7B04] to-[#C78C00] flex items-center justify-center text-2xl font-bold text-white">
+              {initials}
+            </div>
+          )}
+          <button
+            onClick={() => avatarInputRef.current?.click()}
+            className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#C78C00] flex items-center justify-center hover:bg-[#FFB400] transition-colors"
+            title="Alterar foto">
+            <Camera size={11} className="text-white" />
+          </button>
+          <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarSelect} />
         </div>
         <div>
           <p className="font-semibold text-white text-lg">{fullName || user?.username}</p>
@@ -192,7 +266,6 @@ export default function ProfilePage() {
       {/* Tab: Segurança */}
       {activeTab === 'security' && (
         <div className="space-y-5">
-          {/* Trocar senha */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
               <Lock size={14} /> Trocar Senha
@@ -235,13 +308,15 @@ export default function ProfilePage() {
                 {twoFaStep === 'disable' ? (
                   <div className="space-y-3">
                     <p className="text-sm text-slate-400">Digite o código do seu app autenticador para desativar:</p>
-                    <input value={twoFaCode} onChange={e => setTwoFaCode(e.target.value)} maxLength={6}
+                    <input value={twoFaCode} onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6}
                       className="w-32 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm text-center font-mono tracking-widest focus:outline-none focus:border-red-500"
-                      placeholder="000000" />
+                      placeholder="000000" inputMode="numeric" />
                     <div className="flex gap-2">
                       <button onClick={() => { setTwoFaStep(null); setTwoFaCode(''); }} className="px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 text-sm">Cancelar</button>
-                      <button onClick={() => disable2fa.mutate(twoFaCode)} disabled={twoFaCode.length !== 6}
-                        className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm disabled:opacity-50">Desativar 2FA</button>
+                      <button onClick={() => disable2fa.mutate(twoFaCode)} disabled={twoFaCode.length !== 6 || disable2fa.isPending}
+                        className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm disabled:opacity-50">
+                        {disable2fa.isPending ? '...' : 'Desativar 2FA'}
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -263,25 +338,31 @@ export default function ProfilePage() {
                         <p className="text-sm text-slate-400 mb-2">1. Escaneie o QR code com seu app</p>
                         <p className="text-sm text-slate-400 mb-2">2. Ou insira a chave manualmente:</p>
                         <code className="text-xs bg-black/30 px-2 py-1 rounded font-mono text-[#E7A300] break-all block">{twoFaData.secret}</code>
-                        <p className="text-sm text-slate-400 mt-3 mb-2">3. Digite o código gerado:</p>
-                        <input value={twoFaCode} onChange={e => setTwoFaCode(e.target.value)} maxLength={6}
+                        <p className="text-sm text-slate-400 mt-3 mb-2">3. Digite o código de 6 dígitos gerado:</p>
+                        <input value={twoFaCode}
+                          onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          maxLength={6}
                           className="w-32 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[#C78C00]"
-                          placeholder="000000" />
+                          placeholder="000000"
+                          inputMode="numeric" />
                         <div className="flex gap-2 mt-3">
                           <button onClick={() => { setTwoFaStep(null); setTwoFaData(null); setTwoFaCode(''); }}
                             className="px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 text-sm">Cancelar</button>
-                          <button onClick={() => verify2fa.mutate(twoFaCode)} disabled={twoFaCode.length !== 6}
+                          <button onClick={() => verify2fa.mutate(twoFaCode)}
+                            disabled={twoFaCode.length !== 6 || verify2fa.isPending}
                             className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-sm disabled:opacity-50 flex items-center gap-1">
-                            <Check size={12} /> Verificar e Ativar
+                            {verify2fa.isPending ? <RefreshCw size={12} className="animate-spin" /> : <Check size={12} />}
+                            Verificar e Ativar
                           </button>
                         </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => setup2fa.mutate()}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 text-green-400 rounded-lg text-sm transition-colors">
-                    <Smartphone size={14} /> Configurar 2FA
+                  <button onClick={() => setup2fa.mutate()} disabled={setup2fa.isPending}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 border border-green-500/30 text-green-400 rounded-lg text-sm transition-colors disabled:opacity-50">
+                    {setup2fa.isPending ? <RefreshCw size={14} className="animate-spin" /> : <Smartphone size={14} />}
+                    Configurar 2FA
                   </button>
                 )}
               </div>
@@ -292,28 +373,104 @@ export default function ProfilePage() {
 
       {/* Tab: Token de API */}
       {activeTab === 'tokens' && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
-            <Key size={14} /> Tokens de API
-          </h2>
-          <p className="text-sm text-slate-400 mb-4">Use tokens para acessar a API via scripts ou integrações externas.</p>
-          {tokens.length === 0 ? (
-            <p className="text-sm text-slate-500">Nenhum token criado. Acesse <span className="text-[#C78C00]">Menu → Tokens de API</span> para criar.</p>
-          ) : (
-            <div className="space-y-2">
-              {tokens.map(t => (
-                <div key={t.id} className="flex items-center justify-between bg-white/3 rounded-lg px-4 py-3">
-                  <div>
-                    <div className="text-sm font-medium text-white">{t.name}</div>
-                    <div className="text-xs text-slate-500 font-mono mt-0.5">{t.token.slice(0, 16)}…</div>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {t.lastUsed ? `Último uso: ${new Date(t.lastUsed).toLocaleDateString('pt-BR')}` : 'Nunca usado'}
-                  </div>
-                </div>
-              ))}
+        <div className="space-y-4">
+          {/* Banner showing newly created token */}
+          {createdToken && (
+            <div className="rounded-xl p-4 border" style={{ background: '#10b98115', borderColor: '#10b98144' }}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-green-400">Token criado — copie agora!</span>
+                <button onClick={() => setCreatedToken(null)} className="text-slate-500 hover:text-slate-300">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 bg-black/30 rounded-lg px-3 py-2">
+                <code className="text-xs font-mono text-[#E7A300] flex-1 break-all">{createdToken.token}</code>
+                <button onClick={() => copyToken(createdToken.token, 'new')}
+                  className="flex-shrink-0" style={{ color: copiedId === 'new' ? '#10b981' : '#9ca3af' }}>
+                  {copiedId === 'new' ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">Este token não será exibido novamente.</p>
             </div>
           )}
+
+          <div className="bg-white/5 border border-white/10 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                <Key size={14} /> Tokens de API
+              </h2>
+              <button onClick={() => setShowCreateToken(!showCreateToken)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+                style={{ background: '#C78C0022', color: '#E7A300', border: '1px solid #C78C0044' }}>
+                <Plus size={12} /> Novo Token
+              </button>
+            </div>
+
+            {/* Create form */}
+            {showCreateToken && (
+              <div className="mb-4 p-4 rounded-xl" style={{ background: 'rgba(199,140,0,0.06)', border: '1px solid rgba(199,140,0,0.2)' }}>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Nome do token *</label>
+                    <input value={newTokenName} onChange={e => setNewTokenName(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]"
+                      placeholder="Ex: Script de backup" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">Expira em (opcional)</label>
+                    <input type="date" value={newTokenExpiry} onChange={e => setNewTokenExpiry(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowCreateToken(false); setNewTokenName(''); setNewTokenExpiry(''); }}
+                    className="px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 text-xs">Cancelar</button>
+                  <button onClick={() => createToken.mutate()} disabled={createToken.isPending || !newTokenName.trim()}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
+                    style={{ background: '#C78C00' }}>
+                    {createToken.isPending ? 'Criando...' : 'Criar Token'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <p className="text-sm text-slate-400 mb-4">Use tokens para integrar scripts e ferramentas externas com a API.</p>
+
+            {tokensLoading ? (
+              <div className="flex items-center gap-2 text-slate-500 py-4">
+                <RefreshCw size={14} className="animate-spin" /> Carregando...
+              </div>
+            ) : tokens.length === 0 ? (
+              <p className="text-sm text-slate-500">Nenhum token criado ainda.</p>
+            ) : (
+              <div className="space-y-2">
+                {tokens.map(tok => (
+                  <div key={tok.id} className="flex items-center justify-between bg-white/3 rounded-xl px-4 py-3">
+                    <div>
+                      <div className="text-sm font-medium text-white">{tok.name}</div>
+                      <div className="text-xs text-slate-500 font-mono mt-0.5">
+                        {tok.tokenPrefix || '—'}…
+                        {tok.expiresAt && (
+                          <span className={`ml-2 ${new Date(tok.expiresAt) < new Date() ? 'text-red-400' : 'text-slate-600'}`}>
+                            · exp. {new Date(tok.expiresAt).toLocaleDateString('pt-BR')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-500">
+                        {tok.lastUsed ? `Usado: ${new Date(tok.lastUsed).toLocaleDateString('pt-BR')}` : 'Nunca usado'}
+                      </span>
+                      <button onClick={() => setDeleteTokenTarget(tok)}
+                        className="p-1.5 rounded-lg hover:bg-red-500/10" style={{ color: '#ef4444' }}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -343,6 +500,27 @@ export default function ProfilePage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Revoke token confirm */}
+      {deleteTokenTarget && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)' }}>
+          <div className="w-full max-w-sm rounded-2xl p-6"
+            style={{ background: '#1a1a1a', border: '1px solid #2a2a2a' }}>
+            <h3 className="font-semibold text-white mb-2">Revogar token?</h3>
+            <p className="text-sm text-slate-400 mb-5">{deleteTokenTarget.name}</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteTokenTarget(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
+                style={{ border: '1px solid #2a2a2a', color: '#9ca3af' }}>Cancelar</button>
+              <button onClick={() => revokeToken.mutate(deleteTokenTarget.id)} disabled={revokeToken.isPending}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50">
+                {revokeToken.isPending ? '...' : 'Revogar'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
