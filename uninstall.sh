@@ -23,6 +23,15 @@ else
     exit 1
 fi
 
+# Detectar modo de instalação pelo .env
+IS_LOCAL=false
+if grep -q 'COMPOSE_FILE=docker-compose.local.yml' .env 2>/dev/null; then
+    IS_LOCAL=true
+    COMPOSE="$COMPOSE -f docker-compose.local.yml"
+elif grep -q 'COMPOSE_FILE=docker-compose.yml:docker-compose.ssl.yml' .env 2>/dev/null; then
+    COMPOSE="$COMPOSE -f docker-compose.yml -f docker-compose.ssl.yml"
+fi
+
 echo -ne "  ${Y}Confirma a remoção do VaultGuard?${NC} [s/N]: "
 read -r reply
 [[ "$reply" =~ ^[sSyY] ]] || { echo "  Cancelado."; exit 0; }

@@ -17,6 +17,12 @@ router.get('/', authenticate, async (req, res, next) => {
 
     if (role === 'ADMINISTRADOR') {
       folders = await prisma.folder.findMany({
+        where: {
+          OR: [
+            { isPersonal: false },
+            { isPersonal: true, ownerId: uid },
+          ]
+        },
         include: {
           permissions: true,
           _count: { select: { credentials: true } }
@@ -54,6 +60,33 @@ router.get('/', authenticate, async (req, res, next) => {
     const personalTree = buildTree(personalFolders);
 
     res.json({ shared: sharedTree, personal: personalTree });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/folders/admin-all — admin: all folders including all personal folders
+router.get('/admin-all', authenticate, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'ADMINISTRADOR') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const allFolders = await prisma.folder.findMany({
+      include: {
+        permissions: true,
+        _count: { select: { credentials: true } },
+        owner: { select: { id: true, firstName: true, lastName: true } }
+      },
+      orderBy: [{ isPersonal: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
+    });
+
+    const sharedFolders = allFolders.filter(f => !f.isPersonal);
+    const personalFolders = allFolders.filter(f => f.isPersonal);
+
+    res.json({
+      shared: buildTree(sharedFolders),
+      personal: buildTree(personalFolders),
+    });
   } catch (err) {
     next(err);
   }

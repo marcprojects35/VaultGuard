@@ -8,14 +8,37 @@ import crypto from 'crypto';
 const router = Router();
 const prisma = new PrismaClient();
 
+function maskToken(t) {
+  const { token, ...rest } = t;
+  return { ...rest, tokenPrefix: token ? token.slice(0, 10) : '—' };
+}
+
 // GET /api/tokens
 router.get('/', authenticate, async (req, res, next) => {
   try {
     const tokens = await prisma.apiToken.findMany({
       where: { userId: req.user.id },
-      select: { id: true, name: true, lastUsed: true, expiresAt: true, scopes: true, createdAt: true }
+      select: { id: true, name: true, token: true, lastUsed: true, expiresAt: true, scopes: true, createdAt: true }
     });
-    res.json(tokens);
+    res.json(tokens.map(maskToken));
+  } catch (err) { next(err); }
+});
+
+// GET /api/tokens/all — admin only: all tokens
+router.get('/all', authenticate, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'ADMINISTRADOR') {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const tokens = await prisma.apiToken.findMany({
+      select: {
+        id: true, name: true, token: true, lastUsed: true,
+        expiresAt: true, scopes: true, createdAt: true,
+        user: { select: { id: true, firstName: true, lastName: true, email: true } }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(tokens.map(maskToken));
   } catch (err) { next(err); }
 });
 

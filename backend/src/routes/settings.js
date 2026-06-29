@@ -111,6 +111,26 @@ router.put('/security', authenticate, requireAdmin, async (req, res, next) => {
   }
 });
 
+// GET /api/settings/email — load saved SMTP config (password masked)
+router.get('/email', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+    const cfg = settings?.smtpConfig || {};
+    // Mask SMTP password
+    const smtp = cfg.smtp ? { ...cfg.smtp, password: cfg.smtp.password ? '••••••••' : '' } : {};
+    res.json({
+      emailEnabled: cfg.enabled ?? true,
+      provider: cfg.provider ?? 'smtp',
+      smtp,
+      fromName: cfg.fromName ?? '',
+      fromEmail: cfg.fromEmail ?? '',
+      ...(cfg.notifications || {}),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PUT /api/settings/email — SMTP / email settings
 router.put('/email', authenticate, requireAdmin, async (req, res, next) => {
   try {
