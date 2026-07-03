@@ -108,7 +108,7 @@ function UserModal({ user: editUser, onClose }) {
 
         <div className="flex gap-3 mt-5">
           <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
+            className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)]"
             style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
             {t('common.cancel')}
           </button>
@@ -243,7 +243,7 @@ export default function AdminUsersPage() {
           </thead>
           <tbody>
             {users.map(u => (
-              <tr key={u.id} className="transition-colors hover:bg-white/2"
+              <tr key={u.id} className="transition-colors hover:bg-[var(--color-surface-hover)]"
                 style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -274,14 +274,14 @@ export default function AdminUsersPage() {
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     <button onClick={() => { setEditUser(u); setShowModal(true); }}
-                      className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: 'var(--color-muted)' }}>
+                      className="p-1.5 rounded-lg hover:bg-[var(--color-surface-hover)] transition-colors" style={{ color: 'var(--color-muted)' }}>
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button onClick={() => {
                       const pass = prompt('Nova senha para o usuário:');
                       if (pass && pass.length >= 8) resetPassMutation.mutate({ id: u.id, password: pass });
                       else if (pass) toast.error('Senha deve ter ao menos 8 caracteres');
-                    }} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: 'var(--color-muted)' }}>
+                    }} className="p-1.5 rounded-lg hover:bg-[var(--color-surface-hover)] transition-colors" style={{ color: 'var(--color-muted)' }}>
                       <Key className="w-4 h-4" />
                     </button>
                     <button onClick={() => setDeleteTarget(u)}
@@ -317,7 +317,7 @@ export default function AdminUsersPage() {
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
+                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)]"
                 style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
                 {t('common.cancel')}
               </button>

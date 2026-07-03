@@ -50,7 +50,7 @@ export default function SearchPage() {
     debounceRef.current = setTimeout(() => setDebouncedSearch(val), 350);
   };
 
-  const hasFilters = debouncedSearch.trim().length >= 2 || tag || expiry;
+  const hasFilters = debouncedSearch.trim().length >= 2 || !!tag || !!expiry;
 
   const { data: results = [], isLoading, isFetching } = useQuery({
     queryKey: ['search', debouncedSearch, tag, expiry],
@@ -272,7 +272,7 @@ export default function SearchPage() {
                             {copied === `${cred.id}-username` ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                           </button>
                         </div>
-                      ) : <span className="text-slate-600">—</span>}
+                      ) : <span className="text-[var(--color-muted)]">—</span>}
                     </td>
 
                     <td className="px-4 py-3">
@@ -285,7 +285,7 @@ export default function SearchPage() {
                               #{t}
                             </button>
                           ))
-                          : <span className="text-slate-600">—</span>}
+                          : <span className="text-[var(--color-muted)]">—</span>}
                       </div>
                     </td>
 
@@ -296,7 +296,7 @@ export default function SearchPage() {
                           style={{ color: settings.primaryColor }}>
                           {cred.url.replace(/^https?:\/\//, '')}
                         </a>
-                      ) : <span className="text-slate-600">—</span>}
+                      ) : <span className="text-[var(--color-muted)]">—</span>}
                     </td>
 
                     <td className="px-4 py-3">
@@ -310,7 +310,7 @@ export default function SearchPage() {
 
                     <td className="px-4 py-3">
                       <ExpiryBadge expiresAt={cred.expiresAt} />
-                      {!cred.expiresAt && <span className="text-slate-600">—</span>}
+                      {!cred.expiresAt && <span className="text-[var(--color-muted)]">—</span>}
                     </td>
 
                     <td className="px-4 py-3">
@@ -321,7 +321,7 @@ export default function SearchPage() {
                           </div>
                           <span className="text-xs" style={{ color: getStrengthColor(cred.strength) }}>{cred.strength}%</span>
                         </div>
-                      ) : <span className="text-slate-600">—</span>}
+                      ) : <span className="text-[var(--color-muted)]">—</span>}
                     </td>
 
                     <td className="px-4 py-3">

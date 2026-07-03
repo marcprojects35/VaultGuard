@@ -109,7 +109,7 @@ function CredentialList({ items, emptyMsg, type }) {
   return (
     <div className="space-y-1">
       {items.map(c => (
-        <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/5 transition-colors">
+        <div key={c.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[var(--color-surface-hover)] transition-colors">
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>{c.title}</p>
             <p className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>{c.folder?.name}</p>
@@ -166,7 +166,7 @@ export default function SecurityDashboardPage() {
           </div>
         </div>
         <button onClick={() => refetch()}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm hover:bg-white/5 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm hover:bg-[var(--color-surface-hover)] transition-colors"
           style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>
           <RefreshCw className="w-4 h-4" /> Atualizar
         </button>

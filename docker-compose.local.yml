@@ -1,0 +1,60 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vaultguard-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vaultguard
+      POSTGRES_USER: vaultguard
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-VaultGuard@Local2024!}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - vaultguard-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vaultguard -d vaultguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: vaultguard-api
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:3001"
+    environment:
+      DATABASE_URL: postgresql://vaultguard:${DB_PASSWORD:-VaultGuard@Local2024!}@postgres:5432/vaultguard
+      JWT_SECRET: ${JWT_SECRET:-changeme-please-use-random-64-chars-minimum}
+      NODE_ENV: production
+      PORT: 3001
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
+      COMPANY_NAME: ${COMPANY_NAME:-VaultGuard}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@vaultguard.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
+    volumes:
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - vaultguard-net
+
+volumes:
+  postgres_data:
+  uploads_data:
+  logs_data:
+
+networks:
+  vaultguard-net:
+    driver: bridge

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Server, Shield, Users, RefreshCw, Check, X, ChevronDown,
@@ -15,7 +15,7 @@ const ROLE_LABELS = {
 };
 
 const ROLE_COLORS = {
-  AUXILIAR: 'bg-slate-500/20 text-slate-300',
+  AUXILIAR: 'bg-slate-500/20 text-[var(--color-text-muted)]',
   ASSISTENTE: 'bg-blue-500/20 text-blue-300',
   ANALISTA: 'bg-cyan-500/20 text-cyan-300',
   COORDENACAO: 'bg-amber-500/20 text-amber-300',
@@ -46,10 +46,10 @@ const DEFAULT_CONFIG = {
 
 function Field({ label, description, children }) {
   return (
-    <div className="grid grid-cols-3 gap-4 py-3 border-b border-white/5 items-start">
+    <div className="grid grid-cols-3 gap-4 py-3 border-b border-[var(--color-border)] items-start">
       <div>
-        <div className="text-sm font-medium text-slate-200">{label}</div>
-        {description && <div className="text-xs text-slate-500 mt-0.5">{description}</div>}
+        <div className="text-sm font-medium text-[var(--color-text)]">{label}</div>
+        {description && <div className="text-xs text-[var(--color-muted)] mt-0.5">{description}</div>}
       </div>
       <div className="col-span-2">{children}</div>
     </div>
@@ -61,7 +61,7 @@ function Input({ value, onChange, type = 'text', placeholder, className = '', ..
     <input
       type={type} value={value} onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00] ${className}`}
+      className={`w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00] ${className}`}
       {...props}
     />
   );
@@ -70,7 +70,7 @@ function Input({ value, onChange, type = 'text', placeholder, className = '', ..
 function Toggle({ checked, onChange, label }) {
   return (
     <button onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-[#C78C00]' : 'bg-white/10'}`}>
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-[#C78C00]' : 'bg-[var(--color-surface-hover)]'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4.5' : 'translate-x-0.5'}`}
         style={{ transform: checked ? 'translateX(18px)' : 'translateX(2px)' }} />
     </button>
@@ -81,14 +81,14 @@ const VG_STATUS_BADGE = {
   NEW:      { label: 'Novo',      cls: 'bg-[#C78C00]/20 text-[#E7A300]' },
   ACTIVE:   { label: 'Vinculado', cls: 'bg-green-500/20 text-green-300' },
   INACTIVE: { label: 'Inativo',   cls: 'bg-amber-500/20 text-amber-300' },
-  PENDING:  { label: 'Pendente',  cls: 'bg-slate-500/20 text-slate-400' },
+  PENDING:  { label: 'Pendente',  cls: 'bg-slate-500/20 text-[var(--color-text-muted)]' },
 };
 
 function StatCard({ label, value, color }) {
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+    <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-4 text-center">
       <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-xs text-slate-500 mt-0.5">{label}</div>
+      <div className="text-xs text-[var(--color-muted)] mt-0.5">{label}</div>
     </div>
   );
 }
@@ -112,20 +112,22 @@ export default function AdminLdapPage() {
   const [linkResult, setLinkResult] = useState(null);
 
   // ── Carregar config atual ───────────────────────────────────────────────
-  const { isLoading } = useQuery({
+  const { data: configData, isLoading } = useQuery({
     queryKey: ['ldap-config'],
     queryFn: () => api.get('/ldap/config').then(r => r.data),
-    onSuccess: (data) => {
-      setEnabled(data.enabled || false);
-      setConfig({ ...DEFAULT_CONFIG, ...(data.config || {}) });
-    },
   });
+
+  useEffect(() => {
+    if (!configData) return;
+    setEnabled(configData.enabled || false);
+    setConfig({ ...DEFAULT_CONFIG, ...(configData.config || {}) });
+  }, [configData]);
 
   // ── Sync status ─────────────────────────────────────────────────────────
   const { data: syncStatus } = useQuery({
     queryKey: ['ldap-sync-status'],
     queryFn: () => api.get('/ldap/sync/status').then(r => r.data),
-    refetchInterval: syncStatus?.running ? 3000 : false,
+    refetchInterval: (query) => query.state.data?.running ? 3000 : false,
   });
 
   const set = (field, value) => setConfig(prev => ({ ...prev, [field]: value }));
@@ -133,7 +135,7 @@ export default function AdminLdapPage() {
   // ── Salvar ──────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: () => api.put('/ldap/config', { enabled, config }),
-    onSuccess: () => { toast.success('Configuração LDAP salva!'); qc.invalidateQueries(['ldap-config']); },
+    onSuccess: () => { toast.success('Configuração LDAP salva!'); qc.invalidateQueries({ queryKey: ['ldap-config'] }); },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao salvar'),
   });
 
@@ -147,7 +149,7 @@ export default function AdminLdapPage() {
   // ── Sincronizar usuários ────────────────────────────────────────────────
   const syncMutation = useMutation({
     mutationFn: () => api.post('/ldap/sync'),
-    onSuccess: () => { toast.success('Sincronização iniciada!'); qc.invalidateQueries(['ldap-sync-status']); },
+    onSuccess: () => { toast.success('Sincronização iniciada!'); qc.invalidateQueries({ queryKey: ['ldap-sync-status'] }); },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao sincronizar'),
   });
 
@@ -243,22 +245,22 @@ export default function AdminLdapPage() {
     { id: 'advanced', label: 'Avançado', icon: ChevronDown },
   ];
 
-  if (isLoading) return <div className="p-6 text-slate-400">Carregando...</div>;
+  if (isLoading) return <div className="p-6 text-[var(--color-text-muted)]">Carregando...</div>;
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-[var(--color-text)] flex items-center gap-2">
             <Server size={24} className="text-[#C78C00]" /> Active Directory / LDAP
           </h1>
-          <p className="text-slate-400 text-sm mt-1">
+          <p className="text-[var(--color-text-muted)] text-sm mt-1">
             Autenticação centralizada via AD. Usuários do AD fazem login com as mesmas credenciais corporativas.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-400">LDAP {enabled ? 'Ativo' : 'Inativo'}</span>
+          <span className="text-sm text-[var(--color-text-muted)]">LDAP {enabled ? 'Ativo' : 'Inativo'}</span>
           <Toggle checked={enabled} onChange={setEnabled} />
         </div>
       </div>
@@ -274,10 +276,10 @@ export default function AdminLdapPage() {
       )}
 
       {/* Tabs de seção */}
-      <div className="flex gap-1 bg-white/5 rounded-xl p-1">
+      <div className="flex gap-1 bg-[var(--color-surface-2)] rounded-xl p-1">
         {sections.map(s => (
           <button key={s.id} onClick={() => setSection(s.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${section === s.id ? 'bg-[#C78C00] text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${section === s.id ? 'bg-[#C78C00] text-white' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]'}`}>
             <s.icon size={13} /> <span className="hidden sm:inline">{s.label}</span>
           </button>
         ))}
@@ -285,8 +287,8 @@ export default function AdminLdapPage() {
 
       {/* ── SEÇÃO: CONEXÃO ──────────────────────────────────────────────────── */}
       {section === 'connection' && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-4">Servidor LDAP / Active Directory</h2>
+        <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Servidor LDAP / Active Directory</h2>
 
           <Field label="Servidor (Host)" description="IP ou hostname do controlador de domínio">
             <Input value={config.host} onChange={v => set('host', v)} placeholder="192.168.0.10 ou dc.empresa.local" />
@@ -295,12 +297,12 @@ export default function AdminLdapPage() {
           <Field label="Porta" description="389 padrão LDAP · 636 para LDAPS">
             <div className="flex gap-3">
               <Input value={config.port} onChange={v => set('port', v)} type="number" className="w-24" />
-              <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
                 <Toggle checked={config.useTLS} onChange={v => set('useTLS', v)} />
                 LDAPS (TLS)
               </label>
               {config.useTLS && (
-                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
                   <Toggle checked={config.verifyCert} onChange={v => set('verifyCert', v)} />
                   Verificar certificado
                 </label>
@@ -319,7 +321,7 @@ export default function AdminLdapPage() {
           {/* Botão testar */}
           <div className="mt-4 flex items-center gap-3">
             <button onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !config.host}
-              className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-sm transition-colors disabled:opacity-40">
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm transition-colors disabled:opacity-40">
               {testMutation.isPending ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
               Testar Conexão
             </button>
@@ -335,21 +337,21 @@ export default function AdminLdapPage() {
 
       {/* ── SEÇÃO: AUTENTICAÇÃO ─────────────────────────────────────────────── */}
       {section === 'auth' && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-4">Conta de Serviço (Service Account)</h2>
+        <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Conta de Serviço (Service Account)</h2>
 
           <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 mb-4 flex gap-2">
             <Info size={14} className="text-blue-400 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-300">
               O VaultGuard usa esta conta para buscar usuários no AD. Crie uma conta de serviço com permissão somente leitura
-              (<code className="bg-black/20 px-1 rounded">Read Members</code> no AD).
+              (<code className="bg-[var(--color-bg-secondary)] px-1 rounded">Read Members</code> no AD).
             </p>
           </div>
 
           <Field label="Bind DN" description="DN da conta de serviço">
             <Input value={config.bindDn} onChange={v => set('bindDn', v)}
               placeholder="CN=vaultguard-svc,OU=ServiceAccounts,DC=empresa,DC=local" />
-            <p className="text-xs text-slate-500 mt-1">Ou no formato: empresa\vaultguard-svc</p>
+            <p className="text-xs text-[var(--color-muted)] mt-1">Ou no formato: empresa\vaultguard-svc</p>
           </Field>
 
           <Field label="Senha do Bind" description="Senha da conta de serviço">
@@ -357,7 +359,7 @@ export default function AdminLdapPage() {
               <Input value={config.bindPassword} onChange={v => set('bindPassword', v)}
                 type={showPassword ? 'text' : 'password'} placeholder="••••••••" />
               <button onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-text)]">
                 {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
@@ -369,16 +371,16 @@ export default function AdminLdapPage() {
                 <input type="radio" checked={!config.ldapOnly} onChange={() => set('ldapOnly', false)}
                   className="text-[#AD7B04]" />
                 <div>
-                  <div className="text-sm text-slate-200">LDAP + Fallback Local</div>
-                  <div className="text-xs text-slate-500">Se o AD falhar, usuários locais ainda podem entrar</div>
+                  <div className="text-sm text-[var(--color-text)]">LDAP + Fallback Local</div>
+                  <div className="text-xs text-[var(--color-muted)]">Se o AD falhar, usuários locais ainda podem entrar</div>
                 </div>
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="radio" checked={config.ldapOnly} onChange={() => set('ldapOnly', true)}
                   className="text-[#AD7B04]" />
                 <div>
-                  <div className="text-sm text-slate-200">Somente LDAP</div>
-                  <div className="text-xs text-slate-500">Toda autenticação passa pelo AD (exceto admin de emergência)</div>
+                  <div className="text-sm text-[var(--color-text)]">Somente LDAP</div>
+                  <div className="text-xs text-[var(--color-muted)]">Toda autenticação passa pelo AD (exceto admin de emergência)</div>
                 </div>
               </label>
             </div>
@@ -389,8 +391,8 @@ export default function AdminLdapPage() {
       {/* ── SEÇÃO: SINCRONIZAÇÃO ────────────────────────────────────────────── */}
       {section === 'sync' && (
         <div className="space-y-4">
-          <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-slate-300 mb-4">Configurações de Sincronização</h2>
+          <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Configurações de Sincronização</h2>
 
             <Field label="Sincronizar grupos" description="Atualiza o cargo do usuário automaticamente pelo grupo do AD">
               <Toggle checked={config.syncGroups !== false} onChange={v => set('syncGroups', v)} />
@@ -398,7 +400,7 @@ export default function AdminLdapPage() {
 
             <Field label="Cargo padrão" description="Cargo atribuído a usuários novos sem grupo mapeado">
               <select value={config.defaultRole} onChange={e => set('defaultRole', e.target.value)}
-                className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
+                className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
                 {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
               </select>
             </Field>
@@ -414,9 +416,9 @@ export default function AdminLdapPage() {
           </div>
 
           {/* Painel de execução */}
-          <div className="bg-white/5 border border-white/10 rounded-xl p-5">
+          <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-sm font-semibold text-slate-300">Sincronização Manual</h2>
+              <h2 className="text-sm font-semibold text-[var(--color-text-muted)]">Sincronização Manual</h2>
               <button onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending || syncStatus?.running || !enabled}
                 className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
@@ -428,21 +430,21 @@ export default function AdminLdapPage() {
 
             {syncStatus?.lastRun && (
               <div className={`rounded-lg p-4 text-sm ${syncStatus.lastResult?.error ? 'bg-red-500/10 border border-red-500/20' : 'bg-green-500/10 border border-green-500/20'}`}>
-                <div className="font-medium text-slate-200 mb-2">
+                <div className="font-medium text-[var(--color-text)] mb-2">
                   Última sincronização: {new Date(syncStatus.lastRun).toLocaleString('pt-BR')}
                 </div>
                 {syncStatus.lastResult?.error ? (
                   <p className="text-red-400">{syncStatus.lastResult.error}</p>
                 ) : (
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center"><div className="text-2xl font-bold text-green-400">{syncStatus.lastResult?.created || 0}</div><div className="text-xs text-slate-400">Criados</div></div>
-                    <div className="text-center"><div className="text-2xl font-bold text-blue-400">{syncStatus.lastResult?.updated || 0}</div><div className="text-xs text-slate-400">Atualizados</div></div>
-                    <div className="text-center"><div className="text-2xl font-bold text-orange-400">{syncStatus.lastResult?.disabled || 0}</div><div className="text-xs text-slate-400">Desativados</div></div>
+                    <div className="text-center"><div className="text-2xl font-bold text-green-400">{syncStatus.lastResult?.created || 0}</div><div className="text-xs text-[var(--color-text-muted)]">Criados</div></div>
+                    <div className="text-center"><div className="text-2xl font-bold text-blue-400">{syncStatus.lastResult?.updated || 0}</div><div className="text-xs text-[var(--color-text-muted)]">Atualizados</div></div>
+                    <div className="text-center"><div className="text-2xl font-bold text-orange-400">{syncStatus.lastResult?.disabled || 0}</div><div className="text-xs text-[var(--color-text-muted)]">Desativados</div></div>
                   </div>
                 )}
                 {syncStatus.lastResult?.errors?.length > 0 && (
                   <details className="mt-2">
-                    <summary className="text-xs text-slate-500 cursor-pointer">{syncStatus.lastResult.errors.length} erros</summary>
+                    <summary className="text-xs text-[var(--color-muted)] cursor-pointer">{syncStatus.lastResult.errors.length} erros</summary>
                     <div className="mt-1 space-y-1">
                       {syncStatus.lastResult.errors.map((e, i) => (
                         <div key={i} className="text-xs text-red-400 font-mono">{e.dn}: {e.error}</div>
@@ -458,12 +460,12 @@ export default function AdminLdapPage() {
 
       {/* ── SEÇÃO: MAPEAMENTO DE GRUPOS ──────────────────────────────────────── */}
       {section === 'roles' && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5">
+        <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold text-slate-300">Grupos do AD → Cargos do VaultGuard</h2>
+            <h2 className="text-sm font-semibold text-[var(--color-text-muted)]">Grupos do AD → Cargos do VaultGuard</h2>
             <div className="flex gap-2">
               <button onClick={loadGroups} disabled={loadingGroups}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-xs transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-xs transition-colors">
                 {loadingGroups ? <Loader size={12} className="animate-spin" /> : <RefreshCw size={12} />}
                 Carregar grupos do AD
               </button>
@@ -474,13 +476,13 @@ export default function AdminLdapPage() {
             </div>
           </div>
 
-          <p className="text-xs text-slate-500 mb-4">
+          <p className="text-xs text-[var(--color-muted)] mb-4">
             Define qual cargo VaultGuard um usuário recebe com base no grupo do AD. Use o CN do grupo (nome, sem o OU/DC).
             Usuários em múltiplos grupos recebem o cargo de maior privilégio.
           </p>
 
           {Object.keys(config.roleGroupMap || {}).length === 0 ? (
-            <div className="py-8 text-center text-slate-500 border-2 border-dashed border-white/10 rounded-xl">
+            <div className="py-8 text-center text-[var(--color-muted)] border-2 border-dashed border-[var(--color-border)] rounded-xl">
               <Users size={28} className="mx-auto mb-2 opacity-30" />
               <p className="text-sm">Nenhum mapeamento configurado.</p>
               <p className="text-xs mt-1">Clique em "Adicionar" para mapear um grupo do AD a um cargo.</p>
@@ -492,21 +494,21 @@ export default function AdminLdapPage() {
                   {adGroups.length > 0 ? (
                     <select value={group}
                       onChange={e => updateGroupMapping(group, e.target.value, role)}
-                      className="flex-1 bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
+                      className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
                       {adGroups.map(g => <option key={g.dn} value={g.cn.toLowerCase()}>{g.cn}</option>)}
                     </select>
                   ) : (
                     <input value={group}
                       onChange={e => updateGroupMapping(group, e.target.value.toLowerCase(), role)}
-                      className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]"
+                      className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]"
                       placeholder="nome_do_grupo_ad (CN, lowercase)" />
                   )}
 
-                  <span className="text-slate-500">→</span>
+                  <span className="text-[var(--color-muted)]">→</span>
 
                   <select value={role}
                     onChange={e => updateGroupMapping(group, group, e.target.value)}
-                    className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C78C00]">
+                    className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C78C00]">
                     {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                   </select>
 
@@ -526,14 +528,14 @@ export default function AdminLdapPage() {
           {/* Preview de grupos do AD carregados */}
           {adGroups.length > 0 && (
             <details className="mt-4">
-              <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-300">
+              <summary className="text-xs text-[var(--color-muted)] cursor-pointer hover:text-[var(--color-text-muted)]">
                 {adGroups.length} grupos encontrados no AD
               </summary>
               <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
                 {adGroups.map(g => (
                   <div key={g.dn} className="flex items-center gap-2 text-xs py-1">
                     <span className="font-mono text-[#E7A300]">{g.cn}</span>
-                    {g.description && <span className="text-slate-500">— {g.description}</span>}
+                    {g.description && <span className="text-[var(--color-muted)]">— {g.description}</span>}
                   </div>
                 ))}
               </div>
@@ -548,12 +550,12 @@ export default function AdminLdapPage() {
           {/* Barra de busca + botão buscar */}
           <div className="flex gap-3">
             <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)]" />
               <input
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
                 placeholder="Filtrar por nome, usuário ou e-mail..."
-                className="w-full pl-9 pr-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white text-sm focus:outline-none focus:border-[#C78C00]"
+                className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]"
               />
             </div>
             <button
@@ -576,7 +578,7 @@ export default function AdminLdapPage() {
           {/* Stats */}
           {adUsers.length > 0 && (
             <div className="grid grid-cols-4 gap-3">
-              <StatCard label="Total" value={adUsers.length} color="text-white" />
+              <StatCard label="Total" value={adUsers.length} color="text-[var(--color-text)]" />
               <StatCard label="Novos" value={newActiveUsers.length} color="text-[#C78C00]" />
               <StatCard label="Vinculados" value={adUsers.filter(u => u.vgStatus === 'ACTIVE').length} color="text-green-400" />
               <StatCard label="Inativos no AD" value={adUsers.filter(u => !u.active).length} color="text-red-400" />
@@ -589,7 +591,7 @@ export default function AdminLdapPage() {
               <CheckCircle size={16} className="text-green-400 mt-0.5 shrink-0" />
               <div>
                 <div className="font-medium text-green-300 mb-0.5">Vinculação concluída</div>
-                <div className="text-slate-300">
+                <div className="text-[var(--color-text-muted)]">
                   {linkResult.created} criados · {linkResult.updated} atualizados · {linkResult.disabled} desativados
                   {linkResult.errors?.length > 0 && (
                     <span className="text-red-400"> · {linkResult.errors.length} erros</span>
@@ -604,7 +606,7 @@ export default function AdminLdapPage() {
             <>
               {/* Barra de ações */}
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer select-none">
+                <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={selectableFiltered.length > 0 && selectableFiltered.every(u => selectedEmails.has(u.email))}
@@ -615,7 +617,7 @@ export default function AdminLdapPage() {
                         setSelectedEmails(new Set());
                       }
                     }}
-                    className="rounded border-white/20"
+                    className="rounded border-[var(--color-border)]"
                   />
                   {selectedEmails.size > 0
                     ? `${selectedEmails.size} selecionado(s)`
@@ -636,7 +638,7 @@ export default function AdminLdapPage() {
                     <button
                       onClick={() => linkUsers(newActiveUsers.map(u => u.email))}
                       disabled={linking}
-                      className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-sm disabled:opacity-40 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm disabled:opacity-40 transition-colors"
                     >
                       {linking ? <Loader size={14} className="animate-spin" /> : <Users size={14} />}
                       Vincular todos novos ({newActiveUsers.length})
@@ -646,11 +648,11 @@ export default function AdminLdapPage() {
               </div>
 
               {/* Tabela */}
-              <div className="bg-white/5 border border-white/10 rounded-xl overflow-hidden">
+              <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl overflow-hidden">
                 <div className="max-h-[480px] overflow-y-auto">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur-sm">
-                      <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-white/10">
+                    <thead className="sticky top-0 bg-[var(--color-surface)] backdrop-blur-sm">
+                      <tr className="text-left text-xs text-[var(--color-muted)] uppercase tracking-wider border-b border-[var(--color-border)]">
                         <th className="pl-4 py-3 w-8" />
                         <th className="py-3 px-3">Nome</th>
                         <th className="py-3 px-3 hidden md:table-cell">Usuário</th>
@@ -668,7 +670,7 @@ export default function AdminLdapPage() {
                           <tr
                             key={user.email}
                             onClick={() => selectable && toggleSelectUser(user.email)}
-                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-white/5' : 'opacity-50'} ${selected ? 'bg-[#C78C00]/10' : ''}`}
+                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-[var(--color-surface-2)]' : 'opacity-50'} ${selected ? 'bg-[#C78C00]/10' : ''}`}
                           >
                             <td className="pl-4 py-3">
                               {selectable && (
@@ -677,7 +679,7 @@ export default function AdminLdapPage() {
                                   checked={selected}
                                   onChange={() => toggleSelectUser(user.email)}
                                   onClick={e => e.stopPropagation()}
-                                  className="rounded border-white/20"
+                                  className="rounded border-[var(--color-border)]"
                                 />
                               )}
                             </td>
@@ -686,15 +688,15 @@ export default function AdminLdapPage() {
                                 <div className="w-7 h-7 rounded-full bg-[#C78C00]/20 flex items-center justify-center text-xs font-semibold text-[#E7A300] shrink-0">
                                   {(user.firstName?.[0] || user.username?.[0] || '?').toUpperCase()}
                                 </div>
-                                <span className="font-medium text-white leading-tight">
+                                <span className="font-medium text-[var(--color-text)] leading-tight">
                                   {user.firstName} {user.lastName}
                                 </span>
                               </div>
                             </td>
-                            <td className="py-3 px-3 hidden md:table-cell text-slate-400 font-mono text-xs">{user.username}</td>
-                            <td className="py-3 px-3 hidden lg:table-cell text-slate-400 text-xs truncate max-w-[180px]">{user.email}</td>
+                            <td className="py-3 px-3 hidden md:table-cell text-[var(--color-text-muted)] font-mono text-xs">{user.username}</td>
+                            <td className="py-3 px-3 hidden lg:table-cell text-[var(--color-text-muted)] text-xs truncate max-w-[180px]">{user.email}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${ROLE_COLORS[user.role] || 'bg-slate-500/20 text-slate-300'}`}>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${ROLE_COLORS[user.role] || 'bg-slate-500/20 text-[var(--color-text-muted)]'}`}>
                                 {ROLE_LABELS[user.role] || user.role}
                               </span>
                             </td>
@@ -713,10 +715,10 @@ export default function AdminLdapPage() {
             </>
           ) : (
             !loadingUsers && (
-              <div className="py-14 text-center border-2 border-dashed border-white/10 rounded-xl">
-                <UserCheck size={36} className="mx-auto mb-3 text-slate-600" />
-                <p className="text-slate-400 text-sm">Clique em "Buscar do AD" para listar os usuários</p>
-                <p className="text-xs text-slate-600 mt-1">
+              <div className="py-14 text-center border-2 border-dashed border-[var(--color-border)] rounded-xl">
+                <UserCheck size={36} className="mx-auto mb-3 text-[var(--color-muted)]" />
+                <p className="text-[var(--color-text-muted)] text-sm">Clique em "Buscar do AD" para listar os usuários</p>
+                <p className="text-xs text-[var(--color-muted)] mt-1">
                   O sistema mostrará todos os usuários do AD e o status de cada um na plataforma.
                 </p>
               </div>
@@ -727,8 +729,8 @@ export default function AdminLdapPage() {
 
       {/* ── SEÇÃO: AVANÇADO ──────────────────────────────────────────────────── */}
       {section === 'advanced' && (
-        <div className="bg-white/5 border border-white/10 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-4">Configurações Avançadas</h2>
+        <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Configurações Avançadas</h2>
 
           <Field label="Filtro de usuário" description="Usado na busca por login. {login} é substituído pelo valor digitado">
             <Input value={config.userFilter} onChange={v => set('userFilter', v)}
@@ -742,7 +744,7 @@ export default function AdminLdapPage() {
 
           <Field label="Escopo de busca" description="sub = toda a árvore; one = apenas um nível abaixo">
             <select value={config.searchScope} onChange={e => set('searchScope', e.target.value)}
-              className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#C78C00]">
+              className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
               <option value="sub">sub (padrão)</option>
               <option value="one">one</option>
               <option value="base">base</option>
@@ -764,7 +766,7 @@ export default function AdminLdapPage() {
         </button>
         <button onClick={() => { testMutation.mutate(); setSection('connection'); }}
           disabled={testMutation.isPending || !config.host}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 rounded-lg text-sm transition-colors disabled:opacity-40">
+          className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm transition-colors disabled:opacity-40">
           <Play size={14} /> Testar Agora
         </button>
       </div>
