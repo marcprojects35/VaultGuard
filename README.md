@@ -258,7 +258,7 @@ cp .env.example .env
 
 ### Instalação automática (recomendado)
 
-Execute num servidor **Ubuntu 20+**, **Debian 11+** ou **CentOS 7+**:
+Execute num servidor **Ubuntu 20+**, **Debian 11+**, **CentOS 7+** ou **RHEL 8+**:
 
 ```bash
 git clone https://github.com/seu-org/vaultguard.git
@@ -266,15 +266,17 @@ cd vaultguard
 bash install.sh
 ```
 
-O assistente vai guiar cada etapa:
+O assistente interativo guia cada etapa (a primeira instalação leva entre 3 e 8 minutos):
 
 | Etapa | O que acontece |
 |---|---|
+| Modo | Escolha entre **servidor** (porta 80/443, IP externo, suporte a SSL) ou **máquina local** (porta 8080, localhost, sem SSL) |
 | Pré-requisitos | Detecta e instala Docker automaticamente se necessário |
 | Dados da empresa | Nome da empresa, e-mail e senha do admin (com validação de força) |
-| Rede | Detecta o IP do servidor; verifica se a porta 80 está livre |
+| Rede | Detecta o IP do servidor; verifica se a porta escolhida está livre |
 | HTTPS | Opcional: gera certificado autoassinado ou usa um existente |
-| Build | `docker compose up --build` |
+| Configuração | Gera o `.env` com `JWT_SECRET` e `DB_PASSWORD` aleatórios e seguros |
+| Build | `docker compose up -d --build` |
 | Verificação | Aguarda o health check e exibe URL + credenciais no terminal |
 
 > `JWT_SECRET` e `DB_PASSWORD` são gerados aleatoriamente pelo script e salvos em `.env`. Guarde este arquivo em local seguro.
@@ -315,6 +317,8 @@ docker-entrypoint.sh:
 ---
 
 ## Instalação manual (sem Docker)
+
+> Para a grande maioria dos casos, prefira a **instalação automática com `bash install.sh`** descrita acima — ela cuida do Docker, da geração de segredos e da configuração de rede automaticamente. A instalação manual é indicada apenas para ambientes sem Docker ou integrações customizadas.
 
 ### Requisitos
 

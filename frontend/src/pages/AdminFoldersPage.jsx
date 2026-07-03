@@ -43,7 +43,7 @@ function FolderNode({ node, depth = 0, onEdit, onDelete, onPermissions, isPerson
   return (
     <div>
       <div
-        className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-white/5 group"
+        className="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-[var(--color-surface-hover)] group"
         style={{ paddingLeft: `${depth * 20 + 12}px` }}
       >
         <button onClick={() => setOpen(!open)} className="w-4 h-4 flex items-center justify-center" style={{ color: 'var(--color-muted)' }}>
@@ -70,13 +70,13 @@ function FolderNode({ node, depth = 0, onEdit, onDelete, onPermissions, isPerson
         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
           {!isPersonal && (
             <button onClick={() => onPermissions(node)}
-              className="p-1 rounded hover:bg-white/10" title="Permissões"
+              className="p-1 rounded hover:bg-[var(--color-surface-hover)]" title="Permissões"
               style={{ color: settings.primaryColor }}>
               <Shield className="w-3.5 h-3.5" />
             </button>
           )}
           <button onClick={() => onEdit(node)}
-            className="p-1 rounded hover:bg-white/10" title="Editar"
+            className="p-1 rounded hover:bg-[var(--color-surface-hover)]" title="Editar"
             style={{ color: '#60a5fa' }}>
             <Edit2 className="w-3.5 h-3.5" />
           </button>
@@ -329,7 +329,7 @@ export default function AdminFoldersPage() {
             </div>
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
+                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)]"
                 style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
                 Cancelar
               </button>
@@ -363,7 +363,7 @@ export default function AdminFoldersPage() {
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
+                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)]"
                 style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
                 Cancelar
               </button>
@@ -427,7 +427,7 @@ export default function AdminFoldersPage() {
 
             <div className="flex gap-3 mt-6">
               <button onClick={() => setShowPermModal(false)}
-                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
+                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)]"
                 style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
                 Cancelar
               </button>

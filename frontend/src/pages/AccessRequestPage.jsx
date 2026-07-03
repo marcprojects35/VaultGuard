@@ -63,7 +63,7 @@ function NewRequestModal({ onClose, settings }) {
         style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
           <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Solicitar Acesso a Pasta</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--color-muted)' }}>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--color-surface-hover)]" style={{ color: 'var(--color-muted)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -91,7 +91,7 @@ function NewRequestModal({ onClose, settings }) {
         </div>
         <div className="flex gap-3 px-6 pb-6">
           <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-colors"
+            className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)] transition-colors"
             style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
             Cancelar
           </button>
@@ -131,7 +131,7 @@ function ReviewModal({ request, onClose, settings }) {
         style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
         <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--color-border)' }}>
           <h2 className="text-base font-bold" style={{ color: 'var(--color-text)' }}>Revisar Solicitação</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--color-muted)' }}>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-[var(--color-surface-hover)]" style={{ color: 'var(--color-muted)' }}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -268,7 +268,7 @@ export default function AccessRequestPage() {
         <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
           {requests.map((r, i) => (
             <div key={r.id}
-              className="flex items-start gap-4 px-5 py-4 transition-colors hover:bg-white/5"
+              className="flex items-start gap-4 px-5 py-4 transition-colors hover:bg-[var(--color-surface-hover)]"
               style={{ borderBottom: i < requests.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
                 style={{ background: `${settings.primaryColor}22` }}>

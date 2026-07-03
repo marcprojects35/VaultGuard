@@ -138,7 +138,7 @@ export default function ApiTokensPage() {
                 style={{ background: 'rgba(0,0,0,0.3)', color: '#10b981' }}>
                 <span className="flex-1">{newToken}</span>
                 <button onClick={() => copyToken(newToken)}
-                  className="flex-shrink-0 p-1 rounded hover:bg-white/10 transition-colors">
+                  className="flex-shrink-0 p-1 rounded hover:bg-[var(--color-surface-hover)] transition-colors">
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </button>
               </div>
@@ -291,7 +291,7 @@ export default function ApiTokensPage() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={() => { setShowCreate(false); setForm({ name: '', expiresInDays: '' }); }}
-                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-colors"
+                className="flex-1 py-2.5 rounded-xl text-sm hover:bg-[var(--color-surface-hover)] transition-colors"
                 style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>
                 Cancelar
               </button>

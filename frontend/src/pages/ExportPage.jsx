@@ -243,7 +243,7 @@ function VaultImportSection({ settings }) {
           </label>
           <div
             onClick={() => fileRef.current?.click()}
-            className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer hover:bg-white/5 transition-colors"
+            className="flex items-center gap-3 px-4 py-3 rounded-xl cursor-pointer hover:bg-[var(--color-surface-hover)] transition-colors"
             style={{ border: '2px dashed var(--color-border)' }}>
             <Paperclip className="w-5 h-5" style={{ color: 'var(--color-muted)' }} />
             <span className="text-sm" style={{ color: selectedFile ? 'var(--color-text)' : 'var(--color-muted)' }}>
