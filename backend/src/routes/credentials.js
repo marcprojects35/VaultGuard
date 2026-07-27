@@ -83,8 +83,9 @@ router.get('/', authenticate, async (req, res, next) => {
   }
 });
 
-// GET /api/credentials/export — export credentials as CSV (no passwords)
+// GET /api/credentials/export — export credentials as CSV (no passwords) — ADMIN only
 router.get('/export', authenticate, async (req, res, next) => {
+  if (req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Acesso restrito a administradores' });
   try {
     const { folderId, search } = req.query;
     const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
@@ -128,8 +129,9 @@ router.get('/export', authenticate, async (req, res, next) => {
   }
 });
 
-// GET /api/credentials/vault-export — export ALL credentials including encryptedPass (for encrypted vault backup)
+// GET /api/credentials/vault-export — export ALL credentials including encryptedPass — ADMIN only
 router.get('/vault-export', authenticate, async (req, res, next) => {
+  if (req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Acesso restrito a administradores' });
   try {
     const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
 
@@ -455,8 +457,9 @@ router.delete('/:id', authenticate, async (req, res, next) => {
   }
 });
 
-// POST /api/credentials/import — bulk import from CSV
+// POST /api/credentials/import — bulk import from CSV — ADMIN only
 router.post('/import', authenticate, async (req, res, next) => {
+  if (req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Acesso restrito a administradores' });
   try {
     const { rows, folderId } = req.body;
     if (!rows || !Array.isArray(rows) || rows.length === 0) {

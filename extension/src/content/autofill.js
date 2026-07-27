@@ -1,31 +1,45 @@
-// VaultGuard Content Script — Autofill, detecção de formulários e banner de salvar
+// VaultGuard Content Script
 
 (function () {
   'use strict';
 
-  const PENDING_SAVE_KEY = 'vaultguard_pending_save';
+  const STORAGE_SERVER_URL = 'vaultguard_server_url';
+  const STORAGE_API_TOKEN  = 'vaultguard_api_token';
+  const STORAGE_MASTER_KEY = 'vaultguard_master_key';
+  const PENDING_SAVE_KEY   = 'vaultguard_pending_save';
 
-  function esc(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  // ── Crypto (espelho de frontend/src/utils/crypto.js) ──────────────────────
+  const ALGO = 'AES-GCM';
+
+  async function decryptPassword(encryptedJson, masterKey) {
+    if (!encryptedJson) return '';
+    let parsed;
+    try { parsed = JSON.parse(encryptedJson); } catch { return encryptedJson; }
+    if (parsed.v === 0) return decodeURIComponent(escape(atob(parsed.plain)));
+    if (!masterKey) return '';
+    const raw  = Uint8Array.from(atob(masterKey), c => c.charCodeAt(0));
+    const key  = await crypto.subtle.importKey('raw', raw, { name: ALGO }, false, ['decrypt']);
+    const iv   = Uint8Array.from(atob(parsed.iv), c => c.charCodeAt(0));
+    const ct   = Uint8Array.from(atob(parsed.ciphertext), c => c.charCodeAt(0));
+    const dec  = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ct);
+    return new TextDecoder().decode(dec);
   }
 
-  // ── Mensagens do popup/background ─────────────────────────────────────────
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.type === 'AUTOFILL') {
-      autofill(message.username, message.password);
-      sendResponse({ success: true });
-    }
-    if (message.type === 'GET_CREDENTIALS') {
-      sendResponse(getPageCredentials());
-    }
-    return true;
-  });
+  // ── Buscar e descriptografar credencial ───────────────────────────────────
+  async function fetchAndFill(credId, passwordField, usernameField) {
+    const stored = await chrome.storage.local.get([STORAGE_SERVER_URL, STORAGE_API_TOKEN, STORAGE_MASTER_KEY]);
+    const { [STORAGE_SERVER_URL]: serverUrl, [STORAGE_API_TOKEN]: apiToken, [STORAGE_MASTER_KEY]: masterKey } = stored;
+    if (!serverUrl || !apiToken) return;
 
-  // ── Autofill ───────────────────────────────────────────────────────────────
-  function autofill(username, password) {
-    const { usernameField, passwordField } = findLoginFields();
-    if (usernameField && username) setNativeInputValue(usernameField, username);
-    if (passwordField && password) setNativeInputValue(passwordField, password);
+    const res = await fetch(`${serverUrl}/api/credentials/${credId}`, {
+      headers: { 'Authorization': `Bearer ${apiToken}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const detail = await res.json();
+
+    const plain = await decryptPassword(detail.encryptedPass, masterKey);
+    if (detail.username && usernameField) setNativeInputValue(usernameField, detail.username);
+    if (plain && passwordField) setNativeInputValue(passwordField, plain);
 
     [usernameField, passwordField].filter(Boolean).forEach(el => {
       el.style.transition = 'outline 0.3s';
@@ -34,6 +48,26 @@
     });
   }
 
+  // ── Mensagens do popup ─────────────────────────────────────────────────────
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'AUTOFILL') {
+      const { usernameField, passwordField } = findLoginFields();
+      if (message.username && usernameField) setNativeInputValue(usernameField, message.username);
+      if (message.password && passwordField) setNativeInputValue(passwordField, message.password);
+      [usernameField, passwordField].filter(Boolean).forEach(el => {
+        el.style.transition = 'outline 0.3s';
+        el.style.outline = '2px solid #C78C00';
+        setTimeout(() => { el.style.outline = ''; }, 1500);
+      });
+      sendResponse({ success: true });
+    }
+    if (message.type === 'GET_CREDENTIALS') {
+      sendResponse(getPageCredentials());
+    }
+    return true;
+  });
+
+  // ── Simula digitação real (React/Vue/Angular) ─────────────────────────────
   function setNativeInputValue(el, value) {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
     if (setter) setter.call(el, value); else el.value = value;
@@ -45,31 +79,23 @@
   function findLoginFields(root) {
     const container = root || document;
     const passwordFields = Array.from(container.querySelectorAll('input[type="password"]'))
-      .filter(el => isVisible(el));
-    if (passwordFields.length === 0) return {};
+      .filter(isVisible);
+    if (!passwordFields.length) return {};
     const passwordField = passwordFields[0];
     const form = passwordField.closest('form');
-
     const selectors = [
       'input[type="email"]',
-      'input[type="text"][name*="user"]',
-      'input[type="text"][name*="email"]',
-      'input[type="text"][name*="login"]',
-      'input[autocomplete="username"]',
-      'input[autocomplete="email"]',
-      'input[id*="user"]',
-      'input[id*="email"]',
-      'input[id*="login"]',
-      'input[type="text"]',
+      'input[type="text"][name*="user"]', 'input[type="text"][name*="email"]',
+      'input[type="text"][name*="login"]', 'input[autocomplete="username"]',
+      'input[autocomplete="email"]', 'input[id*="user"]', 'input[id*="email"]',
+      'input[id*="login"]', 'input[type="text"]',
     ];
-
     let usernameField = null;
     for (const sel of selectors) {
       const found = Array.from((form || container).querySelectorAll(sel))
         .filter(el => isVisible(el) && el !== passwordField);
-      if (found.length > 0) { usernameField = found[0]; break; }
+      if (found.length) { usernameField = found[0]; break; }
     }
-
     return { usernameField, passwordField };
   }
 
@@ -84,165 +110,215 @@
     return { username: usernameField?.value || '', password: passwordField?.value || '' };
   }
 
-  // ── Detecção de envio de formulário de login ───────────────────────────────
-  document.addEventListener('submit', (e) => {
-    const form = e.target;
-    const { usernameField, passwordField } = findLoginFields(form);
-    if (!passwordField?.value) return;
+  // ── Popup de autofill na página ───────────────────────────────────────────
+  let autofillPopupVisible = false;
 
-    const pending = {
-      username: usernameField?.value || '',
-      password: passwordField.value,
-      url: window.location.href,
-      title: document.title || window.location.hostname,
-      savedAt: Date.now(),
+  function removeAutofillPopup() {
+    document.querySelectorAll('.vg-autofill-popup').forEach(el => el.remove());
+    autofillPopupVisible = false;
+  }
+
+  async function showAutofillPopup(creds, passwordField) {
+    removeAutofillPopup();
+    if (!creds.length) return;
+
+    autofillPopupVisible = true;
+    const { usernameField } = findLoginFields();
+
+    // Posição: abaixo do campo de senha
+    const rect = passwordField.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const popupHeight = Math.min(creds.length * 64 + 60, 300);
+    const top = spaceBelow > popupHeight + 8
+      ? rect.bottom + window.scrollY + 6
+      : rect.top  + window.scrollY - popupHeight - 6;
+    const left = Math.max(8, Math.min(rect.left + window.scrollX, window.innerWidth - 360 - 8));
+
+    // Injetar estilos uma vez
+    if (!document.getElementById('vg-styles')) {
+      const s = document.createElement('style');
+      s.id = 'vg-styles';
+      s.textContent = `
+        .vg-autofill-popup{position:absolute;z-index:2147483647;width:340px;background:#111111;border:1px solid #C78C00;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.7);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;animation:vg-pop .2s ease}
+        @keyframes vg-pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+        .vg-popup-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0D0D0D;border-bottom:1px solid #1E1E1E}
+        .vg-popup-title{flex:1;font-size:12px;font-weight:600;color:#94a3b8}
+        .vg-popup-close{background:none;border:none;cursor:pointer;color:#555552;font-size:14px;line-height:1;padding:2px 4px}
+        .vg-popup-close:hover{color:#f87171}
+        .vg-cred-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #1A1A1A;cursor:default}
+        .vg-cred-item:last-child{border-bottom:none}
+        .vg-cred-info{flex:1;min-width:0}
+        .vg-cred-title{font-size:13px;font-weight:500;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .vg-cred-user{font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+        .vg-fill-btn{background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:7px;padding:6px 12px;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+        .vg-fill-btn:hover{opacity:.85}
+        .vg-fill-btn.loading{opacity:.6;pointer-events:none}
+      `;
+      document.head.appendChild(s);
+    }
+
+    const popup = document.createElement('div');
+    popup.className = 'vg-autofill-popup';
+    popup.style.top  = top  + 'px';
+    popup.style.left = left + 'px';
+
+    const hostname = (() => { try { return new URL(window.location.href).hostname; } catch { return window.location.hostname; } })();
+
+    popup.innerHTML = `
+      <div class="vg-popup-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0"><path fill="#C78C00" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+        <span class="vg-popup-title">Senhas salvas para <strong style="color:#E7A300">${hostname}</strong></span>
+        <button class="vg-popup-close" title="Fechar">✕</button>
+      </div>
+      ${creds.map(c => `
+        <div class="vg-cred-item">
+          <img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(c.url || hostname)}&sz=32"
+            style="width:24px;height:24px;border-radius:5px;flex-shrink:0"
+            onerror="this.style.display='none'">
+          <div class="vg-cred-info">
+            <div class="vg-cred-title">${esc(c.title)}</div>
+            <div class="vg-cred-user">${esc(c.username || '')}</div>
+          </div>
+          <button class="vg-fill-btn" data-id="${esc(c.id)}">↗ Preencher</button>
+        </div>
+      `).join('')}
+    `;
+
+    document.body.appendChild(popup);
+
+    // Fechar
+    popup.querySelector('.vg-popup-close').addEventListener('click', removeAutofillPopup);
+
+    // Clicar fora fecha
+    const onOutside = (e) => {
+      if (!popup.contains(e.target) && e.target !== passwordField && e.target !== usernameField) {
+        removeAutofillPopup();
+        document.removeEventListener('mousedown', onOutside);
+      }
     };
+    setTimeout(() => document.addEventListener('mousedown', onOutside), 100);
 
-    chrome.storage.local.set({ [PENDING_SAVE_KEY]: pending });
+    // Botões de preencher
+    popup.querySelectorAll('.vg-fill-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const credId = btn.dataset.id;
+        btn.classList.add('loading');
+        btn.textContent = '...';
+        try {
+          await fetchAndFill(credId, passwordField, usernameField);
+          removeAutofillPopup();
+        } catch (e) {
+          btn.textContent = 'Erro';
+          setTimeout(() => { btn.textContent = '↗ Preencher'; btn.classList.remove('loading'); }, 1500);
+        }
+      });
+    });
+  }
 
-    // Para SPAs (sem navegação), mostrar banner após 1s
-    setTimeout(() => showSaveBanner(pending, true), 1000);
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Mostrar popup ao focar campo de senha ─────────────────────────────────
+  let focusTimeout;
+  document.addEventListener('focusin', (e) => {
+    if (e.target.type !== 'password') return;
+    clearTimeout(focusTimeout);
+    focusTimeout = setTimeout(async () => {
+      if (autofillPopupVisible) return;
+      const creds = await new Promise(resolve =>
+        chrome.runtime.sendMessage({ type: 'FETCH_CREDS_FOR_URL', url: window.location.href }, r => resolve(r || []))
+      );
+      if (creds.length > 0) showAutofillPopup(creds, e.target);
+    }, 300);
   }, true);
 
-  // ── Verificar pendingSave ao carregar a página ─────────────────────────────
+  // Fechar popup ao pressionar Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') removeAutofillPopup();
+  }, true);
+
+  // ── Detecção de submit de formulário de login ─────────────────────────────
+  document.addEventListener('submit', (e) => {
+    const { usernameField, passwordField } = findLoginFields(e.target);
+    if (!passwordField?.value) return;
+
+    chrome.storage.local.set({
+      [PENDING_SAVE_KEY]: {
+        username: usernameField?.value || '',
+        password: passwordField.value,
+        url:      window.location.href,
+        title:    document.title || window.location.hostname,
+        savedAt:  Date.now(),
+      }
+    });
+
+    setTimeout(() => showSaveBanner(usernameField?.value || '', passwordField.value), 1000);
+  }, true);
+
+  // Verificar pendingSave de navegação anterior
   chrome.storage.local.get(PENDING_SAVE_KEY, (data) => {
     const pending = data[PENDING_SAVE_KEY];
     if (!pending) return;
-
-    // Expirar após 3 minutos
-    if (Date.now() - pending.savedAt > 3 * 60 * 1000) {
-      chrome.storage.local.remove(PENDING_SAVE_KEY);
-      return;
-    }
-
-    // Mesmo domínio mas URL diferente (navegação após login)
+    if (Date.now() - pending.savedAt > 3 * 60 * 1000) { chrome.storage.local.remove(PENDING_SAVE_KEY); return; }
     try {
-      const pendingHost = new URL(pending.url).hostname;
-      if (pendingHost !== window.location.hostname) return;
+      if (new URL(pending.url).hostname !== window.location.hostname) return;
       if (pending.url === window.location.href) return;
     } catch { return; }
-
-    // Aguardar a página renderizar antes de mostrar o banner
-    setTimeout(() => showSaveBanner(pending, false), 800);
+    setTimeout(() => showSaveBanner(pending.username, pending.password), 800);
   });
 
-  // ── Banner de salvar senha ─────────────────────────────────────────────────
-  function showSaveBanner(pending, fromSamePageSubmit) {
-    document.querySelectorAll('.vaultguard-save-banner').forEach(el => el.remove());
+  // ── Banner de salvar senha ────────────────────────────────────────────────
+  function showSaveBanner(username, password) {
+    document.querySelectorAll('.vg-save-banner').forEach(el => el.remove());
 
-    // Se for submit da mesma página E não for SPA, o banner vai sumir logo — ok
+    if (!document.getElementById('vg-styles')) {
+      const s = document.createElement('style');
+      s.id = 'vg-styles';
+      s.textContent = '';
+      document.head.appendChild(s);
+    }
+
     const banner = document.createElement('div');
-    banner.className = 'vaultguard-save-banner';
+    banner.className = 'vg-save-banner';
     banner.style.cssText = `
-      position: fixed !important;
-      top: 16px !important;
-      right: 16px !important;
-      z-index: 2147483647 !important;
-      background: #111111 !important;
-      border: 1px solid #C78C00 !important;
-      border-radius: 12px !important;
-      padding: 12px 14px !important;
-      display: flex !important;
-      align-items: center !important;
-      gap: 10px !important;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
-      font-family: system-ui, -apple-system, sans-serif !important;
-      min-width: 280px !important;
-      max-width: 380px !important;
-      animation: vg-slide-in 0.3s ease !important;
+      position:fixed!important;top:16px!important;right:16px!important;
+      z-index:2147483647!important;background:#111111!important;
+      border:1px solid #C78C00!important;border-radius:12px!important;
+      padding:12px 14px!important;display:flex!important;align-items:center!important;
+      gap:10px!important;box-shadow:0 8px 32px rgba(0,0,0,0.6)!important;
+      font-family:system-ui,sans-serif!important;min-width:280px!important;max-width:380px!important;
+      animation:vg-slide-in .3s ease!important;
     `;
 
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes vg-slide-in { from { opacity:0; transform:translateX(20px) } to { opacity:1; transform:translateX(0) } }
-      .vaultguard-save-banner button:hover { opacity: 0.85 !important; }
-    `;
-    document.head.appendChild(style);
+    if (!document.getElementById('vg-banner-styles')) {
+      const s = document.createElement('style');
+      s.id = 'vg-banner-styles';
+      s.textContent = `@keyframes vg-slide-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}`;
+      document.head.appendChild(s);
+    }
 
-    const user = pending.username || window.location.hostname;
     banner.innerHTML = `
-      <svg width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0">
-        <path fill="#C78C00" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
-      </svg>
+      <svg width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0"><path fill="#C78C00" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:#f1f5f9;line-height:1.3">Salvar senha?</div>
-        <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${esc(user)}</div>
+        <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${esc(username || window.location.hostname)}</div>
       </div>
-      <button class="vg-btn-save" style="background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:7px;padding:6px 12px;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Salvar</button>
-      <button class="vg-btn-dismiss" style="background:none;border:1px solid #2A2A2A;border-radius:7px;padding:6px 8px;color:#64748b;font-size:12px;cursor:pointer;line-height:1">✕</button>
+      <button class="vg-save-yes" style="background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:7px;padding:6px 12px;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Salvar</button>
+      <button class="vg-save-no"  style="background:none;border:1px solid #2A2A2A;border-radius:7px;padding:6px 8px;color:#64748b;font-size:12px;cursor:pointer;line-height:1">✕</button>
     `;
 
     document.body.appendChild(banner);
 
-    banner.querySelector('.vg-btn-save').addEventListener('click', () => {
+    banner.querySelector('.vg-save-yes').addEventListener('click', () => {
       banner.remove();
       chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
     });
-
-    banner.querySelector('.vg-btn-dismiss').addEventListener('click', () => {
+    banner.querySelector('.vg-save-no').addEventListener('click', () => {
       banner.remove();
       chrome.storage.local.remove(PENDING_SAVE_KEY);
     });
 
-    // Auto-dismiss após 12 segundos
     setTimeout(() => banner.remove(), 12000);
-  }
-
-  // ── Sugestão de autofill ao focar campo de senha ───────────────────────────
-  let suggestTimeout;
-  document.addEventListener('focusin', (e) => {
-    if (e.target.type !== 'password') return;
-    clearTimeout(suggestTimeout);
-    suggestTimeout = setTimeout(() => showAutofillHint(e.target), 400);
-  }, true);
-
-  function showAutofillHint(passwordField) {
-    document.querySelectorAll('.vaultguard-hint').forEach(el => el.remove());
-
-    chrome.runtime.sendMessage({ type: 'FETCH_CREDS_FOR_URL', url: window.location.href }, (creds) => {
-      if (!creds || creds.length === 0) return;
-
-      const rect = passwordField.getBoundingClientRect();
-      if (!rect.width) return;
-
-      const hint = document.createElement('div');
-      hint.className = 'vaultguard-hint';
-      hint.style.cssText = `
-        position: fixed !important;
-        top: ${Math.min(rect.bottom + 6, window.innerHeight - 60)}px !important;
-        left: ${rect.left}px !important;
-        background: #111111 !important;
-        border: 1px solid #C78C00 !important;
-        border-radius: 8px !important;
-        padding: 7px 11px !important;
-        font-size: 12px !important;
-        color: #E7A300 !important;
-        cursor: pointer !important;
-        z-index: 2147483647 !important;
-        display: flex !important;
-        align-items: center !important;
-        gap: 6px !important;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
-        font-family: system-ui, sans-serif !important;
-        white-space: nowrap !important;
-      `;
-      hint.innerHTML = `
-        <svg width="12" height="12" fill="#C78C00" viewBox="0 0 24 24">
-          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
-        </svg>
-        ${creds.length} senha${creds.length > 1 ? 's' : ''} salva${creds.length > 1 ? 's' : ''} — clique para preencher
-      `;
-
-      hint.addEventListener('click', () => {
-        hint.remove();
-        chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
-      });
-
-      document.body.appendChild(hint);
-
-      const remove = () => hint.remove();
-      passwordField.addEventListener('blur', remove, { once: true });
-      setTimeout(remove, 5000);
-    });
   }
 })();

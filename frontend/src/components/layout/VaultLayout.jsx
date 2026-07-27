@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server,
+  Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server, Tag,
   LogOut, Key, ChevronDown, Settings, Globe,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
   Search, Upload, Download, Star, Inbox, HelpCircle, Send,
@@ -249,9 +249,13 @@ export default function VaultLayout() {
 
           {/* ─ Ferramentas ─ */}
           <SectionLabel label="Ferramentas" open={open} />
-          <NavItem to="/import" icon={<Upload style={iconSize} />} label="Importar" open={open} />
-          <NavItem to="/export" icon={<Download style={iconSize} />} label="Exportar" open={open} />
           <NavItem to="/tokens" icon={<Key style={iconSize} />} label={t('nav.apiTokens')} open={open} />
+          {isAdmin && (
+            <>
+              <NavItem to="/import" icon={<Upload style={iconSize} />} label="Importar" open={open} />
+              <NavItem to="/export" icon={<Download style={iconSize} />} label="Exportar" open={open} />
+            </>
+          )}
 
           {/* ─ Admin ─ */}
           {isAdmin && (
@@ -259,6 +263,7 @@ export default function VaultLayout() {
               <SectionLabel label={t('nav.admin')} open={open} />
               <NavItem to="/admin/users" icon={<Users style={iconSize} />} label={t('nav.users')} open={open} />
               <NavItem to="/admin/folders" icon={<FolderOpen style={iconSize} />} label={t('nav.folders')} open={open} />
+              <NavItem to="/admin/roles" icon={<Tag style={iconSize} />} label={t('nav.roles', 'Classificação')} open={open} />
               <NavItem to="/admin/audit" icon={<ScrollText style={iconSize} />} label={t('nav.audit')} open={open} />
 
               {/* Settings group */}
