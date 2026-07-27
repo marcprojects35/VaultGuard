@@ -58,6 +58,8 @@ let state = {
   serverUrl: '',
   apiToken: '',
   masterKey: null,
+  unlocking: false,      // showing the inline vault-password prompt
+  unlockAction: null,    // { type: 'copy'|'fill'|'save', index? } — pending action after unlock
   credentials: [],
   filteredCreds: [],
   currentUrl: '',
@@ -91,15 +93,15 @@ async function apiFetch(path, options = {}) {
 
 // ─── Render ─────────────────────────────────────────────────────────────────
 function render() {
-  document.getElementById('root').innerHTML = getTemplate();
+  const root = document.getElementById('root');
+  if (state.view === 'loading')   { root.innerHTML = renderLoading(); }
+  else if (state.view === 'setup') { root.innerHTML = renderSetup(); }
+  else if (state.view === 'save-form') { root.innerHTML = renderSaveForm(); }
+  else {
+    root.innerHTML = renderVault();
+    if (state.unlocking) root.insertAdjacentHTML('beforeend', renderUnlock());
+  }
   bindEvents();
-}
-
-function getTemplate() {
-  if (state.view === 'loading')   return renderLoading();
-  if (state.view === 'setup')     return renderSetup();
-  if (state.view === 'save-form') return renderSaveForm();
-  return renderVault();
 }
 
 function renderLoading() {
@@ -133,22 +135,46 @@ function renderSetup() {
         <input id="serverUrl" type="text" value="${escapeHtml(state.serverUrl)}" placeholder="http://192.168.0.78:8080"
           style="width:100%;background:#1a1d2e;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box" />
       </div>
-      <div style="margin-bottom:12px">
+      <div style="margin-bottom:16px">
         <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px">Token de API</label>
         <input id="apiToken" type="password" value="${escapeHtml(state.apiToken)}" placeholder="vg_xxxxxxxxxxxxxxxx"
           style="width:100%;background:#1a1d2e;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;font-family:monospace;box-sizing:border-box" />
         <p style="font-size:11px;color:#475569;margin-top:4px">Gere em: VaultGuard → Tokens de API</p>
       </div>
-      <div style="margin-bottom:16px">
-        <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px">Senha do Cofre</label>
-        <input id="vaultPassword" type="password" placeholder="Sua senha de acesso ao VaultGuard"
-          style="width:100%;background:#1a1d2e;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box" />
-        <p style="font-size:11px;color:#475569;margin-top:4px">Necessária para descriptografar senhas salvas</p>
-      </div>
       <button id="btnConnect"
         style="width:100%;background:linear-gradient(135deg,#C78C00,#AD7B04);color:white;border:none;border-radius:8px;padding:10px;font-size:14px;font-weight:600;cursor:pointer;opacity:${state.loading ? '0.7' : '1'}">
         ${state.loading ? 'Conectando...' : 'Conectar'}
       </button>
+    </div>
+  `;
+}
+
+function renderUnlock() {
+  return `
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px">
+      <div style="background:#111111;border:1px solid #252525;border-radius:12px;padding:20px;width:100%;max-width:320px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <svg width="18" height="18" fill="none" stroke="#C78C00" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span style="font-size:14px;font-weight:600;color:#f1f5f9">Desbloquear Cofre</span>
+        </div>
+        <p style="font-size:12px;color:#64748b;margin-bottom:12px">Digite sua senha para descriptografar. Você não precisará digitar novamente.</p>
+        ${state.error ? `<div style="background:#fee2e220;border:1px solid #fca5a5;color:#f87171;padding:7px 10px;border-radius:8px;font-size:12px;margin-bottom:10px">${escapeHtml(state.error)}</div>` : ''}
+        <input id="unlockPassword" type="password" autofocus placeholder="Senha do VaultGuard"
+          style="width:100%;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:12px" />
+        <div style="display:flex;gap:8px">
+          <button id="btnUnlockCancel"
+            style="flex:1;background:none;border:1px solid #2A2A2A;border-radius:8px;padding:8px;color:#94a3b8;font-size:13px;cursor:pointer">
+            Cancelar
+          </button>
+          <button id="btnUnlockConfirm"
+            style="flex:2;background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:8px;padding:8px;color:white;font-size:13px;font-weight:600;cursor:pointer;opacity:${state.loading ? '0.7' : '1'}">
+            ${state.loading ? 'Verificando...' : 'Desbloquear'}
+          </button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -301,15 +327,29 @@ function renderSaveForm() {
 function bindEvents() {
   if (state.view === 'setup') {
     document.getElementById('btnConnect')?.addEventListener('click', handleConnect);
-    ['serverUrl', 'apiToken', 'vaultPassword'].forEach(id => {
+    ['serverUrl', 'apiToken'].forEach(id => {
       document.getElementById(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') handleConnect(); });
     });
   }
 
   if (state.view === 'vault') {
+    if (state.unlocking) {
+      document.getElementById('btnUnlockCancel')?.addEventListener('click', () => {
+        state.unlocking = false; state.unlockAction = null; state.error = null; render();
+      });
+      document.getElementById('btnUnlockConfirm')?.addEventListener('click', handleUnlock);
+      document.getElementById('unlockPassword')?.addEventListener('keydown', e => { if (e.key === 'Enter') handleUnlock(); });
+      document.getElementById('unlockPassword')?.focus();
+      return;
+    }
+
     document.getElementById('searchInput')?.addEventListener('input', handleSearch);
     document.getElementById('btnRefresh')?.addEventListener('click', loadCredentials);
-    document.getElementById('btnSettings')?.addEventListener('click', () => { state.view = 'setup'; render(); });
+    document.getElementById('btnSettings')?.addEventListener('click', () => {
+      state.view = 'setup'; state.masterKey = null;
+      chrome.storage.local.remove(STORAGE_MASTER_KEY);
+      render();
+    });
     document.getElementById('btnSave')?.addEventListener('click', handleSaveFromPage);
 
     document.querySelectorAll('.btn-copy-user').forEach(btn => {
@@ -323,7 +363,11 @@ function bindEvents() {
     document.querySelectorAll('.btn-copy-pw').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
-        const cred = state.filteredCreds[+btn.dataset.index];
+        const idx = +btn.dataset.index;
+        if (!state.masterKey) {
+          state.unlocking = true; state.unlockAction = { type: 'copy', index: idx }; state.error = null; render(); return;
+        }
+        const cred = state.filteredCreds[idx];
         try {
           const detail = await apiFetch(`/credentials/${cred.id}`);
           const plain  = await decryptPassword(detail.encryptedPass, state.masterKey);
@@ -335,16 +379,16 @@ function bindEvents() {
     document.querySelectorAll('.btn-fill').forEach(btn => {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
-        const cred = state.filteredCreds[+btn.dataset.index];
+        const idx = +btn.dataset.index;
+        if (!state.masterKey) {
+          state.unlocking = true; state.unlockAction = { type: 'fill', index: idx }; state.error = null; render(); return;
+        }
+        const cred = state.filteredCreds[idx];
         try {
           const detail = await apiFetch(`/credentials/${cred.id}`);
           const plain  = await decryptPassword(detail.encryptedPass, state.masterKey);
           const [tab]  = await chrome.tabs.query({ active: true, currentWindow: true });
-          chrome.tabs.sendMessage(tab.id, {
-            type: 'AUTOFILL',
-            username: detail.username || '',
-            password: plain,
-          });
+          chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL', username: detail.username || '', password: plain });
           window.close();
         } catch (err) {
           console.error('Autofill error', err);
@@ -364,11 +408,10 @@ function bindEvents() {
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
 async function handleConnect() {
-  const serverUrl   = document.getElementById('serverUrl')?.value?.trim().replace(/\/$/, '');
-  const apiToken    = document.getElementById('apiToken')?.value?.trim();
-  const vaultPw     = document.getElementById('vaultPassword')?.value;
+  const serverUrl = document.getElementById('serverUrl')?.value?.trim().replace(/\/$/, '');
+  const apiToken  = document.getElementById('apiToken')?.value?.trim();
 
-  if (!serverUrl || !apiToken || !vaultPw) {
+  if (!serverUrl || !apiToken) {
     state.error = 'Preencha todos os campos'; render(); return;
   }
 
@@ -380,32 +423,71 @@ async function handleConnect() {
     });
     if (!res.ok) throw new Error('token_invalid');
 
-    const user = await res.json();
-    if (!user.encryptionSalt) throw new Error('no_salt');
-
-    const masterKey = await deriveKeyFromPassword(vaultPw, user.encryptionSalt);
-
     state.serverUrl = serverUrl;
     state.apiToken  = apiToken;
-    state.masterKey = masterKey;
     state.loading   = false;
 
     await chrome.storage.local.set({
       [STORAGE_SERVER_URL]: serverUrl,
       [STORAGE_API_TOKEN]:  apiToken,
-      [STORAGE_MASTER_KEY]: masterKey,
     });
 
     await loadCredentials();
   } catch (e) {
     state.loading = false;
-    if (e.message === 'token_invalid') {
-      state.error = 'Token de API inválido ou URL do servidor incorreta';
-    } else if (e.message === 'no_salt') {
-      state.error = 'Erro ao obter configuração do servidor';
-    } else {
-      state.error = 'Não foi possível conectar. Verifique os dados.';
+    state.error = e.message === 'token_invalid'
+      ? 'Token de API inválido ou URL do servidor incorreta'
+      : 'Não foi possível conectar. Verifique os dados.';
+    render();
+  }
+}
+
+async function handleUnlock() {
+  const vaultPw = document.getElementById('unlockPassword')?.value;
+  if (!vaultPw) { state.error = 'Digite sua senha'; render(); return; }
+
+  state.loading = true; state.error = null; render();
+
+  try {
+    const user = await apiFetch('/auth/me');
+    if (!user.encryptionSalt) throw new Error('no_salt');
+
+    const masterKey = await deriveKeyFromPassword(vaultPw, user.encryptionSalt);
+    state.masterKey = masterKey;
+    state.loading   = false;
+    state.unlocking = false;
+
+    await chrome.storage.local.set({ [STORAGE_MASTER_KEY]: masterKey });
+
+    // Execute the pending action
+    const action = state.unlockAction;
+    state.unlockAction = null;
+
+    if (action?.type === 'copy') {
+      const cred   = state.filteredCreds[action.index];
+      const detail = await apiFetch(`/credentials/${cred.id}`);
+      const plain  = await decryptPassword(detail.encryptedPass, masterKey);
+      copyToClipboard(plain, 'Senha');
+    } else if (action?.type === 'fill') {
+      const cred   = state.filteredCreds[action.index];
+      const detail = await apiFetch(`/credentials/${cred.id}`);
+      const plain  = await decryptPassword(detail.encryptedPass, masterKey);
+      const [tab]  = await chrome.tabs.query({ active: true, currentWindow: true });
+      chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL', username: detail.username || '', password: plain });
+      window.close();
+      return;
+    } else if (action?.type === 'save') {
+      render();
+      await handleConfirmSave();
+      return;
     }
+
+    render();
+  } catch (e) {
+    state.loading = false;
+    state.error = e.message === 'no_salt'
+      ? 'Erro ao obter configuração do servidor'
+      : 'Senha incorreta. Tente novamente.';
     render();
   }
 }
@@ -511,6 +593,9 @@ async function handleConfirmSave() {
   }
   if (!state.saveForm?.password) {
     state.error = 'Nenhuma senha foi detectada nesta página'; render(); return;
+  }
+  if (!state.masterKey) {
+    state.view = 'vault'; state.unlocking = true; state.unlockAction = { type: 'save' }; state.error = null; render(); return;
   }
 
   state.loading = true; state.error = null; render();
