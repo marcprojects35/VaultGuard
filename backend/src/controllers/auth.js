@@ -64,7 +64,24 @@ export const login = async (req, res, next) => {
 
     // ── 1. Verificar se LDAP está habilitado ──────────────────────────────
     const ldapCfg = await getLdapConfig();
-    if (ldapCfg) {
+
+    // Admin de emergência: mesmo em modo "Somente LDAP", uma conta local com
+    // cargo ADMINISTRADOR pode logar com a senha local — evita perder acesso
+    // à plataforma por causa de um AD fora do ar ou mal configurado.
+    let isEmergencyAdmin = false;
+    if (ldapCfg?.ldapOnly) {
+      const emergencyAdmin = await prisma.user.findFirst({
+        where: {
+          OR: [{ email: normalizedLogin }, { username: normalizedLogin }],
+          authSource: 'local',
+          role: 'ADMINISTRADOR',
+          status: 'ACTIVE',
+        },
+      });
+      isEmergencyAdmin = !!emergencyAdmin;
+    }
+
+    if (ldapCfg && !isEmergencyAdmin) {
       try {
         const ldapUser = await authenticateWithAD(normalizedLogin, password, ip, ua);
 
