@@ -83,6 +83,98 @@ router.get('/', authenticate, async (req, res, next) => {
   }
 });
 
+// GET /api/credentials/export — export credentials as CSV (no passwords)
+router.get('/export', authenticate, async (req, res, next) => {
+  try {
+    const { folderId, search } = req.query;
+    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
+
+    const where = {
+      folderId: folderId ? folderId : { in: accessibleFolders },
+      ...(search && {
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { username: { contains: search, mode: 'insensitive' } },
+        ]
+      }),
+    };
+
+    const credentials = await prisma.credential.findMany({
+      where,
+      include: { folder: { select: { name: true } } },
+      orderBy: [{ folder: { name: 'asc' } }, { title: 'asc' }]
+    });
+
+    const rows = [['Título', 'Usuário', 'URL', 'Pasta', 'Tags', 'Notas', 'Criado em']];
+    credentials.forEach(c => rows.push([
+      c.title,
+      c.username || '',
+      c.url || '',
+      c.folder?.name || '',
+      (c.tags || []).join('; '),
+      (c.notes || '').replace(/\n/g, ' '),
+      new Date(c.createdAt).toLocaleString('pt-BR'),
+    ]));
+
+    const csv = rows.map(r =>
+      r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="vaultguard-export-${Date.now()}.csv"`);
+    res.send('﻿' + csv);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/credentials/vault-export — export ALL credentials including encryptedPass (for encrypted vault backup)
+router.get('/vault-export', authenticate, async (req, res, next) => {
+  try {
+    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
+
+    const credentials = await prisma.credential.findMany({
+      where: { folderId: { in: accessibleFolders } },
+      include: {
+        folder: { select: { id: true, name: true } },
+        customFields: { orderBy: { sortOrder: 'asc' } },
+      },
+      orderBy: [{ folder: { name: 'asc' } }, { title: 'asc' }]
+    });
+
+    await createAuditLog(req.user.id, 'vault.export', null, 'Vault',
+      { count: credentials.length }, req.ip);
+
+    res.json({ credentials, exportedAt: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/credentials/search/by-url (for Chrome extension autofill)
+router.get('/search/by-url', authenticate, async (req, res, next) => {
+  try {
+    const { url } = req.query;
+    if (!url) return res.json([]);
+
+    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
+
+    const credentials = await prisma.credential.findMany({
+      where: {
+        folderId: { in: accessibleFolders },
+        url: { contains: hostname }
+      },
+      include: { folder: { select: { id: true, name: true } } }
+    });
+
+    const safe = credentials.map(({ encryptedPass, ...c }) => c);
+    res.json(safe);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/credentials/:id — get single with encrypted password
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
@@ -363,74 +455,6 @@ router.delete('/:id', authenticate, async (req, res, next) => {
   }
 });
 
-// GET /api/credentials/export — export credentials as CSV (no passwords)
-router.get('/export', authenticate, async (req, res, next) => {
-  try {
-    const { folderId, search } = req.query;
-    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
-
-    const where = {
-      folderId: folderId ? folderId : { in: accessibleFolders },
-      ...(search && {
-        OR: [
-          { title: { contains: search, mode: 'insensitive' } },
-          { username: { contains: search, mode: 'insensitive' } },
-        ]
-      }),
-    };
-
-    const credentials = await prisma.credential.findMany({
-      where,
-      include: { folder: { select: { name: true } } },
-      orderBy: [{ folder: { name: 'asc' } }, { title: 'asc' }]
-    });
-
-    const rows = [['Título', 'Usuário', 'URL', 'Pasta', 'Tags', 'Notas', 'Criado em']];
-    credentials.forEach(c => rows.push([
-      c.title,
-      c.username || '',
-      c.url || '',
-      c.folder?.name || '',
-      (c.tags || []).join('; '),
-      (c.notes || '').replace(/\n/g, ' '),
-      new Date(c.createdAt).toLocaleString('pt-BR'),
-    ]));
-
-    const csv = rows.map(r =>
-      r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
-
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="vaultguard-export-${Date.now()}.csv"`);
-    res.send('﻿' + csv);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/credentials/vault-export — export ALL credentials including encryptedPass (for encrypted vault backup)
-router.get('/vault-export', authenticate, async (req, res, next) => {
-  try {
-    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
-
-    const credentials = await prisma.credential.findMany({
-      where: { folderId: { in: accessibleFolders } },
-      include: {
-        folder: { select: { id: true, name: true } },
-        customFields: { orderBy: { sortOrder: 'asc' } },
-      },
-      orderBy: [{ folder: { name: 'asc' } }, { title: 'asc' }]
-    });
-
-    await createAuditLog(req.user.id, 'vault.export', null, 'Vault',
-      { count: credentials.length }, req.ip);
-
-    res.json({ credentials, exportedAt: new Date().toISOString() });
-  } catch (err) {
-    next(err);
-  }
-});
-
 // POST /api/credentials/import — bulk import from CSV
 router.post('/import', authenticate, async (req, res, next) => {
   try {
@@ -480,30 +504,6 @@ router.post('/import', authenticate, async (req, res, next) => {
       { count: created.length, folderId }, req.ip);
 
     res.json({ imported: created.length, errors });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /api/credentials/search/by-url (for Chrome extension autofill)
-router.get('/search/by-url', authenticate, async (req, res, next) => {
-  try {
-    const { url } = req.query;
-    if (!url) return res.json([]);
-
-    const hostname = new URL(url).hostname.replace(/^www\./, '');
-    const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
-
-    const credentials = await prisma.credential.findMany({
-      where: {
-        folderId: { in: accessibleFolders },
-        url: { contains: hostname }
-      },
-      include: { folder: { select: { id: true, name: true } } }
-    });
-
-    const safe = credentials.map(({ encryptedPass, ...c }) => c);
-    res.json(safe);
   } catch (err) {
     next(err);
   }

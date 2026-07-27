@@ -32,7 +32,7 @@
     // Flash visual para feedback
     [usernameField, passwordField].filter(Boolean).forEach(el => {
       el.style.transition = 'outline 0.3s';
-      el.style.outline = '2px solid #6366f1';
+      el.style.outline = '2px solid #C78C00';
       setTimeout(() => { el.style.outline = ''; }, 1500);
     });
   }
@@ -121,11 +121,11 @@
       top: ${rect.bottom + window.scrollY + 4}px;
       left: ${rect.left + window.scrollX}px;
       background: #1a1d2e;
-      border: 1px solid #6366f1;
+      border: 1px solid #C78C00;
       border-radius: 8px;
       padding: 6px 10px;
       font-size: 12px;
-      color: #a5b4fc;
+      color: #E7A300;
       cursor: pointer;
       z-index: 2147483647;
       display: flex;
@@ -135,13 +135,13 @@
       font-family: system-ui, sans-serif;
       pointer-events: auto;
     `;
-    hint.innerHTML = `<svg width="12" height="12" fill="#6366f1" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> VaultGuard — clique no ícone para preencher`;
+    hint.innerHTML = `<svg width="12" height="12" fill="#C78C00" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> VaultGuard — clique no ícone para preencher`;
 
     // Verificar se há credenciais para o site
     chrome.runtime.sendMessage({ type: 'FETCH_CREDS_FOR_URL', url: window.location.href }, (creds) => {
       if (!creds || creds.length === 0) return;
       hint.textContent = '';
-      hint.innerHTML = `<svg width="12" height="12" fill="#6366f1" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> ${creds.length} senha${creds.length > 1 ? 's' : ''} salva${creds.length > 1 ? 's' : ''} — clique no ícone 🔐`;
+      hint.innerHTML = `<svg width="12" height="12" fill="#C78C00" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg> ${creds.length} senha${creds.length > 1 ? 's' : ''} salva${creds.length > 1 ? 's' : ''} — clique no ícone 🔐`;
       document.body.appendChild(hint);
 
       const remove = () => hint.remove();
