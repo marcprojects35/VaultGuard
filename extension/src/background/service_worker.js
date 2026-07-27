@@ -2,9 +2,43 @@
 const STORAGE_SERVER_URL = 'vaultguard_server_url';
 const STORAGE_API_TOKEN  = 'vaultguard_api_token';
 
-// Abrir side panel ao clicar no ícone da extensão
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+// ID da janela flutuante do VaultGuard (vive enquanto o service worker está ativo)
+let vaultWindowId = null;
 
+async function openVaultWindow() {
+  // Se já existe uma janela aberta, apenas focar nela
+  if (vaultWindowId !== null) {
+    try {
+      await chrome.windows.update(vaultWindowId, { focused: true });
+      return;
+    } catch {
+      // Janela foi fechada — criar nova
+      vaultWindowId = null;
+    }
+  }
+
+  const win = await chrome.windows.create({
+    url:    chrome.runtime.getURL('popup.html'),
+    type:   'popup',
+    width:  400,
+    height: 650,
+    focused: true,
+  });
+
+  vaultWindowId = win.id;
+}
+
+// Abrir janela flutuante ao clicar no ícone da extensão
+chrome.action.onClicked.addListener(() => {
+  openVaultWindow();
+});
+
+// Limpar referência quando a janela for fechada
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId === vaultWindowId) vaultWindowId = null;
+});
+
+// Mensagens dos content scripts e popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'GET_SERVER_CONFIG') {
     chrome.storage.local.get([STORAGE_SERVER_URL, STORAGE_API_TOKEN], (data) => {
@@ -19,11 +53,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'OPEN_SIDE_PANEL') {
-    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-      if (tab?.windowId) {
-        chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
-      }
-    });
+    openVaultWindow();
     sendResponse({ ok: true });
     return true;
   }
@@ -59,9 +89,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 async function updateBadge(tabId, url) {
   try {
     const creds = await handleFetchCredsForUrl(url);
-    const count = creds.length;
-    if (count > 0) {
-      chrome.action.setBadgeText({ text: String(count), tabId });
+    if (creds.length > 0) {
+      chrome.action.setBadgeText({ text: String(creds.length), tabId });
       chrome.action.setBadgeBackgroundColor({ color: '#C78C00', tabId });
     } else {
       chrome.action.setBadgeText({ text: '', tabId });
