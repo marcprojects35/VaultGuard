@@ -97,6 +97,7 @@ async function searchUser(client, cfg, login) {
     filter,
     attributes,
     sizeLimit: 1,
+    explicitBufferAttributes: ['objectGUID'],
   });
 
   return searchEntries[0] || null;
@@ -258,6 +259,7 @@ export async function syncAllUsersFromAD(cfg) {
       scope: 'sub', filter, attributes,
       sizeLimit: cfg.syncMaxUsers || 5000,
       paged: true,
+      explicitBufferAttributes: ['objectGUID'],
     });
 
     for (const entry of searchEntries) {
@@ -332,6 +334,7 @@ export async function fetchUsersForPreview(cfg) {
       ],
       sizeLimit: cfg.syncMaxUsers || 5000,
       paged: true,
+      explicitBufferAttributes: ['objectGUID'],
     });
 
     await client.unbind();
