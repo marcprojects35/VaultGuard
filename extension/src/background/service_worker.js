@@ -22,7 +22,7 @@ async function handleFetchCredsForUrl(url) {
   if (!serverUrl || !apiToken) return [];
   try {
     const res = await fetch(`${serverUrl}/api/credentials/search/by-url?url=${encodeURIComponent(url)}`, {
-      headers: { 'X-API-Token': apiToken }
+      headers: { 'Authorization': `Bearer ${apiToken}` }
     });
     if (!res.ok) return [];
     return await res.json();
@@ -48,7 +48,7 @@ async function updateBadge(tabId, url) {
     const count = creds.length;
     if (count > 0) {
       chrome.action.setBadgeText({ text: String(count), tabId });
-      chrome.action.setBadgeBackgroundColor({ color: '#6366f1', tabId });
+      chrome.action.setBadgeBackgroundColor({ color: '#C78C00', tabId });
     } else {
       chrome.action.setBadgeText({ text: '', tabId });
     }
