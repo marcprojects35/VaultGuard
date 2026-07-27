@@ -21,6 +21,14 @@ const ROLE_HIERARCHY = {
 export async function canAccessFolder(userId, userRole, folderId, level = 'canView') {
   if (userRole === 'ADMINISTRADOR') return true;
 
+  // Dono de pasta pessoal sempre tem acesso total à própria pasta —
+  // pastas pessoais nunca têm FolderPermission cadastrada.
+  const folder = await prisma.folder.findUnique({
+    where: { id: folderId },
+    select: { isPersonal: true, ownerId: true }
+  });
+  if (folder?.isPersonal && folder.ownerId === userId) return true;
+
   // Check user-specific permission first
   const userPerm = await prisma.folderPermission.findFirst({
     where: { folderId, userId }
@@ -40,6 +48,14 @@ export async function canAccessFolder(userId, userRole, folderId, level = 'canVi
 
 export async function getUserPermissionsForFolder(userId, userRole, folderId) {
   if (userRole === 'ADMINISTRADOR') {
+    return { canView: true, canEdit: true, canDelete: true, canShare: true };
+  }
+
+  const folder = await prisma.folder.findUnique({
+    where: { id: folderId },
+    select: { isPersonal: true, ownerId: true }
+  });
+  if (folder?.isPersonal && folder.ownerId === userId) {
     return { canView: true, canEdit: true, canDelete: true, canShare: true };
   }
 
