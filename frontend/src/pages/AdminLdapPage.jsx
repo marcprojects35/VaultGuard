@@ -160,7 +160,7 @@ export default function AdminLdapPage() {
     setSelectedEmails(new Set());
     setLinkResult(null);
     try {
-      const { data } = await api.get('/ldap/users/preview');
+      const { data } = await api.post('/ldap/users/preview', { config });
       setAdUsers(data.users);
       toast.success(`${data.total} usuários carregados do AD`);
     } catch (e) {
@@ -208,7 +208,7 @@ export default function AdminLdapPage() {
   const loadGroups = async () => {
     setLoadingGroups(true);
     try {
-      const res = await api.get('/ldap/groups');
+      const res = await api.post('/ldap/groups', { config });
       setAdGroups(res.data);
       toast.success(`${res.data.length} grupos carregados`);
     } catch (e) {

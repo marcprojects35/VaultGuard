@@ -19,6 +19,24 @@ const prisma = new PrismaClient();
 // Estado de sync em memória (simples — para produção usar Redis/BullMQ)
 let syncState = { running: false, lastRun: null, lastResult: null };
 
+// ── Resolve a config efetiva: usa a enviada pelo form (não salva ainda),
+// caindo para a config salva no banco quando não vier nenhuma no body.
+// Desmascara bindPassword quando o form ainda traz o placeholder "••••••••".
+async function resolveConfig(bodyConfig) {
+  const savedSettings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+  const saved = savedSettings?.ldapConfig || null;
+
+  let cfg = bodyConfig && Object.keys(bodyConfig).length > 0 ? { ...bodyConfig } : saved;
+  if (!cfg) return null;
+
+  if (cfg.bindPassword === '••••••••') {
+    cfg = { ...cfg, bindPassword: saved?.bindPassword || '' };
+  }
+  if (cfg.port) cfg = { ...cfg, port: parseInt(cfg.port, 10) };
+
+  return cfg;
+}
+
 // ── GET /api/ldap/config ─────────────────────────────────────────────────────
 router.get('/config', authenticate, requireAdmin, async (req, res, next) => {
   try {
@@ -82,18 +100,10 @@ router.put('/config', authenticate, requireAdmin, async (req, res, next) => {
 // ── POST /api/ldap/test ───────────────────────────────────────────────────────
 router.post('/test', authenticate, requireAdmin, async (req, res, next) => {
   try {
-    const { config } = req.body;
-    if (!config?.host || !config?.bindDn || !config?.bindPassword || !config?.baseDn) {
+    const testCfg = await resolveConfig(req.body?.config);
+    if (!testCfg?.host || !testCfg?.bindDn || !testCfg?.bindPassword || !testCfg?.baseDn) {
       return res.status(400).json({ error: 'Preencha host, baseDn, bindDn e bindPassword' });
     }
-
-    // Se senha mascarada, buscar do banco
-    let testCfg = { ...config };
-    if (testCfg.bindPassword === '••••••••') {
-      const existing = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
-      testCfg.bindPassword = existing?.ldapConfig?.bindPassword || '';
-    }
-    if (testCfg.port) testCfg.port = parseInt(testCfg.port, 10);
 
     const result = await testConnection(testCfg);
     res.json(result);
@@ -103,16 +113,22 @@ router.post('/test', authenticate, requireAdmin, async (req, res, next) => {
   }
 });
 
-// ── GET /api/ldap/groups ──────────────────────────────────────────────────────
-router.get('/groups', authenticate, requireAdmin, async (req, res, next) => {
+// ── POST /api/ldap/groups ──────────────────────────────────────────────────────
+// Usa a config atual do formulário (mesmo antes de salvar), com fallback pra config salva.
+router.post('/groups', authenticate, requireAdmin, async (req, res, next) => {
   try {
-    const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
-    if (!settings?.ldapConfig) return res.status(400).json({ error: 'LDAP não configurado' });
+    const cfg = await resolveConfig(req.body?.config);
+    if (!cfg?.host || !cfg?.bindDn || !cfg?.baseDn) {
+      return res.status(400).json({ error: 'LDAP não configurado — preencha host, baseDn e bindDn' });
+    }
 
-    const groups = await fetchADGroups(settings.ldapConfig);
+    const groups = await fetchADGroups(cfg);
     res.json(groups);
   } catch (err) {
     logger.error('LDAP fetch groups error', { error: err.message });
+    if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.message?.includes('connect')) {
+      return res.status(503).json({ error: `Não foi possível conectar ao servidor LDAP: ${err.message}` });
+    }
     next(err);
   }
 });
@@ -158,14 +174,17 @@ router.get('/sync/status', authenticate, requireAdmin, (req, res) => {
   res.json(syncState);
 });
 
-// ── GET /api/ldap/users/preview ───────────────────────────────────────────────
-// Lista usuários do AD cruzando com status no VaultGuard (sem importar)
-router.get('/users/preview', authenticate, requireAdmin, async (req, res, next) => {
+// ── POST /api/ldap/users/preview ───────────────────────────────────────────────
+// Lista usuários do AD cruzando com status no VaultGuard (sem importar).
+// Usa a config atual do formulário (mesmo antes de salvar), com fallback pra config salva.
+router.post('/users/preview', authenticate, requireAdmin, async (req, res, next) => {
   try {
-    const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
-    if (!settings?.ldapConfig) return res.status(400).json({ error: 'LDAP não configurado' });
+    const cfg = await resolveConfig(req.body?.config);
+    if (!cfg?.host || !cfg?.bindDn || !cfg?.baseDn) {
+      return res.status(400).json({ error: 'LDAP não configurado — preencha host, baseDn e bindDn' });
+    }
 
-    const adUsers = await fetchUsersForPreview(settings.ldapConfig);
+    const adUsers = await fetchUsersForPreview(cfg);
 
     // Cruzar com usuários já existentes no VaultGuard
     const vgUsers = await prisma.user.findMany({
