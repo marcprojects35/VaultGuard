@@ -38,6 +38,17 @@ export async function getLdapConfig() {
   return settings.ldapConfig;
 }
 
+// ── Normalizar Bind DN ────────────────────────────────────────────────────────
+// AD não aceita bind simples com nome de usuário puro (ex: "mhub") — exige DN
+// completo (CN=...), UPN (usuario@dominio) ou down-level (DOMINIO\usuario).
+// Se vier só o nome de usuário e houver domínio configurado, monta o UPN.
+function normalizeBindDn(bindDn, domain) {
+  if (!bindDn) return bindDn;
+  const looksQualified = bindDn.includes('=') || bindDn.includes('@') || bindDn.includes('\\');
+  if (looksQualified || !domain) return bindDn;
+  return `${bindDn}@${domain}`;
+}
+
 // ── Criar cliente LDAP ───────────────────────────────────────────────────────
 function createClient(cfg) {
   const url = cfg.useTLS
@@ -58,7 +69,7 @@ function createClient(cfg) {
 export async function testConnection(cfg) {
   const client = createClient(cfg);
   try {
-    await client.bind(cfg.bindDn, cfg.bindPassword);
+    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
     // Busca de teste no baseDN
     const { searchEntries } = await client.search(cfg.baseDn, {
       scope: 'base',
@@ -149,7 +160,7 @@ export async function authenticateWithAD(login, password, ip, ua) {
 
   try {
     // 1. Bind com service account
-    await client.bind(cfg.bindDn, cfg.bindPassword);
+    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
 
     // 2. Buscar o usuário
     const entry = await searchUser(client, cfg, login);
@@ -247,7 +258,7 @@ export async function syncAllUsersFromAD(cfg) {
   const results = { created: 0, updated: 0, disabled: 0, errors: [] };
 
   try {
-    await client.bind(cfg.bindDn, cfg.bindPassword);
+    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
 
     const filter = cfg.syncFilter || '(&(objectClass=user)(objectCategory=person))';
     const attributes = [
@@ -322,7 +333,7 @@ export async function syncAllUsersFromAD(cfg) {
 export async function fetchUsersForPreview(cfg) {
   const client = createClient(cfg);
   try {
-    await client.bind(cfg.bindDn, cfg.bindPassword);
+    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
 
     const filter = cfg.syncFilter || '(&(objectClass=user)(objectCategory=person))';
     const { searchEntries } = await client.search(cfg.baseDn, {
@@ -411,7 +422,7 @@ export async function linkUsersFromAD(cfg, emails) {
 export async function fetchADGroups(cfg) {
   const client = createClient(cfg);
   try {
-    await client.bind(cfg.bindDn, cfg.bindPassword);
+    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
     const filter = cfg.groupFilter || '(objectClass=group)';
     const { searchEntries } = await client.search(cfg.baseDn, {
       scope: 'sub', filter,
