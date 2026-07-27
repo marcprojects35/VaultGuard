@@ -38,6 +38,16 @@ export async function getLdapConfig() {
   return settings.ldapConfig;
 }
 
+// ── Extrair valor escalar de atributo LDAP ────────────────────────────────────
+// ldapts retorna atributos ausentes/vazios como array vazio ([]), que é "truthy"
+// em JS — isso quebra fallbacks como "entry.mail || entry.userPrincipalName",
+// pois [] nunca deixa o operador cair no próximo valor. Normaliza pra string.
+function ldapStr(value) {
+  if (Array.isArray(value)) return value.length > 0 ? String(value[0]) : '';
+  if (value === null || value === undefined) return '';
+  return String(value);
+}
+
 // ── Normalizar Bind DN ────────────────────────────────────────────────────────
 // AD não aceita bind simples com nome de usuário puro (ex: "mhub") — exige DN
 // completo (CN=...), UPN (usuario@dominio) ou down-level (DOMINIO\usuario).
@@ -186,10 +196,10 @@ export async function authenticateWithAD(login, password, ip, ua) {
     await client.unbind();
 
     // 5. Extrair atributos
-    const email = (entry.mail || entry.userPrincipalName || `${login}@${cfg.domain || 'local'}`).toString().toLowerCase();
-    const username = (entry.sAMAccountName || entry.uid || login).toString().toLowerCase();
-    const firstName = (entry.givenName || entry.cn || login).toString();
-    const lastName = (entry.sn || '').toString();
+    const email = (ldapStr(entry.mail) || ldapStr(entry.userPrincipalName) || `${login}@${cfg.domain || 'local'}`).toLowerCase();
+    const username = (ldapStr(entry.sAMAccountName) || ldapStr(entry.uid) || login).toLowerCase();
+    const firstName = ldapStr(entry.givenName) || ldapStr(entry.cn) || login;
+    const lastName = ldapStr(entry.sn);
     const ldapDn = entry.dn.toString();
     const ldapGuid = entry.objectGUID ? Buffer.from(entry.objectGUID).toString('hex') : null;
 
@@ -276,13 +286,13 @@ export async function syncAllUsersFromAD(cfg) {
     for (const entry of searchEntries) {
       try {
         const active = isAdUserActive(entry);
-        const email = (entry.mail || entry.userPrincipalName || '').toString().toLowerCase();
-        const username = (entry.sAMAccountName || '').toString().toLowerCase();
+        const email = (ldapStr(entry.mail) || ldapStr(entry.userPrincipalName)).toLowerCase();
+        const username = ldapStr(entry.sAMAccountName).toLowerCase();
 
         if (!email || !username) continue;
 
-        const firstName = (entry.givenName || username).toString();
-        const lastName = (entry.sn || '').toString();
+        const firstName = ldapStr(entry.givenName) || username;
+        const lastName = ldapStr(entry.sn);
         const ldapDn = entry.dn.toString();
         const ldapGuid = entry.objectGUID ? Buffer.from(entry.objectGUID).toString('hex') : null;
         const groups = extractGroups(entry);
@@ -355,14 +365,14 @@ export async function fetchUsersForPreview(cfg) {
         const active = isAdUserActive(e);
         const groups = extractGroups(e);
         const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR');
-        const email = (e.mail || e.userPrincipalName || '').toString().toLowerCase();
-        const username = (e.sAMAccountName || '').toString().toLowerCase();
+        const email = (ldapStr(e.mail) || ldapStr(e.userPrincipalName)).toLowerCase();
+        const username = ldapStr(e.sAMAccountName).toLowerCase();
         return {
           dn: e.dn?.toString(),
           username,
           email,
-          firstName: (e.givenName || username).toString(),
-          lastName: (e.sn || '').toString(),
+          firstName: ldapStr(e.givenName) || username,
+          lastName: ldapStr(e.sn),
           active,
           role,
         };
@@ -432,8 +442,8 @@ export async function fetchADGroups(cfg) {
     await client.unbind();
     return searchEntries.map(e => ({
       dn: e.dn?.toString(),
-      cn: (e.cn || '').toString(),
-      description: (e.description || '').toString(),
+      cn: ldapStr(e.cn),
+      description: ldapStr(e.description),
     }));
   } catch (err) {
     logger.error('LDAP fetchGroups error', { error: err.message });
