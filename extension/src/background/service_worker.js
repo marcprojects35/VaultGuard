@@ -21,7 +21,7 @@ async function openVaultWindow() {
     url:    chrome.runtime.getURL('popup.html'),
     type:   'popup',
     width:  400,
-    height: 650,
+    height: 680,
     focused: true,
   });
 
