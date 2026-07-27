@@ -58,15 +58,17 @@ let state = {
   serverUrl: '',
   apiToken: '',
   masterKey: null,
-  unlocking: false,      // showing the inline vault-password prompt
-  unlockAction: null,    // { type: 'copy'|'fill'|'save', index? } — pending action after unlock
-  credentials: [],
-  filteredCreds: [],
+  unlocking: false,
+  unlockAction: null,
+  credentials: [],       // todas as credenciais carregadas
+  siteMatches: [],       // credenciais que correspondem ao site atual
+  filteredCreds: [],     // lista exibida (após search/filtro)
+  showingSiteFilter: false, // true = filtrando por site atual
   currentUrl: '',
   error: null,
   loading: false,
   copied: null,
-  saveForm: null,        // { title, username, password, url, folders }
+  saveForm: null,
 };
 
 // ─── Utils ─────────────────────────────────────────────────────────────────
@@ -215,14 +217,25 @@ function renderVault() {
           <svg style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:#475569" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
           </svg>
-          <input id="searchInput" type="text" placeholder="Buscar credenciais..."
+          <input id="searchInput" type="text" placeholder="Buscar em todas as credenciais..."
             style="width:100%;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;padding:7px 10px 7px 30px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box" />
         </div>
-        ${showDomain ? `<div style="margin-top:6px;font-size:11px;color:#475569">Site: <span style="color:#C78C00">${escapeHtml(domain)}</span></div>` : ''}
+        ${showDomain && state.siteMatches.length > 0 ? `
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <button id="btnFilterSite"
+              style="flex:1;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${state.showingSiteFilter ? '#C78C00' : '#2A2A2A'};background:${state.showingSiteFilter ? '#C78C0022' : 'transparent'};color:${state.showingSiteFilter ? '#E7A300' : '#64748b'}">
+              🌐 Este site (${state.siteMatches.length})
+            </button>
+            <button id="btnShowAll"
+              style="flex:1;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${!state.showingSiteFilter ? '#C78C00' : '#2A2A2A'};background:${!state.showingSiteFilter ? '#C78C0022' : 'transparent'};color:${!state.showingSiteFilter ? '#E7A300' : '#64748b'}">
+              📋 Todas (${state.credentials.length})
+            </button>
+          </div>
+        ` : showDomain ? `<div style="margin-top:6px;font-size:11px;color:#475569">Site: <span style="color:#555552">${escapeHtml(domain)}</span> — <span style="color:#64748b">sem matches, mostrando todas</span></div>` : ''}
       </div>
 
       <!-- Credential list -->
-      <div style="flex:1;overflow-y:auto;max-height:350px;background:#0D0D0D">
+      <div style="flex:1;overflow-y:auto;background:#0D0D0D">
         ${creds.length === 0 ? `
           <div style="padding:30px 14px;text-align:center;color:#3A3A38">
             <svg style="margin:0 auto 8px;display:block;opacity:0.25" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
@@ -345,6 +358,20 @@ function bindEvents() {
 
     document.getElementById('searchInput')?.addEventListener('input', handleSearch);
     document.getElementById('btnRefresh')?.addEventListener('click', loadCredentials);
+
+    document.getElementById('btnFilterSite')?.addEventListener('click', () => {
+      state.showingSiteFilter = true;
+      state.filteredCreds = state.siteMatches;
+      document.getElementById('searchInput').value = '';
+      render();
+    });
+    document.getElementById('btnShowAll')?.addEventListener('click', () => {
+      state.showingSiteFilter = false;
+      state.filteredCreds = state.credentials;
+      document.getElementById('searchInput').value = '';
+      render();
+    });
+
     document.getElementById('btnSettings')?.addEventListener('click', () => {
       state.view = 'setup'; state.masterKey = null;
       chrome.storage.local.remove(STORAGE_MASTER_KEY);
@@ -497,43 +524,58 @@ async function handleUnlock() {
 async function loadCredentials() {
   state.loading = true;
   try {
-    const [tab]  = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     state.currentUrl = tab?.url || '';
     const domain = extractDomain(state.currentUrl);
+    const isSpecialPage = !domain || domain.startsWith('chrome') ||
+      state.currentUrl.startsWith('chrome') || state.currentUrl.startsWith('about') ||
+      state.currentUrl.startsWith('chrome-extension');
 
-    let creds = [];
-    const isChrome = !domain || domain.startsWith('chrome') || state.currentUrl.startsWith('chrome') || state.currentUrl.startsWith('about');
+    // Sempre carrega TODAS as credenciais
+    const all = await apiFetch('/credentials');
+    state.credentials = Array.isArray(all) ? all : [];
 
-    if (!isChrome) {
-      try {
-        const byUrl = await apiFetch(`/credentials/search/by-url?url=${encodeURIComponent(state.currentUrl)}`);
-        creds = Array.isArray(byUrl) ? byUrl : [];
-      } catch {
-        // fallback: load all
-        const all = await apiFetch('/credentials');
-        creds = Array.isArray(all) ? all : [];
+    // Filtragem client-side por URL do site atual
+    if (!isSpecialPage && domain) {
+      const cleanDomain = domain.replace(/^www\./, '');
+      state.siteMatches = state.credentials.filter(c => {
+        if (!c.url) return false;
+        try {
+          const credHost = new URL(c.url).hostname.replace(/^www\./, '');
+          return credHost === cleanDomain ||
+            credHost.endsWith('.' + cleanDomain) ||
+            cleanDomain.endsWith('.' + credHost);
+        } catch {
+          return c.url.includes(cleanDomain);
+        }
+      });
+      // Se há matches para o site, filtra por padrão; senão, mostra tudo
+      if (state.siteMatches.length > 0) {
+        state.filteredCreds      = state.siteMatches;
+        state.showingSiteFilter  = true;
+      } else {
+        state.filteredCreds      = state.credentials;
+        state.showingSiteFilter  = false;
       }
     } else {
-      const all = await apiFetch('/credentials');
-      creds = Array.isArray(all) ? all : [];
+      state.siteMatches        = [];
+      state.filteredCreds      = state.credentials;
+      state.showingSiteFilter  = false;
     }
 
-    state.credentials  = creds;
-    state.filteredCreds = creds;
-    state.view         = 'vault';
+    state.view = 'vault';
   } catch (e) {
     if (e.message.includes('401') || e.message.includes('403')) {
-      // Token realmente inválido — limpar e pedir reconexão
       await chrome.storage.local.remove([STORAGE_API_TOKEN, STORAGE_MASTER_KEY]);
       state.apiToken  = '';
       state.masterKey = null;
       state.view      = 'setup';
       state.error     = 'Token de API expirado. Reconecte.';
     } else {
-      // Erro de rede ou servidor temporariamente fora — manter tela do cofre
-      state.credentials   = [];
-      state.filteredCreds = [];
-      state.view          = 'vault';
+      state.credentials      = [];
+      state.siteMatches      = [];
+      state.filteredCreds    = [];
+      state.view             = 'vault';
     }
   }
   state.loading = false;
@@ -542,13 +584,19 @@ async function loadCredentials() {
 
 function handleSearch(e) {
   const q = e.target.value.toLowerCase();
-  state.filteredCreds = q
-    ? state.credentials.filter(c =>
-        c.title?.toLowerCase().includes(q) ||
-        c.username?.toLowerCase().includes(q) ||
-        c.url?.toLowerCase().includes(q)
-      )
-    : state.credentials;
+  if (q) {
+    // Busca sempre em TODAS as credenciais, ignora filtro de site
+    state.showingSiteFilter = false;
+    state.filteredCreds = state.credentials.filter(c =>
+      c.title?.toLowerCase().includes(q) ||
+      c.username?.toLowerCase().includes(q) ||
+      c.url?.toLowerCase().includes(q)
+    );
+  } else {
+    // Ao limpar, volta ao estado padrão (site filter se havia matches)
+    state.showingSiteFilter = state.siteMatches.length > 0;
+    state.filteredCreds = state.showingSiteFilter ? state.siteMatches : state.credentials;
+  }
   render();
   const input = document.getElementById('searchInput');
   if (input) { input.value = q; input.focus(); input.setSelectionRange(q.length, q.length); }
