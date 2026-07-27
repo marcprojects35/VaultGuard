@@ -400,7 +400,9 @@ function bindEvents() {
 
   if (state.view === 'save-form') {
     document.getElementById('btnBackToVault')?.addEventListener('click', () => {
-      state.view = 'vault'; state.saveForm = null; state.error = null; render();
+      state.view = 'vault'; state.saveForm = null; state.error = null;
+      chrome.storage.local.remove(PENDING_SAVE_KEY);
+      render();
     });
     document.getElementById('btnConfirmSave')?.addEventListener('click', handleConfirmSave);
   }
@@ -521,12 +523,17 @@ async function loadCredentials() {
     state.view         = 'vault';
   } catch (e) {
     if (e.message.includes('401') || e.message.includes('403')) {
-      state.view  = 'setup';
-      state.error = 'Token expirado ou inválido. Reconecte.';
+      // Token realmente inválido — limpar e pedir reconexão
+      await chrome.storage.local.remove([STORAGE_API_TOKEN, STORAGE_MASTER_KEY]);
+      state.apiToken  = '';
+      state.masterKey = null;
+      state.view      = 'setup';
+      state.error     = 'Token de API expirado. Reconecte.';
     } else {
-      state.credentials  = [];
+      // Erro de rede ou servidor temporariamente fora — manter tela do cofre
+      state.credentials   = [];
       state.filteredCreds = [];
-      state.view         = 'vault';
+      state.view          = 'vault';
     }
   }
   state.loading = false;
@@ -614,6 +621,7 @@ async function handleConfirmSave() {
     });
 
     state.saveForm = null;
+    await chrome.storage.local.remove(PENDING_SAVE_KEY);
     await loadCredentials();
     showToast('Senha salva no cofre');
   } catch {
@@ -643,13 +651,56 @@ async function init() {
   state.apiToken  = stored[STORAGE_API_TOKEN]  || '';
   state.masterKey = stored[STORAGE_MASTER_KEY] || null;
 
-  if (!state.serverUrl || !state.apiToken || !state.masterKey) {
+  // masterKey ausente não é motivo para ir ao setup — basta o URL e o token
+  if (!state.serverUrl || !state.apiToken) {
     state.view = 'setup';
     render();
     return;
   }
 
   await loadCredentials();
+
+  // Verificar se há senha pendente para salvar (detectada pelo content script)
+  if (state.view === 'vault') {
+    await checkPendingSave();
+  }
+}
+
+const PENDING_SAVE_KEY = 'vaultguard_pending_save';
+
+async function checkPendingSave() {
+  const data = await chrome.storage.local.get(PENDING_SAVE_KEY);
+  const pending = data[PENDING_SAVE_KEY];
+  if (!pending) return;
+
+  // Expirar após 5 minutos
+  if (Date.now() - pending.savedAt > 5 * 60 * 1000) {
+    await chrome.storage.local.remove(PENDING_SAVE_KEY);
+    return;
+  }
+
+  let folders = [];
+  try {
+    const data = await apiFetch('/folders');
+    folders = [
+      ...flattenFolderTree(data.shared   || []),
+      ...flattenFolderTree(data.personal || []),
+    ];
+  } catch { /* sem pastas */ }
+
+  let title = pending.title || '';
+  try { title = new URL(pending.url).hostname; } catch {}
+
+  state.saveForm = {
+    title,
+    username: pending.username || '',
+    password: pending.password || '',
+    url:      pending.url || '',
+    folders,
+  };
+  state.view  = 'save-form';
+  state.error = null;
+  render();
 }
 
 init();
