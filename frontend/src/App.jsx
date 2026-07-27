@@ -8,6 +8,7 @@ import VaultLayout from './components/layout/VaultLayout.jsx';
 import VaultPage from './pages/VaultPage.jsx';
 import AdminUsersPage from './pages/AdminUsersPage.jsx';
 import AdminFoldersPage from './pages/AdminFoldersPage.jsx';
+import AdminRolesPage from './pages/AdminRolesPage.jsx';
 import AdminAuditPage from './pages/AdminAuditPage.jsx';
 import AppearancePage from './pages/AppearancePage.jsx';
 import ApiTokensPage from './pages/ApiTokensPage.jsx';
@@ -56,8 +57,8 @@ export default function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="tokens" element={<ApiTokensPage />} />
         <Route path="search" element={<SearchPage />} />
-        <Route path="import" element={<ImportPage />} />
-        <Route path="export" element={<ExportPage />} />
+        <Route path="import" element={<AdminRoute><ImportPage /></AdminRoute>} />
+        <Route path="export" element={<AdminRoute><ExportPage /></AdminRoute>} />
         <Route path="favorites" element={<FavoritesPage />} />
         <Route path="security" element={<SecurityDashboardPage />} />
         <Route path="access-requests" element={<AccessRequestPage />} />
@@ -66,6 +67,7 @@ export default function App() {
         {/* Admin */}
         <Route path="admin/users" element={<AdminRoute><AdminUsersPage /></AdminRoute>} />
         <Route path="admin/folders" element={<AdminRoute><AdminFoldersPage /></AdminRoute>} />
+        <Route path="admin/roles" element={<AdminRoute><AdminRolesPage /></AdminRoute>} />
         <Route path="admin/audit" element={<AdminRoute><AdminAuditPage /></AdminRoute>} />
 
         {/* Settings (under gear icon) */}
