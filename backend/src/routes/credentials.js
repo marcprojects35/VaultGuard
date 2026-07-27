@@ -482,7 +482,9 @@ router.post('/import', authenticate, async (req, res, next) => {
             encryptedPass: row.encryptedPass || row.password || '',
             url: row.url || null,
             notes: row.notes || null,
-            tags: row.tags ? row.tags.split(';').map(t => t.trim()).filter(Boolean) : [],
+            tags: Array.isArray(row.tags)
+              ? row.tags.map(t => String(t).trim()).filter(Boolean)
+              : (row.tags ? String(row.tags).split(';').map(t => t.trim()).filter(Boolean) : []),
             strength: 0,
             ...(row.customFields?.length > 0 && {
               customFields: {

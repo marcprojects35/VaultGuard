@@ -4,6 +4,8 @@ import { Upload, FileText, AlertTriangle, CheckCircle, Download, X, RefreshCw, C
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
+import { getMasterKey } from '../stores/authStore.js';
+import { encryptPassword } from '../utils/crypto.js';
 
 const CSV_TEMPLATE = `Título,Usuário,Senha,URL,Tags,Notas
 Gmail Corporativo,usuario@empresa.com,SenhaSuperForte@123,https://gmail.com,"email;google","Conta corporativa principal"
@@ -53,10 +55,14 @@ export default function ImportPage() {
   ];
 
   const importMutation = useMutation({
-    mutationFn: () => api.post('/credentials/import', {
-      folderId: selectedFolder,
-      rows: parsedRows,
-    }),
+    mutationFn: async () => {
+      const masterKey = getMasterKey();
+      const rows = await Promise.all(parsedRows.map(async ({ password, ...row }) => ({
+        ...row,
+        encryptedPass: await encryptPassword(password || '', masterKey),
+      })));
+      return api.post('/credentials/import', { folderId: selectedFolder, rows });
+    },
     onSuccess: (res) => {
       setImportResult(res.data);
       qc.invalidateQueries({ queryKey: ['credentials'] });
@@ -105,7 +111,7 @@ export default function ImportPage() {
       rows.push({
         title: mapped.title,
         username: mapped.username || undefined,
-        encryptedPass: mapped.password,
+        password: mapped.password,
         url: mapped.url || undefined,
         tags: mapped.tags,
         notes: mapped.notes || undefined,
@@ -148,7 +154,7 @@ export default function ImportPage() {
       rows.push({
         title: row.name || row.url,
         username: row.username || row.login_username || '',
-        encryptedPass: row.password || row.login_password || '',
+        password: row.password || row.login_password || '',
         url: row.url || '',
         notes: row.extra || row.note || '',
         tags: row.grouping ? [row.grouping] : [],
@@ -166,7 +172,7 @@ export default function ImportPage() {
         .map(item => ({
           title: item.name || 'Sem título',
           username: item.login?.username || '',
-          encryptedPass: item.login?.password || '',
+          password: item.login?.password || '',
           url: item.login?.uris?.[0]?.uri || '',
           notes: item.notes || '',
           tags: item.collectionIds?.length > 0 ? ['bitwarden'] : [],
@@ -190,7 +196,7 @@ export default function ImportPage() {
       rows.push({
         title: row.title || row.account || 'Sem título',
         username: row.username || row['login name'] || '',
-        encryptedPass: row.password || '',
+        password: row.password || '',
         url: row.url || row['web site'] || '',
         notes: row.notes || row.comment || '',
         tags: row.group ? [row.group] : [],
@@ -212,7 +218,7 @@ export default function ImportPage() {
       rows.push({
         title: row.name || row.url,
         username: row.username || '',
-        encryptedPass: row.password || '',
+        password: row.password || '',
         url: row.url || '',
         notes: '',
         tags: [],
@@ -234,7 +240,7 @@ export default function ImportPage() {
       rows.push({
         title: row.title,
         username: row.username || '',
-        encryptedPass: row.password || '',
+        password: row.password || '',
         url: row.url || '',
         notes: row.notes || '',
         tags: row.tags ? row.tags.split(',').map(t => t.trim()) : [],
