@@ -9,12 +9,6 @@ import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useSettingsStore } from '../stores/settingsStore';
 
-const ROLES = ['AUXILIAR', 'ASSISTENTE', 'ANALISTA', 'COORDENACAO', 'DIRETORIA', 'ADMINISTRADOR'];
-const ROLE_LABELS = {
-  AUXILIAR: 'Auxiliar', ASSISTENTE: 'Assistente', ANALISTA: 'Analista',
-  COORDENACAO: 'Coordenação', DIRETORIA: 'Diretoria', ADMINISTRADOR: 'Administrador',
-};
-
 function buildTree(folders) {
   const map = {};
   const roots = [];
@@ -125,6 +119,11 @@ export default function AdminFoldersPage() {
     queryFn: () => api.get('/users').then(r => r.data),
   });
 
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get('/roles').then(r => r.data),
+  });
+
   const { data: permData } = useQuery({
     queryKey: ['folder-perms', permFolder?.id],
     queryFn: () => api.get(`/folders/${permFolder.id}/permissions`).then(r => r.data),
@@ -194,7 +193,7 @@ export default function AdminFoldersPage() {
 
   const savePerms = () => {
     const perms = [];
-    ROLES.forEach(role => {
+    roles.forEach(({ key: role }) => {
       const p = permState[`role_${role}`];
       if (p && (p.canView || p.canEdit || p.canDelete || p.canShare)) perms.push({ role, ...p });
     });
@@ -406,8 +405,8 @@ export default function AdminFoldersPage() {
                 <tr style={{ background: 'var(--color-surface-2)' }}>
                   <td colSpan={5} className="py-1 px-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Por Cargo</td>
                 </tr>
-                {ROLES.map(role => (
-                  <PermRow key={role} label={ROLE_LABELS[role]} permKey={`role_${role}`}
+                {roles.map(role => (
+                  <PermRow key={role.key} label={role.label} permKey={`role_${role.key}`}
                     icon={<Users className="w-3 h-3 mr-1 flex-shrink-0" style={{ color: 'var(--color-muted)' }} />} />
                 ))}
                 {users.length > 0 && (

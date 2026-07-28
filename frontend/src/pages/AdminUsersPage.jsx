@@ -6,13 +6,7 @@ import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
 
-const ROLES = ['AUXILIAR', 'ASSISTENTE', 'ANALISTA', 'COORDENACAO', 'DIRETORIA', 'ADMINISTRADOR'];
-const ROLE_COLORS = {
-  AUXILIAR: '#64748b', ASSISTENTE: '#0ea5e9', ANALISTA: '#6366f1',
-  COORDENACAO: '#8b5cf6', DIRETORIA: '#f59e0b', ADMINISTRADOR: '#ef4444',
-};
-
-function UserModal({ user: editUser, onClose }) {
+function UserModal({ user: editUser, roles, onClose }) {
   const { t } = useTranslation();
   const settings = useSettingsStore(s => s.settings);
   const qc = useQueryClient();
@@ -24,7 +18,7 @@ function UserModal({ user: editUser, onClose }) {
     email: editUser?.email || '',
     username: editUser?.username || '',
     password: '',
-    role: editUser?.role || 'AUXILIAR',
+    role: editUser?.role || roles[roles.length - 1]?.key || 'AUXILIAR',
     status: editUser?.status || 'ACTIVE',
   });
 
@@ -88,8 +82,8 @@ function UserModal({ user: editUser, onClose }) {
               <select value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
                 className="w-full px-3 py-2.5 rounded-xl text-sm outline-none"
                 style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
-                {ROLES.map(r => (
-                  <option key={r} value={r}>{t(`user.roles.${r}`)}</option>
+                {roles.map(r => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
                 ))}
               </select>
             </div>
@@ -138,6 +132,12 @@ export default function AdminUsersPage() {
     queryKey: ['users', search, roleFilter],
     queryFn: () => api.get('/users', { params: { search: search || undefined, role: roleFilter || undefined } }).then(r => r.data),
   });
+
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get('/roles').then(r => r.data),
+  });
+  const roleMap = Object.fromEntries(roles.map(r => [r.key, r]));
 
   const deleteMutation = useMutation({
     mutationFn: id => api.delete(`/users/${id}`),
@@ -226,7 +226,7 @@ export default function AdminUsersPage() {
           className="px-3 py-2.5 rounded-xl text-sm outline-none"
           style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
           <option value="">Todas as categorias</option>
-          {ROLES.map(r => <option key={r} value={r}>{t(`user.roles.${r}`)}</option>)}
+          {roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
       </div>
 
@@ -248,7 +248,7 @@ export default function AdminUsersPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                      style={{ background: `linear-gradient(135deg, ${ROLE_COLORS[u.role]}99, ${ROLE_COLORS[u.role]})` }}>
+                      style={{ background: `linear-gradient(135deg, ${roleMap[u.role]?.color || '#64748b'}99, ${roleMap[u.role]?.color || '#64748b'})` }}>
                       {u.firstName[0]}{u.lastName[0]}
                     </div>
                     <div>
@@ -259,8 +259,8 @@ export default function AdminUsersPage() {
                 </td>
                 <td className="px-4 py-3">
                   <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                    style={{ background: `${ROLE_COLORS[u.role]}22`, color: ROLE_COLORS[u.role] }}>
-                    {t(`user.roles.${u.role}`)}
+                    style={{ background: `${roleMap[u.role]?.color || '#64748b'}22`, color: roleMap[u.role]?.color || '#64748b' }}>
+                    {roleMap[u.role]?.label || u.role}
                   </span>
                 </td>
                 <td className="px-4 py-3">
@@ -299,7 +299,7 @@ export default function AdminUsersPage() {
         )}
       </div>
 
-      {showModal && <UserModal user={editUser} onClose={() => { setShowModal(false); setEditUser(null); }} />}
+      {showModal && <UserModal user={editUser} roles={roles} onClose={() => { setShowModal(false); setEditUser(null); }} />}
 
       {deleteTarget && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"

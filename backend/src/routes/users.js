@@ -64,7 +64,11 @@ router.post('/', authenticate, requireAdmin,
     body('password').isLength({ min: 8 }),
     body('firstName').notEmpty().trim(),
     body('lastName').notEmpty().trim(),
-    body('role').isIn(['AUXILIAR', 'ASSISTENTE', 'ANALISTA', 'COORDENACAO', 'DIRETORIA', 'ADMINISTRADOR']),
+    body('role').custom(async (value) => {
+      const role = await prisma.role.findUnique({ where: { key: value } });
+      if (!role) throw new Error('Classificação inválida');
+      return true;
+    }),
   ],
   validate,
   async (req, res, next) => {
@@ -114,7 +118,11 @@ router.put('/:id', authenticate, async (req, res, next) => {
     if (req.body.avatar !== undefined) updateData.avatar = req.body.avatar;
 
     if (isAdmin) {
-      if (req.body.role) updateData.role = req.body.role;
+      if (req.body.role) {
+        const role = await prisma.role.findUnique({ where: { key: req.body.role } });
+        if (!role) return res.status(400).json({ error: 'Classificação inválida' });
+        updateData.role = req.body.role;
+      }
       if (req.body.status) updateData.status = req.body.status;
     }
 
