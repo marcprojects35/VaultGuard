@@ -2,15 +2,6 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const ROLE_HIERARCHY = {
-  AUXILIAR: 0,
-  ASSISTENTE: 1,
-  ANALISTA: 2,
-  COORDENACAO: 3,
-  DIRETORIA: 4,
-  ADMINISTRADOR: 5,
-};
-
 /**
  * Check if a user can access a folder with the given permission level
  * @param {string} userId

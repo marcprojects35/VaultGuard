@@ -10,19 +10,23 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  AUXILIAR
-  ASSISTENTE
-  ANALISTA
-  COORDENACAO
-  DIRETORIA
-  ADMINISTRADOR
-}
-
 enum UserStatus {
   ACTIVE
   INACTIVE
   PENDING
+}
+
+model Role {
+  key         String   @id
+  label       String
+  priority    Int      @default(0)
+  isProtected Boolean  @default(false)
+  color       String?  @default("#64748b")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users             User[]
+  folderPermissions FolderPermission[]
 }
 
 model User {
@@ -32,7 +36,8 @@ model User {
   passwordHash    String?
   firstName       String
   lastName        String
-  role            UserRole   @default(AUXILIAR)
+  role            String     @default("AUXILIAR")
+  roleRef         Role       @relation(fields: [role], references: [key])
   status          UserStatus @default(PENDING)
   totpSecret      String?
   totpEnabled     Boolean    @default(false)
@@ -87,7 +92,8 @@ model FolderPermission {
   folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
   userId    String?
   user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role      UserRole?
+  role      String?
+  roleRef   Role?    @relation(fields: [role], references: [key], onDelete: Cascade)
   canView   Boolean  @default(true)
   canEdit   Boolean  @default(false)
   canDelete Boolean  @default(false)

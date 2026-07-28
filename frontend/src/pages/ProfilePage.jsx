@@ -9,11 +9,6 @@ import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useAuthStore } from '../stores/authStore';
 
-const ROLE_LABELS = {
-  AUXILIAR: 'Auxiliar', ASSISTENTE: 'Assistente', ANALISTA: 'Analista',
-  COORDENACAO: 'Coordenação', DIRETORIA: 'Diretoria', ADMINISTRADOR: 'Administrador',
-};
-
 export default function ProfilePage() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
@@ -47,6 +42,12 @@ export default function ProfilePage() {
     queryFn: () => api.get('/tokens').then(r => r.data),
     enabled: activeTab === 'tokens',
   });
+
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get('/roles').then(r => r.data),
+  });
+  const userRoleLabel = roles.find(r => r.key === user?.role)?.label || user?.role;
 
   const { data: auditLogs = [] } = useQuery({
     queryKey: ['my-audit'],
@@ -202,7 +203,7 @@ export default function ProfilePage() {
           <p className="font-semibold text-[var(--color-text)] text-lg">{fullName || user?.username}</p>
           <p className="text-sm text-[var(--color-text-muted)]">{user?.email}</p>
           <span className="text-xs px-2 py-0.5 rounded-full bg-[#C78C00]/20 text-[#E7A300] mt-1 inline-block">
-            {ROLE_LABELS[user?.role] || user?.role}
+            {userRoleLabel}
           </span>
         </div>
         <div className="ml-auto grid grid-cols-2 gap-4 text-center">

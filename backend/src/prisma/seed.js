@@ -10,6 +10,18 @@ async function main() {
 
   console.log(`Configurando "${companyName}"...`);
 
+  const defaultRoles = [
+    { key: 'AUXILIAR',      label: 'Auxiliar',      priority: 0, isProtected: false, color: '#64748b' },
+    { key: 'ASSISTENTE',    label: 'Assistente',    priority: 1, isProtected: false, color: '#0ea5e9' },
+    { key: 'ANALISTA',      label: 'Analista',      priority: 2, isProtected: false, color: '#6366f1' },
+    { key: 'COORDENACAO',   label: 'Coordenação',   priority: 3, isProtected: false, color: '#8b5cf6' },
+    { key: 'DIRETORIA',     label: 'Diretoria',     priority: 4, isProtected: false, color: '#f59e0b' },
+    { key: 'ADMINISTRADOR', label: 'Administrador', priority: 5, isProtected: true,  color: '#ef4444' },
+  ];
+  for (const role of defaultRoles) {
+    await prisma.role.upsert({ where: { key: role.key }, update: {}, create: role });
+  }
+
   await prisma.systemSettings.upsert({
     where:  { id: 'singleton' },
     update: {},

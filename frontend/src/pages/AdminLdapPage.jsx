@@ -8,21 +8,6 @@ import {
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 
-const ROLES = ['AUXILIAR', 'ASSISTENTE', 'ANALISTA', 'COORDENACAO', 'DIRETORIA', 'ADMINISTRADOR'];
-const ROLE_LABELS = {
-  AUXILIAR: 'Auxiliar', ASSISTENTE: 'Assistente', ANALISTA: 'Analista',
-  COORDENACAO: 'Coordenação', DIRETORIA: 'Diretoria', ADMINISTRADOR: 'Administrador',
-};
-
-const ROLE_COLORS = {
-  AUXILIAR: 'bg-slate-500/20 text-[var(--color-text-muted)]',
-  ASSISTENTE: 'bg-blue-500/20 text-blue-300',
-  ANALISTA: 'bg-cyan-500/20 text-cyan-300',
-  COORDENACAO: 'bg-amber-500/20 text-amber-300',
-  DIRETORIA: 'bg-orange-500/20 text-orange-300',
-  ADMINISTRADOR: 'bg-red-500/20 text-red-300',
-};
-
 const DEFAULT_CONFIG = {
   host: '',
   port: 389,
@@ -116,6 +101,12 @@ export default function AdminLdapPage() {
     queryKey: ['ldap-config'],
     queryFn: () => api.get('/ldap/config').then(r => r.data),
   });
+
+  const { data: roles = [] } = useQuery({
+    queryKey: ['roles'],
+    queryFn: () => api.get('/roles').then(r => r.data),
+  });
+  const roleMap = Object.fromEntries(roles.map(r => [r.key, r]));
 
   useEffect(() => {
     if (!configData) return;
@@ -401,7 +392,7 @@ export default function AdminLdapPage() {
             <Field label="Cargo padrão" description="Cargo atribuído a usuários novos sem grupo mapeado">
               <select value={config.defaultRole} onChange={e => set('defaultRole', e.target.value)}
                 className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
-                {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                {roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
             </Field>
 
@@ -509,11 +500,12 @@ export default function AdminLdapPage() {
                   <select value={role}
                     onChange={e => updateGroupMapping(group, group, e.target.value)}
                     className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C78C00]">
-                    {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                    {roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
                   </select>
 
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${ROLE_COLORS[role]}`}>
-                    {ROLE_LABELS[role]}
+                  <span className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+                    style={{ background: `${roleMap[role]?.color || '#64748b'}22`, color: roleMap[role]?.color || '#64748b' }}>
+                    {roleMap[role]?.label || role}
                   </span>
 
                   <button onClick={() => removeGroupMapping(group)}
@@ -696,8 +688,9 @@ export default function AdminLdapPage() {
                             <td className="py-3 px-3 hidden md:table-cell text-[var(--color-text-muted)] font-mono text-xs">{user.username}</td>
                             <td className="py-3 px-3 hidden lg:table-cell text-[var(--color-text-muted)] text-xs truncate max-w-[180px]">{user.email}</td>
                             <td className="py-3 px-3">
-                              <span className={`px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap ${ROLE_COLORS[user.role] || 'bg-slate-500/20 text-[var(--color-text-muted)]'}`}>
-                                {ROLE_LABELS[user.role] || user.role}
+                              <span className="px-2 py-0.5 rounded text-xs font-medium whitespace-nowrap"
+                                style={{ background: `${roleMap[user.role]?.color || '#64748b'}22`, color: roleMap[user.role]?.color || '#64748b' }}>
+                                {roleMap[user.role]?.label || user.role}
                               </span>
                             </td>
                             <td className="py-3 px-3">

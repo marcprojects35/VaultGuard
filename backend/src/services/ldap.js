@@ -26,10 +26,14 @@ const DEFAULT_ROLE_MAP = {
   // Pode ser sobrescrito via ldapConfig.roleGroupMap
 };
 
-const ROLE_PRIORITY = {
-  AUXILIAR: 0, ASSISTENTE: 1, ANALISTA: 2,
-  COORDENACAO: 3, DIRETORIA: 4, ADMINISTRADOR: 5,
-};
+// ── Prioridade das classificações (Role.priority), buscada do banco ──────────
+// As classificações são gerenciáveis pelo admin (tabela Role) — não há mais
+// uma lista fixa de cargos, então a prioridade usada pra escolher o cargo de
+// maior privilégio entre os grupos do AD vem do banco, não de um objeto fixo.
+async function getRolePriorityMap() {
+  const roles = await prisma.role.findMany({ select: { key: true, priority: true } });
+  return Object.fromEntries(roles.map(r => [r.key, r.priority]));
+}
 
 // ── Ler config do banco ───────────────────────────────────────────────────────
 export async function getLdapConfig() {
@@ -136,17 +140,17 @@ function extractGroups(entry) {
 }
 
 // ── Resolver role pelo mapeamento de grupos ───────────────────────────────────
-function resolveRole(groups, roleGroupMap = {}, defaultRole = 'AUXILIAR') {
+function resolveRole(groups, roleGroupMap = {}, defaultRole = 'AUXILIAR', priorityMap = {}) {
   const map = { ...DEFAULT_ROLE_MAP, ...roleGroupMap };
   let highestRole = defaultRole;
-  let highestPriority = ROLE_PRIORITY[defaultRole] ?? 0;
+  let highestPriority = priorityMap[defaultRole] ?? 0;
 
   for (const group of groups) {
     const role = map[group];
-    if (role && ROLE_PRIORITY[role] !== undefined) {
-      if (ROLE_PRIORITY[role] > highestPriority) {
+    if (role && priorityMap[role] !== undefined) {
+      if (priorityMap[role] > highestPriority) {
         highestRole = role;
-        highestPriority = ROLE_PRIORITY[role];
+        highestPriority = priorityMap[role];
       }
     }
   }
@@ -205,7 +209,8 @@ export async function authenticateWithAD(login, password, ip, ua) {
 
     // 6. Resolver role pelos grupos
     const groups = extractGroups(entry);
-    const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR');
+    const priorityMap = await getRolePriorityMap();
+    const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR', priorityMap);
 
     // 7. Sincronizar usuário no banco local (upsert)
     const user = await upsertLdapUser({
@@ -283,6 +288,8 @@ export async function syncAllUsersFromAD(cfg) {
       explicitBufferAttributes: ['objectGUID'],
     });
 
+    const priorityMap = await getRolePriorityMap();
+
     for (const entry of searchEntries) {
       try {
         const active = isAdUserActive(entry);
@@ -296,7 +303,7 @@ export async function syncAllUsersFromAD(cfg) {
         const ldapDn = entry.dn.toString();
         const ldapGuid = entry.objectGUID ? Buffer.from(entry.objectGUID).toString('hex') : null;
         const groups = extractGroups(entry);
-        const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR');
+        const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR', priorityMap);
 
         const existing = await prisma.user.findFirst({
           where: { OR: [{ ldapDn }, { email }] }
@@ -360,11 +367,13 @@ export async function fetchUsersForPreview(cfg) {
 
     await client.unbind();
 
+    const priorityMap = await getRolePriorityMap();
+
     return searchEntries
       .map(e => {
         const active = isAdUserActive(e);
         const groups = extractGroups(e);
-        const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR');
+        const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR', priorityMap);
         const email = (ldapStr(e.mail) || ldapStr(e.userPrincipalName)).toLowerCase();
         const username = ldapStr(e.sAMAccountName).toLowerCase();
         return {
