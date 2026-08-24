@@ -20,6 +20,7 @@ import attachmentsRoutes from './routes/attachments.js';
 import accessRequestsRoutes from './routes/accessRequests.js';
 import securityDashboardRoutes from './routes/securityDashboard.js';
 import rolesRoutes from './routes/roles.js';
+import teamsRoutes from './routes/teams.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { logger } from './utils/logger.js';
 
@@ -87,6 +88,7 @@ app.use('/api/attachments', attachmentsRoutes);
 app.use('/api/access-requests', accessRequestsRoutes);
 app.use('/api/dashboard', securityDashboardRoutes);
 app.use('/api/roles', rolesRoutes);
+app.use('/api/teams', teamsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

@@ -40,11 +40,19 @@ router.get('/', authenticate, async (req, res, next) => {
       });
       const sharedIds = [...new Set(perms.map(p => p.folderId))];
 
+      const memberships = await prisma.teamMember.findMany({
+        where: { userId: uid, status: 'ACTIVE' },
+        select: { teamId: true },
+      });
+      const teamIds = memberships.map(m => m.teamId);
+
       folders = await prisma.folder.findMany({
         where: {
           OR: [
             { id: { in: sharedIds } },
             { isPersonal: true, ownerId: uid },
+            { visibleToAll: true },
+            ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
           ]
         },
         include: { _count: { select: { credentials: true } } },
@@ -92,33 +100,53 @@ router.get('/admin-all', authenticate, async (req, res, next) => {
   }
 });
 
-// POST /api/folders — admin creates shared folder OR any user creates personal folder
+// POST /api/folders — pasta pessoal (qualquer usuário), de equipe (membro ACTIVE
+// do time) ou corporativa/visível-a-todos (só admin)
 router.post('/', authenticate,
   [body('name').notEmpty().trim()],
   validate,
   async (req, res, next) => {
     try {
-      const isPersonal = req.body.isPersonal === true;
       const isAdmin = req.user.role === 'ADMINISTRADOR';
+      const visibility = req.body.visibility || (req.body.isPersonal ? 'personal' : 'corporate');
 
-      if (!isPersonal && !isAdmin) {
-        return res.status(403).json({ error: 'Only administrators can create shared folders' });
+      const data = {
+        name: req.body.name,
+        description: req.body.description,
+        icon: req.body.icon || 'folder',
+        color: req.body.color || '#6366f1',
+        parentId: req.body.parentId || null,
+        sortOrder: req.body.sortOrder || 0,
+        isPersonal: false,
+        ownerId: null,
+        teamId: null,
+        visibleToAll: false,
+      };
+      let auditAction;
+
+      if (visibility === 'personal') {
+        data.isPersonal = true;
+        data.ownerId = req.user.id;
+        auditAction = 'folder.create_personal';
+      } else if (visibility === 'team') {
+        const teamId = req.body.teamId;
+        if (!teamId) return res.status(400).json({ error: 'teamId obrigatório para pasta de equipe' });
+        const membership = await prisma.teamMember.findUnique({
+          where: { teamId_userId: { teamId, userId: req.user.id } },
+        });
+        if (!membership || membership.status !== 'ACTIVE') {
+          return res.status(403).json({ error: 'Você não é membro ativo dessa equipe' });
+        }
+        data.teamId = teamId;
+        auditAction = 'folder.create_team';
+      } else {
+        if (!isAdmin) return res.status(403).json({ error: 'Only administrators can create corporate folders' });
+        data.visibleToAll = true;
+        auditAction = 'folder.create_corporate';
       }
 
-      const folder = await prisma.folder.create({
-        data: {
-          name: req.body.name,
-          description: req.body.description,
-          icon: req.body.icon || 'folder',
-          color: req.body.color || '#6366f1',
-          parentId: req.body.parentId || null,
-          sortOrder: req.body.sortOrder || 0,
-          isPersonal,
-          ownerId: isPersonal ? req.user.id : null,
-        }
-      });
-      await createAuditLog(req.user.id, isPersonal ? 'folder.create_personal' : 'folder.create',
-        folder.id, 'Folder', { name: folder.name }, req.ip);
+      const folder = await prisma.folder.create({ data });
+      await createAuditLog(req.user.id, auditAction, folder.id, 'Folder', { name: folder.name }, req.ip);
       res.status(201).json(folder);
     } catch (err) {
       next(err);
@@ -136,7 +164,11 @@ router.put('/:id', authenticate,
       if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
       const isAdmin = req.user.role === 'ADMINISTRADOR';
-      const isOwner = folder.isPersonal && folder.ownerId === req.user.id;
+      let isOwner = folder.isPersonal && folder.ownerId === req.user.id;
+      if (!isOwner && folder.teamId) {
+        const team = await prisma.team.findUnique({ where: { id: folder.teamId }, select: { ownerId: true } });
+        isOwner = team?.ownerId === req.user.id;
+      }
 
       if (!isAdmin && !isOwner) {
         return res.status(403).json({ error: 'Forbidden' });
@@ -167,7 +199,11 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
     const isAdmin = req.user.role === 'ADMINISTRADOR';
-    const isOwner = folder.isPersonal && folder.ownerId === req.user.id;
+    let isOwner = folder.isPersonal && folder.ownerId === req.user.id;
+    if (!isOwner && folder.teamId) {
+      const team = await prisma.team.findUnique({ where: { id: folder.teamId }, select: { ownerId: true } });
+      isOwner = team?.ownerId === req.user.id;
+    }
 
     if (!isAdmin && !isOwner) {
       return res.status(403).json({ error: 'Forbidden' });

@@ -948,16 +948,24 @@ function NewFolderModal({ onClose, isAdmin }) {
   const settings = useSettingsStore(s => s.settings);
   const qc = useQueryClient();
   const [name, setName] = useState('');
-  const [visibility, setVisibility] = useState('personal'); // 'personal' | 'shared'
+  const [visibility, setVisibility] = useState('personal'); // 'personal' | 'team' | 'corporate'
+  const [teamId, setTeamId] = useState('');
+
+  const { data: myTeams = [] } = useQuery({
+    queryKey: ['teams'],
+    queryFn: () => api.get('/teams').then(r => r.data),
+  });
 
   const mutation = useMutation({
     mutationFn: () => api.post('/folders', {
       name,
-      isPersonal: visibility === 'personal',
+      visibility,
+      ...(visibility === 'team' && { teamId }),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['folders'] });
-      toast.success(visibility === 'personal' ? 'Pasta pessoal criada!' : 'Pasta compartilhada criada!');
+      const labels = { personal: 'Pasta pessoal criada!', team: 'Pasta de equipe criada!', corporate: 'Pasta corporativa criada!' };
+      toast.success(labels[visibility]);
       onClose();
     },
     onError: (err) => toast.error(err.response?.data?.error || 'Erro'),
@@ -977,10 +985,11 @@ function NewFolderModal({ onClose, isAdmin }) {
           placeholder="Nome da pasta" autoFocus />
 
         <p className="text-xs mb-3 font-medium" style={{ color: 'var(--color-text-muted)' }}>Visibilidade</p>
-        <div className="grid grid-cols-2 gap-2 mb-5">
+        <div className="grid grid-cols-3 gap-2 mb-3">
           {[
             { id: 'personal', icon: '🔒', title: 'Somente para mim', desc: 'Só você verá esta pasta' },
-            ...(isAdmin ? [{ id: 'shared', icon: '📁', title: 'Para todos', desc: 'Todos os usuários com permissão' }] : []),
+            { id: 'team', icon: '👥', title: 'Equipe', desc: 'Membros da equipe escolhida' },
+            ...(isAdmin ? [{ id: 'corporate', icon: '🏢', title: 'Toda a corporação', desc: 'Todos os usuários' }] : []),
           ].map(opt => (
             <button key={opt.id} onClick={() => setVisibility(opt.id)}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center transition-all"
@@ -995,10 +1004,26 @@ function NewFolderModal({ onClose, isAdmin }) {
           ))}
         </div>
 
+        {visibility === 'team' && (
+          myTeams.length > 0 ? (
+            <select value={teamId} onChange={e => setTeamId(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-5"
+              style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
+              <option value="">— Selecione a equipe —</option>
+              {myTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          ) : (
+            <p className="text-xs mb-5" style={{ color: '#f59e0b' }}>
+              Você não tem equipes ainda. <a href="/teams" style={{ color: settings.primaryColor, textDecoration: 'underline' }}>Criar equipe</a>
+            </p>
+          )
+        )}
+
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-colors"
             style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
-          <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !name.trim()}
+          <button onClick={() => mutation.mutate()}
+            disabled={mutation.isPending || !name.trim() || (visibility === 'team' && !teamId)}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
             style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
             {mutation.isPending ? '...' : 'Criar'}

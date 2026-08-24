@@ -71,6 +71,18 @@ export async function sendAccessRequestResult({ userId, folderName, approved }) 
   });
 }
 
+export async function sendTeamInviteNotification({ inviteeId, team, inviter }) {
+  const invitee = await prisma.user.findUnique({ where: { id: inviteeId }, select: { email: true, firstName: true } });
+  if (!invitee?.email) return;
+
+  await sendEmail({
+    to: invitee.email,
+    subject: `[VaultGuard] Convite para a equipe "${team.name}"`,
+    text: `${inviter.firstName} ${inviter.lastName} convidou você para a equipe "${team.name}". Acesse o VaultGuard em Equipes para aceitar ou recusar.`,
+    html: `<p><strong>${inviter.firstName} ${inviter.lastName}</strong> convidou você para a equipe <strong>${team.name}</strong>.</p><p>Acesse o VaultGuard em "Equipes" para aceitar ou recusar.</p>`,
+  });
+}
+
 export async function sendExpiryNotifications() {
   const in7Days = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 

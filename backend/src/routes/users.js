@@ -26,6 +26,32 @@ async function createPersonalFolder(userId, firstName) {
   });
 }
 
+// GET /api/users/search — qualquer usuário autenticado; busca leve pra convite
+// de equipe/compartilhamento. Não expõe role/status/totp — só o essencial.
+router.get('/search', authenticate, async (req, res, next) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (q.length < 2) return res.json([]);
+
+    const users = await prisma.user.findMany({
+      where: {
+        status: 'ACTIVE',
+        OR: [
+          { firstName: { contains: q, mode: 'insensitive' } },
+          { lastName: { contains: q, mode: 'insensitive' } },
+          { email: { contains: q, mode: 'insensitive' } },
+          { username: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true, firstName: true, lastName: true, email: true, avatar: true },
+      take: 10,
+    });
+    res.json(users);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/users — admin only
 router.get('/', authenticate, requireAdmin, async (req, res, next) => {
   try {

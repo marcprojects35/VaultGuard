@@ -556,9 +556,26 @@ async function getAccessibleFolderIds(userId, userRole) {
     select: { id: true }
   });
 
+  // Pastas corporativas (visíveis a todos) e pastas das equipes ativas do usuário
+  const memberships = await prisma.teamMember.findMany({
+    where: { userId, status: 'ACTIVE' },
+    select: { teamId: true }
+  });
+  const teamIds = memberships.map(m => m.teamId);
+  const visible = await prisma.folder.findMany({
+    where: {
+      OR: [
+        { visibleToAll: true },
+        ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+      ]
+    },
+    select: { id: true }
+  });
+
   const ids = new Set([
     ...perms.map(p => p.folderId),
     ...personal.map(f => f.id),
+    ...visible.map(f => f.id),
   ]);
   return [...ids];
 }

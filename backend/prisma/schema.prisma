@@ -57,33 +57,70 @@ model User {
   apiTokens         ApiToken[]
   favorites         Favorite[]
   personalFolders   Folder[]   @relation("PersonalFolders")
+  ownedTeams        Team[]     @relation("TeamOwner")
+  teamMemberships   TeamMember[]
 
   @@index([email])
   @@index([username])
   @@index([ldapDn])
 }
 
-model Folder {
+model Team {
   id          String   @id @default(uuid())
   name        String
   description String?
-  icon        String?  @default("folder")
-  color       String?  @default("#6366f1")
-  parentId    String?
-  parent      Folder?  @relation("FolderTree", fields: [parentId], references: [id])
-  children    Folder[] @relation("FolderTree")
-  sortOrder   Int      @default(0)
-  isPersonal  Boolean  @default(false)
-  ownerId     String?
-  owner       User?    @relation("PersonalFolders", fields: [ownerId], references: [id])
+  ownerId     String
+  owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  members TeamMember[]
+  folders Folder[]
+
+  @@index([ownerId])
+}
+
+model TeamMember {
+  id          String    @id @default(uuid())
+  teamId      String
+  team        Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      String    @default("PENDING") // PENDING | ACTIVE | DECLINED
+  invitedById String
+  createdAt   DateTime  @default(now())
+  respondedAt DateTime?
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@index([teamId])
+}
+
+model Folder {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  icon         String?  @default("folder")
+  color        String?  @default("#6366f1")
+  parentId     String?
+  parent       Folder?  @relation("FolderTree", fields: [parentId], references: [id])
+  children     Folder[] @relation("FolderTree")
+  sortOrder    Int      @default(0)
+  isPersonal   Boolean  @default(false)
+  ownerId      String?
+  owner        User?    @relation("PersonalFolders", fields: [ownerId], references: [id])
+  teamId       String?
+  team         Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  visibleToAll Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   credentials Credential[]
   permissions FolderPermission[]
 
   @@index([parentId])
   @@index([ownerId])
+  @@index([teamId])
 }
 
 model FolderPermission {
