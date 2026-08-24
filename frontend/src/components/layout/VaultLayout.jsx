@@ -5,7 +5,7 @@ import {
   Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server, Tag,
   LogOut, Key, ChevronDown, Settings, Globe,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
-  Search, Upload, Download, Star, Inbox, HelpCircle, Send,
+  Search, Upload, Download, Star, Inbox, HelpCircle, Send, Users2,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { useAuthStore, useIsAdmin } from '../../stores/authStore.js';
@@ -246,6 +246,7 @@ export default function VaultLayout() {
           <NavItem to="/favorites" icon={<Star style={iconSize} />} label="Favoritos" open={open} />
           <NavItem to="/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={open} />
           <NavItem to="/access-requests" icon={<Inbox style={iconSize} />} label="Acessos" open={open} />
+          <NavItem to="/teams" icon={<Users2 style={iconSize} />} label="Equipes" open={open} />
 
           {/* ─ Ferramentas ─ */}
           <SectionLabel label="Ferramentas" open={open} />

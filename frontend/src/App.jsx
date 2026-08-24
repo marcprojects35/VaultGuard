@@ -23,6 +23,7 @@ import ExportPage from './pages/ExportPage.jsx';
 import FavoritesPage from './pages/FavoritesPage.jsx';
 import SecurityDashboardPage from './pages/SecurityDashboardPage.jsx';
 import AccessRequestPage from './pages/AccessRequestPage.jsx';
+import TeamsPage from './pages/TeamsPage.jsx';
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="favorites" element={<FavoritesPage />} />
         <Route path="security" element={<SecurityDashboardPage />} />
         <Route path="access-requests" element={<AccessRequestPage />} />
+        <Route path="teams" element={<TeamsPage />} />
         <Route path="admin/access-requests" element={<AdminRoute><AccessRequestPage /></AdminRoute>} />
 
         {/* Admin */}
