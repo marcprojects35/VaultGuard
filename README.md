@@ -18,6 +18,7 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
 - [Hierarquia de cargos e permissões](#-hierarquia-de-cargos-e-permissões)
 - [Extensão Chrome](#-extensão-chrome)
 - [Segurança](#-segurança)
+- [Atualizando uma instalação existente](#atualizando-uma-instalação-existente)
 - [Estrutura do projeto](#-estrutura-do-projeto)
 - [Comandos úteis](#-comandos-úteis)
 - [Solução de problemas](#-solução-de-problemas)
@@ -28,7 +29,7 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
 
 | Funcionalidade | Descrição |
 |---|---|
-| Cofre de senhas | Credenciais em pastas hierárquicas com criptografia AES-256-GCM |
+| Cofre de senhas | Credenciais em pastas hierárquicas com criptografia de ponta a ponta (o servidor não lê as senhas) |
 | Active Directory | Login via LDAP/AD com sincronização automática de grupos e cargos |
 | Controle de acesso | 6 níveis de cargo com permissões individuais por pasta (visualizar, editar, excluir, compartilhar) |
 | Pastas pessoais | Cada usuário tem um espaço privado inacessível a outros |
@@ -38,7 +39,7 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
 | Favoritos | Acesso rápido a credenciais marcadas |
 | Requisições de acesso | Usuários solicitam acesso a pastas; admins aprovam/rejeitam |
 | 2FA | TOTP (Google Authenticator, Authy) por usuário ou obrigatório globalmente |
-| Tokens de API | Tokens com escopos e expiração para extensão e integrações externas |
+| Tokens de API | Tokens com escopos (leitura/escrita) e expiração para extensão e integrações externas |
 | Auditoria | Log de todas as ações: login, acesso, criação, edição, exclusão, exportação CSV |
 | Dashboard de segurança | Métricas de senhas fracas, reutilizadas, expiradas e de logins suspeitos |
 | Personalização | Logo, favicon, cores, nome e subtítulo configuráveis pela interface |
@@ -53,21 +54,21 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
 
 | Tecnologia | Versão | Função |
 |---|---|---|
-| Node.js | 20 (LTS) | Runtime |
+| Node.js | 22 (LTS) | Runtime |
 | Express | 4.18 | Framework HTTP |
 | Prisma ORM | 5.10 | Acesso ao banco + migrations |
 | PostgreSQL | 16 | Banco de dados principal |
-| argon2 | 0.31 | Hash de senhas de usuários |
+| bcryptjs | 2.4 | Hash de senhas de usuários (custo 12) |
 | jsonwebtoken | 9.0 | Autenticação stateless (JWT) |
 | otplib | 12.0 | Geração e validação de TOTP (2FA) |
-| ldapts | 4.2 | Integração LDAP/Active Directory |
+| ldapts | 9.2 | Integração LDAP/Active Directory |
 | helmet | 7.1 | Cabeçalhos de segurança HTTP |
 | express-rate-limit | 7.1 | Rate limiting por IP |
 | winston | 3.11 | Logs estruturados em arquivo |
 | morgan | 1.10 | Log de requisições HTTP |
-| nodemailer | 9.0 | Envio de e-mail (SMTP) |
+| nodemailer | 10.0 | Envio de e-mail (SMTP; Microsoft 365 via Graph) |
 | multer | 1.4 | Upload de arquivos (logos, anexos) |
-| sharp | 0.33 | Processamento de imagens |
+| sharp | 0.35 | Processamento de imagens |
 | qrcode | 1.5 | Geração de QR Code para 2FA |
 
 ### Frontend
@@ -128,9 +129,9 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
    Chrome Extension ──► /api/* via API Token (Bearer vg_...)
 ```
 
-O build Docker usa **multi-stage**: a imagem de builder compila o frontend (`npm run build`) e gera o cliente Prisma; a imagem final (Node 20 Bullseye/Debian) copia apenas os artefatos necessários. O backend serve o frontend estático em produção via `express.static`.
+O build Docker usa **multi-stage**: a imagem de builder compila o frontend (`npm run build`) e gera o cliente Prisma; a imagem final (Node 22 Bookworm/Debian, executando como usuário `node`) copia apenas os artefatos necessários. O backend serve o frontend estático em produção via `express.static`.
 
-> **Nota:** Alpine Linux **não é suportado** — o Prisma requer `libssl.so.1.1` que não está disponível no musl/Alpine. Use obrigatoriamente `node:20-bullseye` ou superior.
+> **Nota:** Alpine Linux **não é suportado** — o cliente Prisma é gerado para Debian (OpenSSL 1.1 e 3). Use `node:22-bookworm`.
 
 ---
 
@@ -140,7 +141,7 @@ O build Docker usa **multi-stage**: a imagem de builder compila o frontend (`npm
 User
  ├─ id (UUID)
  ├─ email, username (únicos)
- ├─ passwordHash (argon2, nullable — usuários AD não têm)
+ ├─ passwordHash (bcrypt, nullable — usuários AD não têm)
  ├─ role: AUXILIAR | ASSISTENTE | ANALISTA | COORDENACAO | DIRETORIA | ADMINISTRADOR
  ├─ status: ACTIVE | INACTIVE | PENDING
  ├─ totpSecret, totpEnabled
@@ -249,8 +250,10 @@ cp .env.example .env
 | `HTTP_PORT` | Porta HTTP (padrão `80`) | Não |
 | `HTTPS_PORT` | Porta HTTPS (padrão `443`, só com SSL) | Não |
 | `NODE_ENV` | `production` em produção | Não |
+| `TRUST_PROXY` | Saltos de proxy confiáveis para obter o IP real (`1` atrás do Nginx, `0` no modo local) | Não |
+| `BIND_ADDR` | Interface do modo local (padrão `127.0.0.1`; `0.0.0.0` expõe na rede) | Não |
 
-> **Nunca altere `JWT_SECRET` após instalar** — invalida todas as sessões ativas.
+> **Nunca altere `JWT_SECRET` após instalar** — invalida todas as sessões ativas. O servidor recusa iniciar com `JWT_SECRET` ausente, com menos de 32 caracteres ou com o valor de exemplo.
 
 ---
 
@@ -261,7 +264,7 @@ cp .env.example .env
 Execute num servidor **Ubuntu 20+**, **Debian 11+**, **CentOS 7+** ou **RHEL 8+**:
 
 ```bash
-git clone https://github.com/seu-org/vaultguard.git
+git clone https://github.com/marcprojects35/VaultGuard.git
 cd vaultguard
 bash install.sh
 ```
@@ -322,7 +325,7 @@ docker-entrypoint.sh:
 
 ### Requisitos
 
-- Node.js 20+
+- Node.js 22+
 - PostgreSQL 16+
 - Nginx (recomendado como proxy reverso)
 
@@ -464,16 +467,36 @@ node build.js     # Gera extension/dist/
 
 ### Funcionalidades
 
-- **Badge** com o número de credenciais disponíveis para o site atual
-- **Autofill** automático ao detectar formulários de login
-- **Salvar** credenciais de login inseridas manualmente
-- Comunicação com o backend via `X-API-Token: vg_...`
+- **Preenchimento como o do Chrome:** ao abrir um site com uma única senha salva, preenche usuário e senha sozinho (opção "Preencher automaticamente" no popup; só em https ou localhost). Com mais de uma, ao clicar no campo aparece a lista para escolher.
+- **Salvar senha nova:** depois do login num site sem senha salva, aparece na própria página **"Salvar senha?"** com a escolha da pasta (pessoal, de equipe ou compartilhada, só as que você pode editar). Funciona com formulário comum, login por JavaScript (botão sem `submit`), Enter e login em duas etapas (usuário numa tela, senha na outra).
+- **Atualizar senha:** se a senha digitada for diferente da salva para o mesmo usuário, pergunta **"Atualizar a senha salva?"**; a anterior vai para o histórico. Se a senha já estiver salva, não pergunta nada.
+- **"Nunca neste site"** para não perguntar mais naquele site.
+- **Pastas compartilhadas:** senhas salvas por colegas em pastas a que você tem acesso aparecem no site e na busca do popup.
+- **Certificados digitais (A1):** cadastre no cofre com o modelo **Certificado Digital** (arquivo `.pfx` em Anexos + senha do certificado, URL do site principal). Ao abrir esse site, a extensão avisa no canto da página; no popup, a aba **Certificados** lista todos com validade, **baixa o `.pfx` decifrado** e **copia a senha**. No Windows, abrir o `.pfx` instala o certificado e o próprio Chrome passa a oferecê-lo quando o site pedir.
+  > O Chrome não permite que extensões entreguem o certificado diretamente ao site no momento em que ele é solicitado (isso só existe no ChromeOS); o uso passa pelo repositório de certificados do sistema.
+- **Badge** com o número de credenciais do site atual.
+- **Busca** em todas as credenciais e certificados acessíveis.
 
 **Permissões do manifest:**
 
 | Permissão | Uso |
 |---|---|
-| `storage` | Salva URL do servidor e token localmente |
+| `storage` | URL do servidor e token (local); chaves desbloqueadas e senha detectada só na sessão (memória) |
+| `tabs` | Lê a URL da aba ativa para filtrar credenciais e o badge |
+| `host_permissions: <all_urls>` | Content script de autofill em qualquer site e chamadas ao servidor sem depender de CORS |
+
+**Proteções:**
+
+- Só a **origem** da página (esquema + host + porta) vai ao servidor; caminho e query, que podem ter tokens, não saem do navegador.
+- Preenche só no domínio da credencial (ou subdomínio), na mesma porta se a credencial fixar uma, e **nunca** uma credencial `https` em página `http`.
+- O popup de autofill fica num shadow root fechado: o site não lê títulos e usuários nem aciona o preenchimento por script.
+- O popup não é acessível a sites (sem `web_accessible_resources`) e não carrega ícones de serviços externos.
+- Cofre bloqueia após **30 minutos sem uso** e ao fechar o navegador; botão de bloqueio manual no popup.
+- Senha copiada é apagada da área de transferência após 30 segundos (enquanto a janela do VaultGuard estiver aberta).
+- Aviso ao configurar um servidor `http://` fora da própria máquina.
+
+---|---|
+| `storage` | URL do servidor e token (local); chaves desbloqueadas só na sessão |
 | `activeTab` | Lê a URL da aba atual para filtrar credenciais |
 | `scripting` | Injeta autofill nos campos de formulário |
 | `tabs` | Detecta navegação entre abas |
@@ -482,37 +505,92 @@ node build.js     # Gera extension/dist/
 
 ## Segurança
 
-**Criptografia**
-- Senhas armazenadas com **AES-256-GCM** (Web Crypto API); a chave é derivada por usuário a partir de um `encryptionSalt` único
-- Senhas de usuários locais hasheadas com **Argon2** (memória: 64 MB, tempo: 3 iterações)
-- Senhas de usuários AD **nunca são armazenadas** — somente validadas via re-bind LDAP
+### Criptografia (zero-knowledge)
 
-**Autenticação**
-- JWT com expiração configurável (`sessionTimeout` em minutos, padrão 480)
-- 2FA por TOTP (RFC 6238) — opcional por usuário ou obrigatório globalmente via `require2FA`
-- Máximo de tentativas de login configurável (padrão: 5); bloqueio após exceder
+O servidor guarda apenas conteúdo cifrado no navegador: nem o banco nem quem administra o servidor consegue ler as senhas.
 
-**Tokens de API**
-- Prefixo `vg_` seguido de UUID
-- Escopos: `read`, `write` (definidos por token)
-- Expiração opcional; revogação imediata possível pela UI
+| Chave | O que protege | Onde fica |
+|---|---|---|
+| KEK (PBKDF2-SHA256, 210 000 iterações, senha + `encryptionSalt`) | A chave privada do usuário | Só na memória da aba / da extensão |
+| Par RSA-OAEP 3072 do usuário | Recebe as chaves das pastas | Pública no servidor; privada cifrada com a KEK |
+| Chave AES-256 da pasta | As chaves das credenciais da pasta | Uma cópia cifrada para cada pessoa com acesso |
+| Chave AES-256 da credencial | Senha, campos do tipo senha, notas, histórico e anexos | Cifrada com a chave da pasta (e com a chave pública de quem recebeu compartilhamento individual) |
+| Chave da organização (RSA) | Cópia das chaves das pastas **não pessoais** | Privada cifrada para cada administrador |
 
-**Rate limiting (dupla camada)**
+- **Distribuição automática:** quando alguém ganha acesso a uma pasta (permissão, cargo, equipe, pedido aprovado), qualquer membro ou administrador online entrega a cópia da chave em até 2 minutos.
+- **Revogação:** quem perde acesso tem a cópia apagada e a pasta recebe **chave nova** no próximo acesso de um membro. As chaves das credenciais são re-embrulhadas, sem re-cifrar o conteúdo.
+- **Pastas pessoais** não recebem cópia da organização: nem o administrador as lê. Por isso, **redefinir a senha de um usuário pelo painel apaga as chaves dele e o conteúdo da pasta pessoal fica ilegível**. As pastas compartilhadas são liberadas de novo automaticamente.
+- **Troca de senha no AD:** no próximo acesso o cofre pede a senha anterior uma vez para transferir as chaves.
+- **Bloqueio:** as chaves ficam só em memória; recarregar a página bloqueia o cofre de novo.
+- **Formatos antigos (v0/v1)** são migrados automaticamente quando quem consegue abri-los (e tem permissão de edição) entra no cofre.
+- Título, usuário e URL ficam em texto puro: são usados na listagem, na busca do servidor e no preenchimento automático por site.
+
+### Autenticação e sessão
+
+- Sessão em cookie `httpOnly` + `SameSite=Strict` (o JWT nunca fica acessível ao JavaScript); requests que alteram estado exigem o cabeçalho `X-Requested-With`.
+- JWT HS256 com duração configurável (`sessionTimeout`); logout, troca/redefinição de senha e desativação derrubam todas as sessões abertas.
+- 2FA por TOTP com proteção contra reuso de código e **códigos de recuperação** opcionais; pode ser obrigatório para todos.
+- Bloqueio temporário após N tentativas (configurável), com aviso por e-mail.
+- **Política de senha:** tamanho mínimo, maiúscula, número, símbolo, **expiração**, **bloqueio de reuso** das últimas N senhas e troca obrigatória no primeiro acesso após senha definida pelo admin.
+- **Whitelist de IPs/CIDR** para toda a API (o salvamento recusa uma lista que exclua o IP do próprio admin).
+- **Alerta de novo dispositivo** (navegador + rede) por e-mail.
+- Senhas locais com bcrypt (custo 12); senhas do AD nunca são armazenadas. Prefira LDAPS (636) ou StartTLS: sem isso as senhas trafegam em texto puro até o controlador de domínio.
+
+### Tokens de API
+
+- Prefixo `vg_` + 256 bits aleatórios; o banco guarda só o **SHA-256**.
+- Escopos `read` / `write` aplicados de fato; acesso só às rotas que a extensão usa (credenciais, pastas, favoritos, anexos, chaves e `/auth/me`). Exportação/importação em massa nunca por token.
+- Revogados automaticamente quando o admin redefine a senha do usuário.
+
+### Rede e cabeçalhos
+
+- Helmet com **CSP restritiva** (`script-src 'self'`, `frame-ancestors 'none'`), HSTS e demais cabeçalhos.
+- CORS apenas para `FRONTEND_URL` (a extensão usa `host_permissions` e não depende de CORS).
+- Atrás do Nginx, o IP real vem de `X-Forwarded-For` (`TRUST_PROXY=1`); no modo local sem proxy use `TRUST_PROXY=0`.
+- O container roda como usuário sem privilégios (`node`).
 
 | Camada | Rota | Limite |
 |---|---|---|
-| Nginx | `/api/auth/login` | 5 req / min por IP |
+| Nginx | `/api/auth/login`, `/api/auth/2fa/validate` | 5 req / min por IP |
 | Nginx | `/api/*` | 30 req / min por IP |
-| Express | `/api/auth/*` | 20 req / 15 min por IP |
+| Express | login, 2FA, refresh, verificação de senha | 20 req / 15 min por IP |
 | Express | `/api/*` | 200 req / min por IP |
 
-**Cabeçalhos HTTP**
-- Helmet com CSP desativado (para compatibilidade com extensão), COEP desativado
-- `X-Forwarded-For` propagado pelo Nginx para logs corretos
+### Notificações por e-mail
 
-**Auditoria**
-- Todo acesso a senha (`GET /credentials/:id/password`) é registrado com usuário, IP e user-agent
-- Logs persistidos em volume Docker (`logs_data`) e em arquivo via Winston
+Configuráveis em **Configurações → E-mail** (SMTP ou Microsoft 365 via Graph): boas-vindas, senha alterada/redefinida, conta bloqueada, novo dispositivo, alertas ao admin (bloqueios, exportação do cofre, novos administradores, chaves descartadas, uso de código de recuperação), acesso a credencial e vencimento de senhas (diário).
+
+### Auditoria
+
+- Logins (e falhas, se habilitado), visualização de senha, criação/edição/exclusão, compartilhamentos, exportação, distribuição e rotação de chaves.
+- Logs persistidos em volume Docker (`logs_data`) e em arquivo via Winston.
+
+---
+
+## Atualizando uma instalação existente
+
+1. Confira o `.env`: `JWT_SECRET` (mínimo 32 caracteres, sem valor de exemplo), `DB_PASSWORD` e `ADMIN_PASSWORD` são obrigatórios — sem eles o Compose e o servidor não sobem.
+2. `docker compose up -d --build` — as migrations rodam sozinhas.
+3. **Um administrador deve entrar primeiro**: o navegador dele cria a chave da organização e as chaves das pastas. Até isso acontecer, os demais veem "aguardando".
+4. Todos os usuários precisam entrar de novo (a sessão passou para cookie). Cada um gera o próprio par de chaves no primeiro acesso.
+5. Extensão: recarregue `extension/dist/` em `chrome://extensions`. Os tokens existentes continuam válidos (com leitura e escrita).
+6. Usuários do AD cujo e-mail coincide com uma conta local veem um erro no login até o admin vinculá-los em **Active Directory → Vincular usuários**.
+
+---
+
+## Testes de ponta a ponta
+
+Ficam em `tests/e2e/` e rodam o sistema de verdade: backend, cofre web e a extensão carregada num Chromium.
+
+```bash
+cd tests/e2e
+npm install
+npx playwright install chromium   # ou defina CHROME_PATH para um Chromium já instalado
+./run.sh web.mjs                  # cofre web: certificado digital e todas as telas sem erro
+./run.sh ext.mjs                  # extensão: preencher, salvar, atualizar, certificados e proteções
+```
+
+Cada execução cria um PostgreSQL descartável em container (`vg-e2e-db`, porta 55432) e sobe o backend na porta 3901 — o ambiente real não é tocado. Requer Docker, Node.js 22 e `openssl`.
 
 ---
 

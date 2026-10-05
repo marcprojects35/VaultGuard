@@ -278,6 +278,11 @@ export default function AdminUsersPage() {
                       <Edit2 className="w-4 h-4" />
                     </button>
                     <button onClick={() => {
+                      if (!window.confirm(
+                        'Redefinir a senha descarta as chaves de criptografia do usuário.\n\n' +
+                        '• O conteúdo da pasta pessoal dele ficará ILEGÍVEL (não há como recuperar).\n' +
+                        '• As pastas compartilhadas são liberadas de novo automaticamente.\n\nContinuar?'
+                      )) return;
                       const pass = prompt('Nova senha para o usuário:');
                       if (pass && pass.length >= 8) resetPassMutation.mutate({ id: u.id, password: pass });
                       else if (pass) toast.error('Senha deve ter ao menos 8 caracteres');

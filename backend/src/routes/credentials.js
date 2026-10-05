@@ -3,8 +3,9 @@ import { body, query } from 'express-validator';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { PrismaClient } from '@prisma/client';
-import { canAccessFolder } from '../services/permissions.js';
+import { canAccessFolder, canAccessCredential, getAccessibleFolderIds } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
+import { notifyAdminAlert, notifyCredentialView } from '../services/notifications.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -17,6 +18,11 @@ const CREDENTIAL_INCLUDE = {
   },
 };
 
+const KINDS = ['login', 'certificate'];
+const kindOf = (v) => (KINDS.includes(v) ? v : 'login');
+
+const isEncrypted = (v) => { try { return JSON.parse(v).v === 2; } catch { return false; } };
+
 // GET /api/credentials — list all accessible credentials
 router.get('/', authenticate, async (req, res, next) => {
   try {
@@ -25,6 +31,11 @@ router.get('/', authenticate, async (req, res, next) => {
     const userRole = req.user.role;
 
     const accessibleFolders = await getAccessibleFolderIds(userId, userRole);
+
+    // folderId vem do cliente: só filtra dentro das pastas que o usuário pode ver
+    if (folderId && !accessibleFolders.includes(folderId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     // Also get individually shared credential IDs
     const sharedItems = await prisma.credentialShare.findMany({
@@ -56,7 +67,7 @@ router.get('/', authenticate, async (req, res, next) => {
             { title: { contains: search, mode: 'insensitive' } },
             { username: { contains: search, mode: 'insensitive' } },
             { url: { contains: search, mode: 'insensitive' } },
-            { notes: { contains: search, mode: 'insensitive' } },
+            // notas são cifradas no cliente: não entram na busca do servidor
           ]
         }] : []),
         ...(tag ? [{ tags: { has: tag } }] : []),
@@ -89,6 +100,9 @@ router.get('/export', authenticate, async (req, res, next) => {
   try {
     const { folderId, search } = req.query;
     const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
+    if (folderId && !accessibleFolders.includes(folderId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     const where = {
       folderId: folderId ? folderId : { in: accessibleFolders },
@@ -113,13 +127,18 @@ router.get('/export', authenticate, async (req, res, next) => {
       c.url || '',
       c.folder?.name || '',
       (c.tags || []).join('; '),
-      (c.notes || '').replace(/\n/g, ' '),
+      // Notas cifradas não saem no CSV (que nunca leva segredos)
+      isEncrypted(c.notes) ? '(cifrado)' : (c.notes || '').replace(/\n/g, ' '),
       new Date(c.createdAt).toLocaleString('pt-BR'),
     ]));
 
-    const csv = rows.map(r =>
-      r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')
-    ).join('\n');
+    // Prefixo ' neutraliza fórmulas (=, +, -, @) ao abrir no Excel/Sheets
+    const cell = (v) => {
+      let str = String(v);
+      if (/^[=+\-@\t\r]/.test(str)) str = `'${str}`;
+      return `"${str.replace(/"/g, '""')}"`;
+    };
+    const csv = rows.map(r => r.map(cell).join(',')).join('\n');
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="vaultguard-export-${Date.now()}.csv"`);
@@ -146,6 +165,7 @@ router.get('/vault-export', authenticate, async (req, res, next) => {
 
     await createAuditLog(req.user.id, 'vault.export', null, 'Vault',
       { count: credentials.length }, req.ip);
+    notifyAdminAlert('exportação do cofre', `${req.user.email} exportou ${credentials.length} credenciais (IP ${req.ip}).`);
 
     res.json({ credentials, exportedAt: new Date().toISOString() });
   } catch (err) {
@@ -159,18 +179,29 @@ router.get('/search/by-url', authenticate, async (req, res, next) => {
     const { url } = req.query;
     if (!url) return res.json([]);
 
-    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    let hostname;
+    try { hostname = normalizeHost(new URL(url).hostname); } catch { return res.json([]); }
+    if (!hostname) return res.json([]);
     const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
 
-    const credentials = await prisma.credential.findMany({
+    // O "contains" do banco só pré-filtra; a decisão é por hostname exato ou
+    // subdomínio, senão "gle.com" casaria com credenciais de "google.com"
+    // accounts.google.com → também procura "google.com" (credencial do domínio pai)
+    const labels = hostname.split('.');
+    const hostVariants = labels.length > 2
+      ? labels.slice(0, -1).map((_, i) => labels.slice(i).join('.')).filter(h => h.includes('.'))
+      : [hostname];
+    const candidates = await prisma.credential.findMany({
       where: {
         folderId: { in: accessibleFolders },
-        url: { contains: hostname }
+        OR: hostVariants.map(h => ({ url: { contains: h, mode: 'insensitive' } }))
       },
       include: { folder: { select: { id: true, name: true } } }
     });
 
-    const safe = credentials.map(({ encryptedPass, ...c }) => c);
+    const safe = candidates
+      .filter(c => hostMatches(c.url, hostname))
+      .map(({ encryptedPass, ...c }) => c);
     res.json(safe);
   } catch (err) {
     next(err);
@@ -193,13 +224,26 @@ router.get('/:id', authenticate, async (req, res, next) => {
 
     if (!cred) return res.status(404).json({ error: 'Credential not found' });
 
-    const canAccess = await canAccessFolder(req.user.id, req.user.role, cred.folderId);
+    const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
     if (!canAccess) return res.status(403).json({ error: 'Access denied' });
 
-    await prisma.credential.update({ where: { id: cred.id }, data: { lastUsed: new Date() } });
-    await createAuditLog(req.user.id, 'credential.view', cred.id, 'Credential', { title: cred.title }, req.ip);
+    // Quem recebeu a credencial por compartilhamento abre com a chave do share
+    const share = await prisma.credentialShare.findUnique({
+      where: { credentialId_sharedWithId: { credentialId: cred.id, sharedWithId: req.user.id } },
+      select: { wrappedKey: true },
+    });
 
-    res.json(cred);
+    // A extensão informa o motivo. Sempre audita (o cliente não decide se fica
+    // rastro); só muda o nome do evento e, na comparação da senha digitada no
+    // login com a salva, não dispara o alerta de "credencial acessada"
+    const context = ['compare', 'autofill'].includes(req.query.context) ? req.query.context : 'view';
+    await createAuditLog(req.user.id, `credential.${context}`, cred.id, 'Credential', { title: cred.title }, req.ip);
+    if (context !== 'compare') {
+      await prisma.credential.update({ where: { id: cred.id }, data: { lastUsed: new Date() } });
+      notifyCredentialView(req.user, cred);
+    }
+
+    res.json({ ...cred, shareKey: share?.wrappedKey || null });
   } catch (err) {
     next(err);
   }
@@ -211,6 +255,7 @@ router.post('/', authenticate,
     body('title').notEmpty().trim(),
     body('folderId').notEmpty(),
     body('encryptedPass').notEmpty(),
+    body('wrappedKey').isString().notEmpty(),
   ],
   validate,
   async (req, res, next) => {
@@ -225,9 +270,11 @@ router.post('/', authenticate,
           title: req.body.title,
           username: req.body.username,
           encryptedPass: req.body.encryptedPass,
+          wrappedKey: req.body.wrappedKey,
           url: req.body.url,
           notes: req.body.notes,
           tags: req.body.tags || [],
+          kind: kindOf(req.body.kind),
           strength: req.body.strength,
           expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null,
           ...(customFields?.length > 0 && {
@@ -268,8 +315,16 @@ router.put('/:id', authenticate,
 
       const { customFields } = req.body;
 
-      // Save password history before overwriting
-      if (req.body.encryptedPass && req.body.encryptedPass !== cred.encryptedPass) {
+      // wrappedKey só é gravado na migração de uma credencial legada; depois disso
+      // a chave da credencial não muda (o histórico depende dela)
+      const migrating = typeof req.body.wrappedKey === 'string' && req.body.wrappedKey.length > 0;
+      if (migrating && cred.wrappedKey) return res.status(409).json({ error: 'Credencial já migrada' });
+      if (!migrating && !cred.wrappedKey && req.body.encryptedPass) {
+        return res.status(409).json({ error: 'Credencial legada: migre antes de editar a senha' });
+      }
+
+      // Save password history before overwriting (na migração o valor é o mesmo, só re-cifrado)
+      if (!migrating && req.body.encryptedPass && req.body.encryptedPass !== cred.encryptedPass) {
         await prisma.credentialHistory.create({
           data: {
             credentialId: cred.id,
@@ -295,9 +350,11 @@ router.put('/:id', authenticate,
           ...(req.body.title && { title: req.body.title }),
           ...(req.body.username !== undefined && { username: req.body.username }),
           ...(req.body.encryptedPass && { encryptedPass: req.body.encryptedPass }),
+          ...(migrating && { wrappedKey: req.body.wrappedKey }),
           ...(req.body.url !== undefined && { url: req.body.url }),
           ...(req.body.notes !== undefined && { notes: req.body.notes }),
           ...(req.body.tags && { tags: req.body.tags }),
+          ...(req.body.kind !== undefined && { kind: kindOf(req.body.kind) }),
           ...(req.body.strength !== undefined && { strength: req.body.strength }),
           ...(req.body.expiresAt !== undefined && {
             expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null
@@ -317,7 +374,7 @@ router.put('/:id', authenticate,
         include: CREDENTIAL_INCLUDE
       });
 
-      await createAuditLog(req.user.id, 'credential.update', cred.id, 'Credential', { title: updated.title }, req.ip);
+      await createAuditLog(req.user.id, migrating ? 'credential.migrate' : 'credential.update', cred.id, 'Credential', { title: updated.title }, req.ip);
       const { encryptedPass, ...safe } = updated;
       res.json(safe);
     } catch (err) {
@@ -355,6 +412,30 @@ router.get('/:id/history', authenticate, async (req, res, next) => {
       changedAt: h.changedAt,
       changedBy: h.changedById ? changerMap[h.changedById] : null,
     })));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/credentials/:id/history/:historyId — re-cifra uma versão legada (migração)
+router.put('/:id/history/:historyId', authenticate, async (req, res, next) => {
+  try {
+    const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
+    if (!cred) return res.status(404).json({ error: 'Not found' });
+    const canEdit = await canAccessCredential(req.user.id, req.user.role, cred, 'canEdit');
+    if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+
+    const entry = await prisma.credentialHistory.findUnique({ where: { id: req.params.historyId } });
+    if (!entry || entry.credentialId !== cred.id) return res.status(404).json({ error: 'Not found' });
+    let version;
+    try { version = JSON.parse(entry.encryptedPass).v; } catch { version = undefined; }
+    if (version === 2) return res.status(409).json({ error: 'Versão já migrada' });
+    if (typeof req.body.encryptedPass !== 'string' || !req.body.encryptedPass) {
+      return res.status(400).json({ error: 'encryptedPass required' });
+    }
+
+    await prisma.credentialHistory.update({ where: { id: entry.id }, data: { encryptedPass: req.body.encryptedPass } });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -399,21 +480,25 @@ router.post('/:id/shares', authenticate, async (req, res, next) => {
     const canShare = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
     if (!canShare) return res.status(403).json({ error: 'No share permission' });
 
-    const { sharedWithId, canEdit, expiresAt } = req.body;
+    const { sharedWithId, canEdit, expiresAt, wrappedKey } = req.body;
     if (!sharedWithId) return res.status(400).json({ error: 'sharedWithId required' });
 
     const targetUser = await prisma.user.findUnique({ where: { id: sharedWithId } });
     if (!targetUser) return res.status(404).json({ error: 'Target user not found' });
+    if (!cred.wrappedKey) return res.status(409).json({ error: 'Credencial legada: abra-a no cofre para migrar antes de compartilhar' });
+    if (!targetUser.publicKey) return res.status(409).json({ error: 'O usuário ainda não ativou as chaves (precisa entrar no cofre uma vez)' });
+    if (typeof wrappedKey !== 'string' || !wrappedKey) return res.status(400).json({ error: 'wrappedKey required' });
 
     const share = await prisma.credentialShare.upsert({
       where: { credentialId_sharedWithId: { credentialId: req.params.id, sharedWithId } },
-      update: { canEdit: canEdit ?? false, expiresAt: expiresAt ? new Date(expiresAt) : null },
+      update: { canEdit: canEdit ?? false, expiresAt: expiresAt ? new Date(expiresAt) : null, wrappedKey },
       create: {
         credentialId: req.params.id,
         sharedById: req.user.id,
         sharedWithId,
         canEdit: canEdit ?? false,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
+        wrappedKey,
       }
     });
 
@@ -433,7 +518,12 @@ router.delete('/:id/shares/:shareId', authenticate, async (req, res, next) => {
     const canShare = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
     if (!canShare) return res.status(403).json({ error: 'No share permission' });
 
-    await prisma.credentialShare.delete({ where: { id: req.params.shareId } });
+    const share = await prisma.credentialShare.findUnique({ where: { id: req.params.shareId } });
+    if (!share || share.credentialId !== cred.id) return res.status(404).json({ error: 'Share not found' });
+
+    await prisma.credentialShare.delete({ where: { id: share.id } });
+    await createAuditLog(req.user.id, 'credential.unshare', cred.id, 'Credential',
+      { title: cred.title, sharedWithId: share.sharedWithId }, req.ip);
     res.json({ message: 'Share removed' });
   } catch (err) {
     next(err);
@@ -475,6 +565,8 @@ router.post('/import', authenticate, async (req, res, next) => {
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       if (!row.title) { errors.push({ row: i + 1, error: 'Título obrigatório' }); continue; }
+      // Só aceita conteúdo já cifrado no cliente
+      if (typeof row.wrappedKey !== 'string' || !row.wrappedKey) { errors.push({ row: i + 1, error: 'Linha sem chave de criptografia' }); continue; }
 
       try {
         const cred = await prisma.credential.create({
@@ -482,13 +574,15 @@ router.post('/import', authenticate, async (req, res, next) => {
             folderId,
             title: row.title,
             username: row.username || null,
-            encryptedPass: row.encryptedPass || row.password || '',
+            encryptedPass: row.encryptedPass || '',
+            wrappedKey: row.wrappedKey,
             url: row.url || null,
             notes: row.notes || null,
             tags: Array.isArray(row.tags)
               ? row.tags.map(t => String(t).trim()).filter(Boolean)
               : (row.tags ? String(row.tags).split(';').map(t => t.trim()).filter(Boolean) : []),
             strength: 0,
+            kind: kindOf(row.kind),
             ...(row.customFields?.length > 0 && {
               customFields: {
                 create: row.customFields.map((f, i) => ({
@@ -514,70 +608,22 @@ router.post('/import', authenticate, async (req, res, next) => {
   }
 });
 
-async function canAccessCredential(userId, userRole, cred, permission = 'canView') {
-  // Admin can do everything
-  if (userRole === 'ADMINISTRADOR') return true;
-  // Check folder-level access
-  const folderAccess = await canAccessFolder(userId, userRole, cred.folderId, permission);
-  if (folderAccess) return true;
-  // Check individual share (view only, or edit if canEdit)
-  if (permission === 'canView' || permission === 'canEdit') {
-    const share = await prisma.credentialShare.findFirst({
-      where: {
-        credentialId: cred.id,
-        sharedWithId: userId,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-        ...(permission === 'canEdit' ? { canEdit: true } : {})
-      }
-    });
-    return !!share;
-  }
-  return false;
+function normalizeHost(host) {
+  return String(host || '').toLowerCase().replace(/^www\./, '').replace(/\.$/, '');
 }
 
-async function getAccessibleFolderIds(userId, userRole) {
-  if (userRole === 'ADMINISTRADOR') {
-    const all = await prisma.folder.findMany({ select: { id: true } });
-    return all.map(f => f.id);
+// Hostname da credencial igual ao do site, ou um é subdomínio do outro
+function hostMatches(credUrl, siteHost) {
+  if (!credUrl) return false;
+  let credHost;
+  try {
+    credHost = normalizeHost(new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(credUrl) ? credUrl : `https://${credUrl}`).hostname);
+  } catch {
+    return false;
   }
-
-  // Shared folders via permissions
-  const perms = await prisma.folderPermission.findMany({
-    where: {
-      canView: true,
-      OR: [{ userId }, { role: userRole }]
-    },
-    select: { folderId: true }
-  });
-
-  // Personal folders owned by this user
-  const personal = await prisma.folder.findMany({
-    where: { isPersonal: true, ownerId: userId },
-    select: { id: true }
-  });
-
-  // Pastas corporativas (visíveis a todos) e pastas das equipes ativas do usuário
-  const memberships = await prisma.teamMember.findMany({
-    where: { userId, status: 'ACTIVE' },
-    select: { teamId: true }
-  });
-  const teamIds = memberships.map(m => m.teamId);
-  const visible = await prisma.folder.findMany({
-    where: {
-      OR: [
-        { visibleToAll: true },
-        ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
-      ]
-    },
-    select: { id: true }
-  });
-
-  const ids = new Set([
-    ...perms.map(p => p.folderId),
-    ...personal.map(f => f.id),
-    ...visible.map(f => f.id),
-  ]);
-  return [...ids];
+  if (!credHost) return false;
+  return credHost === siteHost || siteHost.endsWith('.' + credHost) || credHost.endsWith('.' + siteHost);
 }
+
 
 export default router;

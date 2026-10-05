@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
-import { canAccessFolder } from '../services/permissions.js';
+import { canAccessCredential } from '../services/permissions.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -25,7 +25,7 @@ router.get('/', authenticate, async (req, res, next) => {
     // Filter to only accessible credentials and exclude password
     const accessible = [];
     for (const cred of credentials) {
-      const ok = await canAccessFolder(req.user.id, req.user.role, cred.folderId);
+      const ok = await canAccessCredential(req.user.id, req.user.role, cred);
       if (ok) {
         const { encryptedPass, ...safe } = cred;
         accessible.push({ ...safe, isFavorite: true });
@@ -44,7 +44,7 @@ router.post('/:credentialId', authenticate, async (req, res, next) => {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.credentialId } });
     if (!cred) return res.status(404).json({ error: 'Credential not found' });
 
-    const canAccess = await canAccessFolder(req.user.id, req.user.role, cred.folderId);
+    const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
     if (!canAccess) return res.status(403).json({ error: 'Access denied' });
 
     const fav = await prisma.favorite.upsert({

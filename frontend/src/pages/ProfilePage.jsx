@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
@@ -8,10 +9,13 @@ import {
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useAuthStore } from '../stores/authStore';
+import { keyring, useVaultStore } from '../stores/vaultStore.js';
 
 export default function ProfilePage() {
   const { t } = useTranslation();
   const { user, updateUser } = useAuthStore();
+  const unlockVault = useVaultStore(s => s.unlock);
+  const [recoveryCodes, setRecoveryCodes] = useState(null);
   const qc = useQueryClient();
   const avatarInputRef = useRef(null);
 
@@ -27,11 +31,13 @@ export default function ProfilePage() {
   const [twoFaStep, setTwoFaStep] = useState(null);
   const [twoFaData, setTwoFaData] = useState(null);
   const [twoFaCode, setTwoFaCode] = useState('');
-  const [activeTab, setActiveTab] = useState('info');
+  const [searchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'info');
 
   // New token form
   const [newTokenName, setNewTokenName] = useState('');
   const [newTokenExpiry, setNewTokenExpiry] = useState('');
+  const [newTokenWrite, setNewTokenWrite] = useState(true);
   const [showCreateToken, setShowCreateToken] = useState(false);
   const [createdToken, setCreatedToken] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
@@ -62,8 +68,20 @@ export default function ProfilePage() {
   });
 
   const changePw = useMutation({
-    mutationFn: (data) => api.post('/auth/change-password', data),
-    onSuccess: () => { toast.success('Senha alterada!'); setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' }); },
+    mutationFn: async (data) => {
+      // A chave privada vai re-cifrada com a senha nova junto da troca. Se o
+      // cofre estiver bloqueado (ex.: troca obrigatória), abre com a senha atual.
+      if (!keyring.isUnlocked) {
+        await unlockVault(data.currentPassword).catch(() => {});
+      }
+      const encryptedPrivateKey = keyring.isUnlocked ? await keyring.sealForNewPassword(data.newPassword) : undefined;
+      return api.post('/auth/change-password', { ...data, encryptedPrivateKey });
+    },
+    onSuccess: () => {
+      toast.success('Senha alterada!');
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      updateUser({ requiresPasswordChange: false });
+    },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro'),
   });
 
@@ -77,10 +95,20 @@ export default function ProfilePage() {
     mutationFn: (code) => api.post('/auth/2fa/verify', { token: code }),
     onSuccess: () => {
       toast.success('2FA ativado com sucesso!');
-      updateUser({ totpEnabled: true });
+      updateUser({ totpEnabled: true, requires2FASetup: false });
       setTwoFaStep(null); setTwoFaData(null); setTwoFaCode('');
     },
     onError: () => toast.error('Código inválido. Verifique se o horário do dispositivo está correto.'),
+  });
+
+  const genRecovery = useMutation({
+    mutationFn: (code) => api.post('/auth/2fa/recovery-codes', { token: code }),
+    onSuccess: (res) => {
+      setRecoveryCodes(res.data.codes);
+      updateUser({ recoveryCodesLeft: res.data.codes.length });
+      setTwoFaStep(null); setTwoFaCode('');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Código inválido'),
   });
 
   const disable2fa = useMutation({
@@ -90,13 +118,14 @@ export default function ProfilePage() {
       updateUser({ totpEnabled: false });
       setTwoFaStep(null); setTwoFaCode('');
     },
-    onError: () => toast.error('Código inválido'),
+    onError: (e) => toast.error(e.response?.data?.error || 'Código inválido'),
   });
 
   const createToken = useMutation({
     mutationFn: () => api.post('/tokens', {
       name: newTokenName,
       expiresAt: newTokenExpiry || null,
+      scopes: newTokenWrite ? ['read', 'write'] : ['read'],
     }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['api-tokens'] });
@@ -153,7 +182,8 @@ export default function ProfilePage() {
   const strengthColors = ['', 'bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
   const strengthLabels = ['', 'Fraca', 'Razoável', 'Boa', 'Forte'];
 
-  const PwInput = ({ field, label, show, onToggle }) => (
+  // Chamado como função (não como <Componente />): um componente declarado dentro do render seria recriado a cada tecla e o campo perderia o foco
+  const renderPwInput = ({ field, label, show, onToggle }) => (
     <div>
       <label className="text-sm text-[var(--color-text-muted)] mb-1.5 block">{label}</label>
       <div className="relative">
@@ -220,6 +250,18 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {user?.requiresPasswordChange && (
+        <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(199,140,0,0.08)', border: '1px solid rgba(199,140,0,0.3)', color: '#E7A300' }}>
+          Sua senha expirou ou foi definida pelo administrador. Crie uma senha nova na aba Segurança para continuar.
+        </div>
+      )}
+
+      {user?.requires2FASetup && !user?.totpEnabled && (
+        <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+          A organização exige autenticação em dois fatores. Ative o 2FA na aba Segurança para liberar o acesso ao cofre.
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-1 border-b border-[var(--color-border)] pb-0">
         {TABS.map(tab => (
@@ -272,8 +314,8 @@ export default function ProfilePage() {
               <Lock size={14} /> Trocar Senha
             </h2>
             <div className="space-y-3">
-              <PwInput field="currentPassword" label="Senha Atual" show={showPw.current} onToggle={() => setShowPw({ ...showPw, current: !showPw.current })} />
-              <PwInput field="newPassword" label="Nova Senha" show={showPw.new} onToggle={() => setShowPw({ ...showPw, new: !showPw.new })} />
+              {renderPwInput({ field: 'currentPassword', label: 'Senha Atual', show: showPw.current, onToggle: () => setShowPw({ ...showPw, current: !showPw.current }) })}
+              {renderPwInput({ field: 'newPassword', label: 'Nova Senha', show: showPw.new, onToggle: () => setShowPw({ ...showPw, new: !showPw.new }) })}
               {pwForm.newPassword && (
                 <div className="space-y-1">
                   <div className="flex gap-1">
@@ -284,7 +326,7 @@ export default function ProfilePage() {
                   <p className="text-xs text-[var(--color-muted)]">{strengthLabels[strength]}</p>
                 </div>
               )}
-              <PwInput field="confirmPassword" label="Confirmar Nova Senha" show={showPw.confirm} onToggle={() => setShowPw({ ...showPw, confirm: !showPw.confirm })} />
+              {renderPwInput({ field: 'confirmPassword', label: 'Confirmar Nova Senha', show: showPw.confirm, onToggle: () => setShowPw({ ...showPw, confirm: !showPw.confirm }) })}
               {pwForm.confirmPassword && pwForm.newPassword !== pwForm.confirmPassword && (
                 <p className="text-xs text-red-400 flex items-center gap-1"><X size={12} /> Senhas não coincidem</p>
               )}
@@ -320,10 +362,44 @@ export default function ProfilePage() {
                       </button>
                     </div>
                   </div>
+                ) : twoFaStep === 'recovery' ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-[var(--color-text-muted)]">Digite o código do app autenticador para gerar códigos novos (os anteriores deixam de valer):</p>
+                    <input value={twoFaCode} onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6}
+                      className="w-32 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[#C78C00]"
+                      placeholder="000000" inputMode="numeric" />
+                    <div className="flex gap-2">
+                      <button onClick={() => { setTwoFaStep(null); setTwoFaCode(''); }} className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] text-sm">Cancelar</button>
+                      <button onClick={() => genRecovery.mutate(twoFaCode)} disabled={twoFaCode.length !== 6 || genRecovery.isPending}
+                        className="px-3 py-1.5 rounded-lg text-white text-sm disabled:opacity-50" style={{ background: '#C78C00' }}>
+                        {genRecovery.isPending ? '...' : 'Gerar códigos'}
+                      </button>
+                    </div>
+                  </div>
                 ) : (
-                  <button onClick={() => setTwoFaStep('disable')} className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-lg text-sm transition-colors">
-                    Desativar 2FA
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button onClick={() => setTwoFaStep('recovery')} className="px-4 py-2 rounded-lg text-sm transition-colors"
+                      style={{ background: 'rgba(199,140,0,0.12)', border: '1px solid rgba(199,140,0,0.3)', color: '#E7A300' }}>
+                      Gerar códigos de recuperação{user?.recoveryCodesLeft ? ` (restam ${user.recoveryCodesLeft})` : ''}
+                    </button>
+                    <button onClick={() => setTwoFaStep('disable')} className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-lg text-sm transition-colors">
+                      Desativar 2FA
+                    </button>
+                  </div>
+                )}
+                {recoveryCodes && (
+                  <div className="mt-4 p-4 rounded-xl" style={{ background: 'rgba(199,140,0,0.06)', border: '1px solid rgba(199,140,0,0.25)' }}>
+                    <p className="text-xs mb-2" style={{ color: '#E7A300' }}>Guarde estes códigos em local seguro. Cada um vale uma vez e eles não serão exibidos novamente.</p>
+                    <div className="grid grid-cols-2 gap-1 font-mono text-sm text-[var(--color-text)] mb-3">
+                      {recoveryCodes.map(c => <span key={c}>{c}</span>)}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { navigator.clipboard.writeText(recoveryCodes.join('\n')); toast.success('Códigos copiados'); }}
+                        className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">Copiar</button>
+                      <button onClick={() => setRecoveryCodes(null)}
+                        className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">Já guardei</button>
+                    </div>
+                  </div>
                 )}
               </div>
             ) : (
@@ -423,6 +499,10 @@ export default function ProfilePage() {
                       className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]" />
                   </div>
                 </div>
+                <label className="flex items-center gap-2 mb-3 text-xs text-[var(--color-text-muted)] cursor-pointer">
+                  <input type="checkbox" checked={newTokenWrite} onChange={e => setNewTokenWrite(e.target.checked)} />
+                  Permitir escrita (necessário para salvar senhas pela extensão)
+                </label>
                 <div className="flex gap-2">
                   <button onClick={() => { setShowCreateToken(false); setNewTokenName(''); setNewTokenExpiry(''); }}
                     className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">Cancelar</button>

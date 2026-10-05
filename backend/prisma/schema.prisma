@@ -2,7 +2,7 @@
 
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-1.1.x"]
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -41,10 +41,27 @@ model User {
   status          UserStatus @default(PENDING)
   totpSecret      String?
   totpEnabled     Boolean    @default(false)
+  totpPendingSecret String?
+  // Último passo de 30s aceito: o mesmo código não pode ser reusado
+  totpLastStep    Int?
+  // Hashes bcrypt dos códigos de recuperação do 2FA ainda não usados
+  totpRecoveryCodes String[]  @default([])
+  // Política de senha: expiração, troca obrigatória e histórico para impedir reuso
+  passwordChangedAt  DateTime  @default(now())
+  mustChangePassword Boolean   @default(false)
+  passwordHistory    String[]  @default([])
+  // Incrementado para invalidar todos os JWTs emitidos (logout, troca de senha, etc.)
+  tokenVersion    Int        @default(0)
+  failedLoginAttempts Int    @default(0)
+  lockedUntil     DateTime?
   apiToken        String?    @unique
   lastLogin       DateTime?
   avatar          String?
   encryptionSalt  String?
+  // Par de chaves RSA-OAEP do usuário: pública em SPKI/base64, privada cifrada
+  // no cliente (AES-GCM com chave derivada da senha). O servidor nunca vê a privada.
+  publicKey           String?
+  encryptedPrivateKey String?
   // AD / LDAP
   ldapDn          String?    @unique
   ldapGuid        String?    @unique
@@ -112,11 +129,16 @@ model Folder {
   teamId       String?
   team         Team?    @relation(fields: [teamId], references: [id], onDelete: Cascade)
   visibleToAll Boolean  @default(false)
+  // true depois que alguém gerou a chave AES da pasta (só pode acontecer uma vez)
+  keyInitialized Boolean @default(false)
+  // Alguém perdeu acesso: a próxima pessoa com a chave gera uma nova
+  needsKeyRotation Boolean @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   credentials Credential[]
   permissions FolderPermission[]
+  keys        FolderKey[]
 
   @@index([parentId])
   @@index([ownerId])
@@ -157,6 +179,12 @@ model Credential {
   strength      Int?
   lastUsed      DateTime?
   expiresAt     DateTime?
+  // "login" (usuário/senha de site) ou "certificate" (certificado digital A1:
+  // arquivo .pfx em anexo + senha do certificado)
+  kind          String   @default("login")
+  // Chave AES própria da credencial, cifrada com a chave da pasta.
+  // null = credencial legada (v0/v1), ainda não migrada.
+  wrappedKey    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -202,6 +230,9 @@ model SystemSettings {
   accentColor     String  @default("#8b5cf6")
   bgColor         String  @default("#0f0f1a")
   surfaceColor    String  @default("#1a1a2e")
+  themeMode       String  @default("dark")
+  // Contato de suporte exibido no login e no menu (vazio = não exibe)
+  supportEmail    String?
   defaultLanguage String  @default("pt-BR")
   allowSelfReg    Boolean @default(false)
   require2FA      Boolean @default(false)
@@ -220,7 +251,9 @@ model ApiToken {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name      String
+  // SHA-256 (hex) do token — o valor bruto só é exibido uma vez na criação
   token     String   @unique
+  tokenPrefix String?
   lastUsed  DateTime?
   expiresAt DateTime?
   scopes    String[] @default(["read"])
@@ -259,6 +292,8 @@ model CredentialShare {
   sharedWithId String
   canEdit      Boolean  @default(false)
   expiresAt    DateTime?
+  // Chave da credencial cifrada com a chave pública do destinatário
+  wrappedKey   String?
   createdAt    DateTime @default(now())
 
   @@unique([credentialId, sharedWithId])
@@ -296,4 +331,50 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+}
+
+// Chave AES de uma pasta, cifrada para um detentor: o id de um usuário
+// (RSA-OAEP com a chave pública dele) ou "ORG" (chave da organização).
+model FolderKey {
+  id          String   @id @default(uuid())
+  folderId    String
+  folder      Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  holder      String
+  wrappedKey  String
+  grantedById String?
+  createdAt   DateTime @default(now())
+
+  @@unique([folderId, holder])
+  @@index([holder])
+}
+
+// Par de chaves da organização. Recebe cópia das chaves de todas as pastas não
+// pessoais para que qualquer administrador possa liberar acesso a novos membros.
+model OrgKey {
+  id        String   @id @default("singleton")
+  publicKey String
+  createdAt DateTime @default(now())
+}
+
+// Chave privada da organização cifrada para cada administrador
+model OrgKeyGrant {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  wrappedKey  String
+  grantedById String?
+  createdAt   DateTime @default(now())
+}
+
+// Dispositivos já vistos por usuário (alerta de acesso de dispositivo novo)
+model UserDevice {
+  id          String   @id @default(uuid())
+  userId      String
+  fingerprint String
+  userAgent   String?
+  ip          String?
+  firstSeen   DateTime @default(now())
+  lastSeen    DateTime @default(now())
+
+  @@unique([userId, fingerprint])
+  @@index([userId])
 }

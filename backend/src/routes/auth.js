@@ -22,10 +22,17 @@ router.get('/me', authenticate, authController.me);
 router.post('/2fa/setup', authenticate, authController.setup2FA);
 router.post('/2fa/verify', authenticate, authController.verify2FA);
 router.post('/2fa/disable', authenticate, authController.disable2FA);
+router.post('/2fa/recovery-codes', authenticate, authController.generateRecoveryCodes);
 router.post('/2fa/validate',
-  [body('token').notEmpty(), body('tempToken').notEmpty()],
+  [body('tempToken').notEmpty(), body().custom(b => !!(b.token || b.recoveryCode)).withMessage('token ou recoveryCode obrigatório')],
   validate,
   authController.validate2FA
+);
+
+router.post('/verify-password', authenticate,
+  [body('password').notEmpty()],
+  validate,
+  authController.verifyPassword
 );
 
 router.post('/change-password', authenticate,

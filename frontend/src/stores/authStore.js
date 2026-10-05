@@ -1,44 +1,23 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import api from '../utils/api.js';
-import { deriveKeyFromPassword } from '../utils/crypto.js';
-
-// masterKey is kept ONLY in memory (never persisted) for security
-let _masterKey = null;
-
-export function getMasterKey() {
-  return _masterKey;
-}
-
-export async function deriveMasterKey(password, encryptionSalt) {
-  if (!password || !encryptionSalt) return null;
-  try {
-    _masterKey = await deriveKeyFromPassword(password, encryptionSalt);
-    return _masterKey;
-  } catch {
-    return null;
-  }
-}
-
-export function clearMasterKey() {
-  _masterKey = null;
-}
+import { useVaultStore } from './vaultStore.js';
 
 export const useAuthStore = create(
   persist(
     (set, get) => ({
       user: null,
-      token: null,
       isAuthenticated: false,
 
-      setAuth: (user, token) => set({ user, token, isAuthenticated: true }),
+      // O JWT fica em cookie httpOnly definido pelo backend; aqui só o perfil
+      setAuth: (user) => set({ user, isAuthenticated: true }),
 
       logout: () => {
-        if (get().token) {
+        if (get().isAuthenticated) {
           api.post('/auth/logout').catch(() => {});
         }
-        clearMasterKey();
-        set({ user: null, token: null, isAuthenticated: false });
+        useVaultStore.getState().lock();
+        set({ user: null, isAuthenticated: false });
       },
 
       updateUser: (updates) => set(state => ({
@@ -47,7 +26,10 @@ export const useAuthStore = create(
     }),
     {
       name: 'vaultguard-auth',
-      partialize: (state) => ({ token: state.token, user: state.user, isAuthenticated: state.isAuthenticated }),
+      version: 1,
+      // v0 guardava o JWT no localStorage: descarta e força novo login (cookie)
+      migrate: () => ({ user: null, isAuthenticated: false }),
+      partialize: (state) => ({ user: state.user, isAuthenticated: state.isAuthenticated }),
     }
   )
 );

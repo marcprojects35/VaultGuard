@@ -1,8 +1,8 @@
-FROM node:20-bullseye AS builder
+FROM node:22-bookworm AS builder
 
 WORKDIR /app
 
-# Dependências de compilação para Argon2 e sharp
+# Dependências de compilação para sharp
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 make g++ libvips-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -19,7 +19,7 @@ COPY frontend/ /frontend/
 RUN cd /frontend && npm ci && npm run build
 
 # ── Imagem final ────────────────────────────────────────────────────────────
-FROM node:20-bullseye-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 

@@ -1,63 +1,19 @@
 // VaultGuard Extension Popup
 
 // ─── Storage keys ──────────────────────────────────────────────────────────
-const STORAGE_SERVER_URL = 'vaultguard_server_url';
-const STORAGE_API_TOKEN  = 'vaultguard_api_token';
-const STORAGE_MASTER_KEY = 'vaultguard_master_key';
-
-// ─── Crypto (same algorithm as frontend/src/utils/crypto.js) ───────────────
-const ALGO = 'AES-GCM';
-
-async function deriveKeyFromPassword(password, hexSalt) {
-  const enc       = new TextEncoder();
-  const saltBytes = Uint8Array.from(hexSalt.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-  const km        = await crypto.subtle.importKey('raw', enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']);
-  const derived   = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: saltBytes, iterations: 210000, hash: 'SHA-256' },
-    km,
-    { name: ALGO, length: 256 },
-    true,
-    ['encrypt', 'decrypt']
-  );
-  const raw = await crypto.subtle.exportKey('raw', derived);
-  return btoa(String.fromCharCode(...new Uint8Array(raw)));
-}
-
-async function encryptPassword(plaintext, masterKey) {
-  if (!masterKey) {
-    return JSON.stringify({ plain: btoa(unescape(encodeURIComponent(plaintext))), v: 0 });
-  }
-  const raw  = Uint8Array.from(atob(masterKey), c => c.charCodeAt(0));
-  const key  = await crypto.subtle.importKey('raw', raw, { name: ALGO }, false, ['encrypt']);
-  const iv   = crypto.getRandomValues(new Uint8Array(12));
-  const ct   = await crypto.subtle.encrypt({ name: ALGO, iv }, key, new TextEncoder().encode(plaintext));
-  return JSON.stringify({
-    iv: btoa(String.fromCharCode(...iv)),
-    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ct))),
-    v: 1,
-  });
-}
-
-async function decryptPassword(encryptedJson, masterKey) {
-  if (!encryptedJson) return '';
-  let parsed;
-  try { parsed = JSON.parse(encryptedJson); } catch { return encryptedJson; }
-  if (parsed.v === 0) return decodeURIComponent(escape(atob(parsed.plain)));
-  if (!masterKey) return '••••••••';
-  const raw       = Uint8Array.from(atob(masterKey), c => c.charCodeAt(0));
-  const key       = await crypto.subtle.importKey('raw', raw, { name: ALGO }, false, ['decrypt']);
-  const iv        = Uint8Array.from(atob(parsed.iv), c => c.charCodeAt(0));
-  const ct        = Uint8Array.from(atob(parsed.ciphertext), c => c.charCodeAt(0));
-  const decrypted = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ct);
-  return new TextDecoder().decode(decrypted);
-}
+import {
+  STORAGE_SERVER_URL, STORAGE_API_TOKEN, PENDING_SAVE_KEY, PENDING_SAVE_TTL_MS,
+  purgeLegacySecrets, makeApi, loadKeyring, saveKeyring, clearKeyring,
+  hostOf, urlMatches, schemeOk, pageOrigin, isInsecureServer, CLIPBOARD_CLEAR_MS, IDLE_LOCK_MS, STORAGE_KEYRING,
+} from '../shared/security.js';
+import { Keyring } from '../../../frontend/src/utils/keyring.js';
 
 // ─── State ─────────────────────────────────────────────────────────────────
 let state = {
   view: 'loading',       // loading | setup | vault | save-form
   serverUrl: '',
   apiToken: '',
-  masterKey: null,
+  keyring: null,          // Keyring desbloqueado (chaves só em chrome.storage.session)
   unlocking: false,
   unlockAction: null,
   credentials: [],       // todas as credenciais carregadas
@@ -69,7 +25,14 @@ let state = {
   loading: false,
   copied: null,
   saveForm: null,
+  tab: 'logins',         // logins | certs
+  highlightId: null,     // certificado aberto a partir do aviso na página
+  autofill: true,
 };
+
+const STORAGE_AUTOFILL    = 'vaultguard_autofill';
+const STORAGE_LAST_FOLDER = 'vaultguard_last_folder';
+const isCert = (c) => c.kind === 'certificate';
 
 // ─── Utils ─────────────────────────────────────────────────────────────────
 function extractDomain(url) {
@@ -77,7 +40,59 @@ function extractDomain(url) {
 }
 
 function escapeHtml(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Inicial do título no lugar de um favicon remoto (que revelaria ao serviço
+// de ícones todos os domínios do cofre)
+function avatar(c) {
+  const letter = escapeHtml((c.title || hostOf(c.url) || '?').trim().charAt(0).toUpperCase() || '?');
+  return `<div class="cred-avatar">${letter}</div>`;
+}
+
+// O popup roda numa janela própria: a aba do site é a ativa da última janela
+// normal focada, não a da janela atual (que é o próprio popup)
+const isSitePage = (t) => /^https?:\/\//i.test(t?.url || '');
+
+async function getSiteTab() {
+  try {
+    const win = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+    const [tab] = await chrome.tabs.query({ active: true, windowId: win.id });
+    if (isSitePage(tab)) return tab;
+  } catch { /* sem janela normal */ }
+  // Aba ativa não é um site (ex.: o próprio VaultGuard aberto numa aba):
+  // usa o site acessado mais recentemente
+  const tabs = (await chrome.tabs.query({})).filter(isSitePage);
+  tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+  return tabs[0] || null;
+}
+
+// Preenche a aba do site conferindo se a credencial é dele
+async function fillSiteTab(detail, password) {
+  const tab = await getSiteTab();
+  if (!tab?.id) { showToast('Nenhuma aba de site aberta'); return false; }
+  if (!schemeOk(detail.url, tab.url)) {
+    showToast('Bloqueado: credencial https em página sem https');
+    return false;
+  }
+  if (!urlMatches(detail.url, tab.url) &&
+      !window.confirm(`Esta credencial é de "${hostOf(detail.url) || 'sem site'}", mas a aba aberta é "${hostOf(tab.url)}".\n\nPreencher mesmo assim?`)) {
+    return false;
+  }
+  await chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL', username: detail.username || '', password });
+  return true;
+}
+
+function isUnlocked() {
+  return !!state.keyring?.isUnlocked;
+}
+
+// Relê as chaves da sessão antes de usá-las: aplica o bloqueio por
+// inatividade mesmo com a janela aberta há horas (e conta como uso)
+async function refreshKeyring() {
+  if (!state.serverUrl || !state.apiToken) return false;
+  state.keyring = await loadKeyring(makeApi(state.serverUrl, state.apiToken));
+  return state.keyring.isUnlocked;
 }
 
 async function apiFetch(path, options = {}) {
@@ -89,7 +104,11 @@ async function apiFetch(path, options = {}) {
       ...(options.headers || {}),
     },
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { msg = (await res.json()).error || msg; } catch { /* */ }
+    const e = new Error(msg); e.status = res.status; throw e;
+  }
   return res.json();
 }
 
@@ -132,9 +151,13 @@ function renderSetup() {
 
       ${state.error ? `<div style="background:#fee2e220;border:1px solid #fca5a5;color:#f87171;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px">${escapeHtml(state.error)}</div>` : ''}
 
+      <div id="insecureWarn" style="display:${isInsecureServer(state.serverUrl) ? 'block' : 'none'};background:#f59e0b15;border:1px solid #f59e0b44;color:#f59e0b;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px">
+        ⚠ Servidor sem HTTPS: o token e os dados trafegam sem criptografia na rede. Use https:// fora da própria máquina.
+      </div>
+
       <div style="margin-bottom:12px">
         <label style="font-size:12px;color:#94a3b8;display:block;margin-bottom:4px">URL do Servidor</label>
-        <input id="serverUrl" type="text" value="${escapeHtml(state.serverUrl)}" placeholder="http://192.168.0.78:8080"
+        <input id="serverUrl" type="text" value="${escapeHtml(state.serverUrl)}" placeholder="https://vault.suaempresa.com"
           style="width:100%;background:#1a1d2e;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box" />
       </div>
       <div style="margin-bottom:16px">
@@ -162,7 +185,7 @@ function renderUnlock() {
           </svg>
           <span style="font-size:14px;font-weight:600;color:#f1f5f9">Desbloquear Cofre</span>
         </div>
-        <p style="font-size:12px;color:#64748b;margin-bottom:12px">Digite sua senha para descriptografar. Você não precisará digitar novamente.</p>
+        <p style="font-size:12px;color:#64748b;margin-bottom:12px">Digite sua senha do VaultGuard. O cofre bloqueia sozinho após 30 minutos sem uso e ao fechar o navegador.</p>
         ${state.error ? `<div style="background:#fee2e220;border:1px solid #fca5a5;color:#f87171;padding:7px 10px;border-radius:8px;font-size:12px;margin-bottom:10px">${escapeHtml(state.error)}</div>` : ''}
         <input id="unlockPassword" type="password" autofocus placeholder="Senha do VaultGuard"
           style="width:100%;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box;margin-bottom:12px" />
@@ -193,22 +216,31 @@ function renderVault() {
         <img src="icons/icon48.png" width="24" height="24" style="border-radius:6px;object-fit:contain;flex-shrink:0" />
         <span style="font-size:13px;font-weight:700;background:linear-gradient(90deg,#F5F5F3,#C78C00);-webkit-background-clip:text;-webkit-text-fill-color:transparent;flex:1">VaultGuard</span>
         <button id="btnSave" title="Salvar senha da página atual"
-          style="background:none;border:none;cursor:pointer;color:#555552;padding:4px;display:flex;align-items:center;transition:color .15s"
-          onmouseover="this.style.color='#C78C00'" onmouseout="this.style.color='#555552'">
+          class="icon-btn">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
             <polyline points="17 21 17 13 7 13 7 21"/>
             <polyline points="7 3 7 8 15 8"/>
           </svg>
         </button>
+        <button id="btnLock" title="Bloquear cofre" class="icon-btn" style="display:${isUnlocked() ? 'flex' : 'none'}">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </button>
         <button id="btnSettings" title="Reconfigurar"
-          style="background:none;border:none;cursor:pointer;color:#555552;padding:4px;display:flex;align-items:center;transition:color .15s"
-          onmouseover="this.style.color='#C78C00'" onmouseout="this.style.color='#555552'">
+          class="icon-btn">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="3"/>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
+      </div>
+
+      <!-- Abas -->
+      <div style="display:flex;background:#111111;border-bottom:1px solid #1E1E1E">
+        <button class="tab-btn ${state.tab === 'logins' ? 'active' : ''}" data-tab="logins">🔑 Logins</button>
+        <button class="tab-btn ${state.tab === 'certs' ? 'active' : ''}" data-tab="certs">🔐 Certificados (${state.credentials.filter(isCert).length})</button>
       </div>
 
       <!-- Search -->
@@ -220,7 +252,7 @@ function renderVault() {
           <input id="searchInput" type="text" placeholder="Buscar em todas as credenciais..."
             style="width:100%;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;padding:7px 10px 7px 30px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box" />
         </div>
-        ${showDomain && state.siteMatches.length > 0 ? `
+        ${state.tab === 'logins' && showDomain && state.siteMatches.length > 0 ? `
           <div style="margin-top:8px;display:flex;gap:6px">
             <button id="btnFilterSite"
               style="flex:1;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${state.showingSiteFilter ? '#C78C00' : '#2A2A2A'};background:${state.showingSiteFilter ? '#C78C0022' : 'transparent'};color:${state.showingSiteFilter ? '#E7A300' : '#64748b'}">
@@ -228,11 +260,13 @@ function renderVault() {
             </button>
             <button id="btnShowAll"
               style="flex:1;padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border:1px solid ${!state.showingSiteFilter ? '#C78C00' : '#2A2A2A'};background:${!state.showingSiteFilter ? '#C78C0022' : 'transparent'};color:${!state.showingSiteFilter ? '#E7A300' : '#64748b'}">
-              📋 Todas (${state.credentials.length})
+              📋 Todas (${state.credentials.filter(c => !isCert(c)).length})
             </button>
           </div>
-        ` : showDomain ? `<div style="margin-top:6px;font-size:11px;color:#475569">Site: <span style="color:#555552">${escapeHtml(domain)}</span> — <span style="color:#64748b">sem matches, mostrando todas</span></div>` : ''}
+        ` : state.tab === 'logins' && showDomain ? `<div style="margin-top:6px;font-size:11px;color:#475569">Site: <span style="color:#555552">${escapeHtml(domain)}</span> — <span style="color:#64748b">sem matches, mostrando todas</span></div>` : ''}
       </div>
+
+      ${state.loadError ? `<div style="background:#fee2e220;border-bottom:1px solid #fca5a544;color:#f87171;padding:8px 14px;font-size:12px">${escapeHtml(state.loadError)}</div>` : ''}
 
       <!-- Credential list -->
       <div style="flex:1;overflow-y:auto;background:#0D0D0D">
@@ -244,12 +278,10 @@ function renderVault() {
             <p style="font-size:13px">Nenhuma credencial encontrada</p>
             ${showDomain ? `<p style="font-size:11px;margin-top:4px;opacity:0.5">para ${escapeHtml(domain)}</p>` : ''}
           </div>
-        ` : creds.map((c, i) => `
+        ` : state.tab === 'certs' ? creds.map((c, i) => renderCertItem(c, i)).join('') : creds.map((c, i) => `
           <div class="cred-item" data-index="${i}" style="padding:10px 14px;border-bottom:1px solid #1A1A1A;cursor:default">
             <div style="display:flex;align-items:center;gap:10px">
-              <img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(c.url || c.title)}&sz=32"
-                style="width:20px;height:20px;border-radius:4px;flex-shrink:0"
-                onerror="this.style.display='none'" />
+              ${avatar(c)}
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:500;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.title)}</div>
                 <div style="font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.username || '')}</div>
@@ -268,8 +300,10 @@ function renderVault() {
       </div>
 
       <!-- Footer -->
-      <div style="padding:8px 14px;border-top:1px solid #1E1E1E;display:flex;justify-content:space-between;align-items:center;background:#111111">
-        <span style="font-size:11px;color:#3A3A38">${creds.length} credencial${creds.length !== 1 ? 'is' : ''}</span>
+      <div style="padding:8px 14px;border-top:1px solid #1E1E1E;display:flex;justify-content:space-between;align-items:center;background:#111111;gap:8px">
+        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:5px;cursor:pointer" title="Preenche sozinho quando há uma única senha para o site">
+          <input id="autofillToggle" type="checkbox" ${state.autofill ? 'checked' : ''} style="accent-color:#C78C00"> Preencher automaticamente
+        </label>
         <button id="btnRefresh" style="background:none;border:none;cursor:pointer;color:#555552;font-size:11px;display:flex;align-items:center;gap:4px">
           <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <polyline points="1 4 1 10 7 10"/>
@@ -286,6 +320,63 @@ function renderVault() {
       </div>
     ` : ''}
   `;
+}
+
+function renderCertItem(c, i) {
+  let due = '';
+  if (c.expiresAt) {
+    const d = new Date(c.expiresAt);
+    const days = Math.ceil((d - Date.now()) / 86400000);
+    const color = days < 0 ? '#f87171' : days <= 30 ? '#f59e0b' : '#64748b';
+    due = `<span style="color:${color}">${days < 0 ? 'vencido em' : 'vence'} ${escapeHtml(d.toLocaleDateString('pt-BR', { timeZone: 'UTC' }))}</span>`;
+  }
+  const hl = state.highlightId === c.id ? 'background:#C78C0014;' : '';
+  return `
+    <div class="cred-item" data-index="${i}" style="padding:10px 14px;border-bottom:1px solid #1A1A1A;${hl}">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="cred-avatar">🔐</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:500;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.title)}</div>
+          <div style="font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(c.username || '')} ${due}</div>
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="btn-cert-dl" data-index="${i}" title="Baixar arquivo do certificado (.pfx)"
+            style="background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:6px;padding:4px 8px;cursor:pointer;color:white;font-size:11px;font-weight:700;line-height:1">⬇</button>
+          <button class="btn-copy-pw" data-index="${i}" title="Copiar senha do certificado"
+            style="background:#1A1A1A;border:1px solid #2A2A2A;border-radius:6px;padding:4px 6px;cursor:pointer;color:#94a3b8;font-size:10px;line-height:1">🔑</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// Baixa o(s) anexo(s) do certificado já decifrados (o arquivo só existe em claro aqui)
+async function downloadCertificate(cred) {
+  const detail = await apiFetch(`/credentials/${cred.id}`);
+  const atts = detail.attachments || [];
+  if (!atts.length) { showToast('Certificado sem arquivo anexado'); return; }
+  for (const att of atts) {
+    const { data, fileName, mimeType } = await apiFetch(`/attachments/${cred.id}/${att.id}/download`);
+    const bytes = await state.keyring.decryptAttachment(detail, data);
+    const url = URL.createObjectURL(new Blob([bytes], { type: mimeType || 'application/x-pkcs12' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = fileName || `${cred.title}.pfx`;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+  showToast('Arquivo');
+}
+
+function applyTabFilter() {
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  const base = state.credentials.filter(c => (state.tab === 'certs') === isCert(c));
+  if (q) {
+    state.filteredCreds = base.filter(c =>
+      c.title?.toLowerCase().includes(q) || c.username?.toLowerCase().includes(q) || c.url?.toLowerCase().includes(q));
+  } else if (state.tab === 'logins' && state.siteMatches.length) {
+    state.filteredCreds = state.showingSiteFilter ? state.siteMatches : base;
+  } else {
+    state.filteredCreds = base;
+  }
 }
 
 function renderSaveForm() {
@@ -324,7 +415,7 @@ function renderSaveForm() {
           <select id="saveFolder"
             style="width:100%;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;outline:none;box-sizing:border-box">
             <option value="">Selecione uma pasta...</option>
-            ${(sf.folders || []).map(f => `<option value="${escapeHtml(f.id)}">${escapeHtml(f.name)}</option>`).join('')}
+            ${(sf.folders || []).map(f => `<option value="${escapeHtml(f.id)}" ${f.id === sf.lastFolderId ? 'selected' : ''}>${escapeHtml(f.name)}</option>`).join('')}
           </select>
         </div>
         <button id="btnConfirmSave"
@@ -343,6 +434,9 @@ function bindEvents() {
     ['serverUrl', 'apiToken'].forEach(id => {
       document.getElementById(id)?.addEventListener('keydown', e => { if (e.key === 'Enter') handleConnect(); });
     });
+    document.getElementById('serverUrl')?.addEventListener('input', e => {
+      document.getElementById('insecureWarn').style.display = isInsecureServer(e.target.value.trim()) ? 'block' : 'none';
+    });
   }
 
   if (state.view === 'vault') {
@@ -357,27 +451,52 @@ function bindEvents() {
     }
 
     document.getElementById('searchInput')?.addEventListener('input', handleSearch);
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => {
+      state.tab = btn.dataset.tab;
+      state.showingSiteFilter = state.tab === 'logins' && state.siteMatches.length > 0;
+      applyTabFilter();
+      render();
+    }));
+    document.getElementById('autofillToggle')?.addEventListener('change', async (e) => {
+      state.autofill = e.target.checked;
+      await chrome.storage.local.set({ [STORAGE_AUTOFILL]: state.autofill });
+    });
+    document.querySelectorAll('.btn-cert-dl').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const idx = +btn.dataset.index;
+        if (!(await refreshKeyring())) {
+          state.unlocking = true; state.unlockAction = { type: 'download', index: idx }; state.error = null; render(); return;
+        }
+        try { await downloadCertificate(state.filteredCreds[idx]); } catch { showToast('Erro ao baixar'); }
+      });
+    });
     document.getElementById('btnRefresh')?.addEventListener('click', loadCredentials);
 
     document.getElementById('btnFilterSite')?.addEventListener('click', () => {
       state.showingSiteFilter = true;
-      state.filteredCreds = state.siteMatches;
       document.getElementById('searchInput').value = '';
+      applyTabFilter();
       render();
     });
     document.getElementById('btnShowAll')?.addEventListener('click', () => {
       state.showingSiteFilter = false;
-      state.filteredCreds = state.credentials;
       document.getElementById('searchInput').value = '';
+      applyTabFilter();
       render();
     });
 
     document.getElementById('btnSettings')?.addEventListener('click', () => {
-      state.view = 'setup'; state.masterKey = null;
-      chrome.storage.local.remove(STORAGE_MASTER_KEY);
+      state.view = 'setup'; state.keyring?.lock();
+      clearKeyring();
       render();
     });
     document.getElementById('btnSave')?.addEventListener('click', handleSaveFromPage);
+    document.getElementById('btnLock')?.addEventListener('click', async () => {
+      state.keyring?.lock();
+      await clearKeyring();
+      showToast('Cofre bloqueado');
+    });
 
     document.querySelectorAll('.btn-copy-user').forEach(btn => {
       btn.addEventListener('click', e => {
@@ -391,13 +510,13 @@ function bindEvents() {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         const idx = +btn.dataset.index;
-        if (!state.masterKey) {
+        if (!(await refreshKeyring())) {
           state.unlocking = true; state.unlockAction = { type: 'copy', index: idx }; state.error = null; render(); return;
         }
         const cred = state.filteredCreds[idx];
         try {
           const detail = await apiFetch(`/credentials/${cred.id}`);
-          const plain  = await decryptPassword(detail.encryptedPass, state.masterKey);
+          const plain  = await state.keyring.decryptValue(detail, detail.encryptedPass);
           copyToClipboard(plain, 'Senha');
         } catch { showToast('Erro ao copiar'); }
       });
@@ -407,16 +526,14 @@ function bindEvents() {
       btn.addEventListener('click', async e => {
         e.stopPropagation();
         const idx = +btn.dataset.index;
-        if (!state.masterKey) {
+        if (!(await refreshKeyring())) {
           state.unlocking = true; state.unlockAction = { type: 'fill', index: idx }; state.error = null; render(); return;
         }
         const cred = state.filteredCreds[idx];
         try {
           const detail = await apiFetch(`/credentials/${cred.id}`);
-          const plain  = await decryptPassword(detail.encryptedPass, state.masterKey);
-          const [tab]  = await chrome.tabs.query({ active: true, currentWindow: true });
-          chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL', username: detail.username || '', password: plain });
-          window.close();
+          const plain  = await state.keyring.decryptValue(detail, detail.encryptedPass);
+          if (await fillSiteTab(detail, plain)) window.close();
         } catch (err) {
           console.error('Autofill error', err);
           showToast('Erro ao preencher');
@@ -428,7 +545,7 @@ function bindEvents() {
   if (state.view === 'save-form') {
     document.getElementById('btnBackToVault')?.addEventListener('click', () => {
       state.view = 'vault'; state.saveForm = null; state.error = null;
-      chrome.storage.local.remove(PENDING_SAVE_KEY);
+      chrome.storage.session.remove(PENDING_SAVE_KEY);
       render();
     });
     document.getElementById('btnConfirmSave')?.addEventListener('click', handleConfirmSave);
@@ -447,9 +564,15 @@ async function handleConnect() {
   state.loading = true; state.error = null; render();
 
   try {
+    if (!/^https?:\/\//i.test(serverUrl)) throw Object.assign(new Error('Informe a URL com http:// ou https://'), { friendly: true });
     const res = await fetch(`${serverUrl}/api/auth/me`, {
       headers: { 'Authorization': `Bearer ${apiToken}` }
     });
+    if (res.status === 403) {
+      // Token válido, mas a conta tem pendência (2FA, troca de senha, IP)
+      const body = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(body.error || 'Acesso negado'), { friendly: true });
+    }
     if (!res.ok) throw new Error('token_invalid');
 
     state.serverUrl = serverUrl;
@@ -464,7 +587,8 @@ async function handleConnect() {
     await loadCredentials();
   } catch (e) {
     state.loading = false;
-    state.error = e.message === 'token_invalid'
+    state.error = e.friendly ? e.message
+      : e.message === 'token_invalid'
       ? 'Token de API inválido ou URL do servidor incorreta'
       : 'Não foi possível conectar. Verifique os dados.';
     render();
@@ -478,15 +602,14 @@ async function handleUnlock() {
   state.loading = true; state.error = null; render();
 
   try {
-    const user = await apiFetch('/auth/me');
-    if (!user.encryptionSalt) throw new Error('no_salt');
-
-    const masterKey = await deriveKeyFromPassword(vaultPw, user.encryptionSalt);
-    state.masterKey = masterKey;
+    const keyring = new Keyring(makeApi(state.serverUrl, state.apiToken));
+    // A extensão não gera chaves: isso acontece no primeiro acesso ao cofre web
+    await keyring.unlock(vaultPw, { allowCreate: false });
+    state.keyring   = keyring;
     state.loading   = false;
     state.unlocking = false;
 
-    await chrome.storage.local.set({ [STORAGE_MASTER_KEY]: masterKey });
+    await saveKeyring(keyring);
 
     // Execute the pending action
     const action = state.unlockAction;
@@ -495,28 +618,34 @@ async function handleUnlock() {
     if (action?.type === 'copy') {
       const cred   = state.filteredCreds[action.index];
       const detail = await apiFetch(`/credentials/${cred.id}`);
-      const plain  = await decryptPassword(detail.encryptedPass, masterKey);
+      const plain  = await state.keyring.decryptValue(detail, detail.encryptedPass);
       copyToClipboard(plain, 'Senha');
     } else if (action?.type === 'fill') {
       const cred   = state.filteredCreds[action.index];
       const detail = await apiFetch(`/credentials/${cred.id}`);
-      const plain  = await decryptPassword(detail.encryptedPass, masterKey);
-      const [tab]  = await chrome.tabs.query({ active: true, currentWindow: true });
-      chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL', username: detail.username || '', password: plain });
-      window.close();
+      const plain  = await state.keyring.decryptValue(detail, detail.encryptedPass);
+      if (await fillSiteTab(detail, plain)) window.close();
+      else render();
       return;
     } else if (action?.type === 'save') {
       render();
       await handleConfirmSave();
+      return;
+    } else if (action?.type === 'download') {
+      render();
+      await downloadCertificate(state.filteredCreds[action.index]).catch(() => showToast('Erro ao baixar'));
       return;
     }
 
     render();
   } catch (e) {
     state.loading = false;
-    state.error = e.message === 'no_salt'
-      ? 'Erro ao obter configuração do servidor'
-      : 'Senha incorreta. Tente novamente.';
+    state.error = e.code === 'NO_KEYS'
+      ? 'Abra o cofre web uma vez para gerar suas chaves de criptografia'
+      : e.code === 'KEY_DECRYPT_FAILED'
+      ? 'Senha incorreta (se você trocou a senha, abra o cofre web primeiro)'
+      : e.status === 403 ? e.message
+      : 'Não foi possível desbloquear. Verifique a conexão.';
     render();
   }
 }
@@ -524,7 +653,7 @@ async function handleUnlock() {
 async function loadCredentials() {
   state.loading = true;
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getSiteTab();
     state.currentUrl = tab?.url || '';
     const domain = extractDomain(state.currentUrl);
     const isSpecialPage = !domain || domain.startsWith('chrome') ||
@@ -535,47 +664,38 @@ async function loadCredentials() {
     const all = await apiFetch('/credentials');
     state.credentials = Array.isArray(all) ? all : [];
 
-    // Filtragem client-side por URL do site atual
+    // Filtragem client-side pela mesma regra do preenchimento automático
     if (!isSpecialPage && domain) {
-      const cleanDomain = domain.replace(/^www\./, '');
-      state.siteMatches = state.credentials.filter(c => {
-        if (!c.url) return false;
-        try {
-          const credHost = new URL(c.url).hostname.replace(/^www\./, '');
-          return credHost === cleanDomain ||
-            credHost.endsWith('.' + cleanDomain) ||
-            cleanDomain.endsWith('.' + credHost);
-        } catch {
-          return c.url.includes(cleanDomain);
-        }
-      });
+      state.siteMatches = state.credentials.filter(c => !isCert(c) && c.url && urlMatches(c.url, state.currentUrl));
       // Se há matches para o site, filtra por padrão; senão, mostra tudo
-      if (state.siteMatches.length > 0) {
-        state.filteredCreds      = state.siteMatches;
-        state.showingSiteFilter  = true;
-      } else {
-        state.filteredCreds      = state.credentials;
-        state.showingSiteFilter  = false;
-      }
+      state.showingSiteFilter = state.siteMatches.length > 0;
     } else {
       state.siteMatches        = [];
-      state.filteredCreds      = state.credentials;
       state.showingSiteFilter  = false;
     }
+    applyTabFilter();
 
     state.view = 'vault';
+    state.loadError = null;
   } catch (e) {
-    if (e.message.includes('401') || e.message.includes('403')) {
-      await chrome.storage.local.remove([STORAGE_API_TOKEN, STORAGE_MASTER_KEY]);
+    if (e.status === 401) {
+      // Só 401 = token inválido/expirado/revogado; 403 é pendência da conta
+      await chrome.storage.local.remove(STORAGE_API_TOKEN);
+      await clearKeyring();
       state.apiToken  = '';
-      state.masterKey = null;
+      state.keyring?.lock();
       state.view      = 'setup';
-      state.error     = 'Token de API expirado. Reconecte.';
+      state.error     = 'Token de API expirado ou revogado. Reconecte.';
+    } else if (e.status === 403) {
+      state.credentials = []; state.siteMatches = []; state.filteredCreds = [];
+      state.view  = 'setup';
+      state.error = e.message;
     } else {
       state.credentials      = [];
       state.siteMatches      = [];
       state.filteredCreds    = [];
       state.view             = 'vault';
+      state.loadError        = 'Não foi possível falar com o servidor do VaultGuard. Verifique a conexão e clique em Atualizar.';
     }
   }
   state.loading = false;
@@ -584,44 +704,29 @@ async function loadCredentials() {
 
 function handleSearch(e) {
   const q = e.target.value.toLowerCase();
-  if (q) {
-    // Busca sempre em TODAS as credenciais, ignora filtro de site
-    state.showingSiteFilter = false;
-    state.filteredCreds = state.credentials.filter(c =>
-      c.title?.toLowerCase().includes(q) ||
-      c.username?.toLowerCase().includes(q) ||
-      c.url?.toLowerCase().includes(q)
-    );
-  } else {
-    // Ao limpar, volta ao estado padrão (site filter se havia matches)
-    state.showingSiteFilter = state.siteMatches.length > 0;
-    state.filteredCreds = state.showingSiteFilter ? state.siteMatches : state.credentials;
-  }
+  // Busca em todas as credenciais da aba (inclusive de pastas compartilhadas);
+  // ao limpar, volta ao filtro do site quando houver
+  state.showingSiteFilter = !q && state.tab === 'logins' && state.siteMatches.length > 0;
+  applyTabFilter();
   render();
   const input = document.getElementById('searchInput');
   if (input) { input.value = q; input.focus(); input.setSelectionRange(q.length, q.length); }
 }
 
 async function handleSaveFromPage() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = await getSiteTab();
+  if (!tab?.id) { showToast('Nenhuma aba de site aberta'); return; }
   chrome.tabs.sendMessage(tab.id, { type: 'GET_CREDENTIALS' }, async (response) => {
-    let folders = [];
-    try {
-      const data = await apiFetch('/folders');
-      const shared   = data.shared   || [];
-      const personal = data.personal || [];
-      folders = [
-        ...flattenFolderTree(shared),
-        ...flattenFolderTree(personal),
-      ];
-    } catch { /* ignore */ }
+    const folders = await writableFolders();
 
     state.saveForm = {
       title:    tab.title || extractDomain(tab.url || ''),
       username: response?.username || '',
       password: response?.password || '',
-      url:      tab.url || '',
+      // Só a origem: a URL completa pode ter tokens (ex.: ?code= do OAuth)
+      url:      pageOrigin(tab.url || ''),
       folders,
+      lastFolderId: state.lastFolderId,
     };
     state.view  = 'save-form';
     state.error = null;
@@ -629,13 +734,13 @@ async function handleSaveFromPage() {
   });
 }
 
-function flattenFolderTree(folders, depth = 0) {
-  const result = [];
-  for (const f of folders) {
-    result.push({ id: f.id, name: '  '.repeat(depth) + f.name });
-    if (f.children?.length) result.push(...flattenFolderTree(f.children, depth + 1));
-  }
-  return result;
+// Só pastas em que o usuário pode criar credenciais (pessoal, equipes, compartilhadas)
+const FOLDER_ICON = { personal: '🔒', team: '👥', shared: '🏢' };
+async function writableFolders() {
+  try {
+    const list = await apiFetch('/folders/writable');
+    return list.map(f => ({ id: f.id, name: `${FOLDER_ICON[f.type] || '📁'} ${f.path}` }));
+  } catch { return []; }
 }
 
 async function handleConfirmSave() {
@@ -649,38 +754,50 @@ async function handleConfirmSave() {
   if (!state.saveForm?.password) {
     state.error = 'Nenhuma senha foi detectada nesta página'; render(); return;
   }
-  if (!state.masterKey) {
+  if (!(await refreshKeyring())) {
     state.view = 'vault'; state.unlocking = true; state.unlockAction = { type: 'save' }; state.error = null; render(); return;
   }
 
   state.loading = true; state.error = null; render();
 
   try {
-    const encryptedPass = await encryptPassword(state.saveForm.password, state.masterKey);
+    // Chave própria da credencial, cifrada com a chave da pasta escolhida
+    const { payload } = await state.keyring.buildCredentialPayload({
+      folderId, password: state.saveForm.password, customFields: [],
+    });
     await apiFetch('/credentials', {
       method: 'POST',
       body: JSON.stringify({
         title,
         username,
         url:         state.saveForm.url,
-        encryptedPass,
         folderId,
+        ...payload,
       }),
     });
 
     state.saveForm = null;
-    await chrome.storage.local.remove(PENDING_SAVE_KEY);
+    await chrome.storage.local.set({ [STORAGE_LAST_FOLDER]: folderId });
+    await chrome.storage.session.remove(PENDING_SAVE_KEY);
     await loadCredentials();
     showToast('Senha salva no cofre');
-  } catch {
+  } catch (e) {
     state.loading = false;
-    state.error   = 'Erro ao salvar. Verifique sua conexão.';
+    state.error   = e.code ? e.message : 'Erro ao salvar. Verifique sua conexão.';
     render();
   }
 }
 
+let clipboardTimer = null;
 function copyToClipboard(text, label) {
-  navigator.clipboard.writeText(text).then(() => showToast(label));
+  navigator.clipboard.writeText(text).then(() => {
+    showToast(label);
+    // Senha não fica na área de transferência (vale enquanto a janela estiver aberta)
+    if (label === 'Senha') {
+      clearTimeout(clipboardTimer);
+      clipboardTimer = setTimeout(() => navigator.clipboard.writeText('').catch(() => {}), CLIPBOARD_CLEAR_MS);
+    }
+  });
 }
 
 function showToast(label) {
@@ -689,23 +806,45 @@ function showToast(label) {
   setTimeout(() => { state.copied = null; render(); }, 2000);
 }
 
+// Aberto pelo aviso de certificado na página: #certs ou #certs:<id>. Com a
+// janela já aberta só o hash muda (sem recarregar), por isso o hashchange
+function applyHash() {
+  const hash = decodeURIComponent(location.hash.slice(1));
+  if (!hash.startsWith('certs')) return false;
+  state.tab = 'certs';
+  state.highlightId = hash.split(':')[1] || null;
+  return true;
+}
+
+window.addEventListener('hashchange', () => {
+  if (!applyHash() || state.view !== 'vault') return;
+  const input = document.getElementById('searchInput');
+  if (input) input.value = '';
+  applyTabFilter();
+  render();
+});
+
 // ─── Init ──────────────────────────────────────────────────────────────────
 async function init() {
   state.view = 'loading';
   render();
 
-  const stored    = await chrome.storage.local.get([STORAGE_SERVER_URL, STORAGE_API_TOKEN, STORAGE_MASTER_KEY]);
+  await purgeLegacySecrets();
+  const stored    = await chrome.storage.local.get([STORAGE_SERVER_URL, STORAGE_API_TOKEN]);
   state.serverUrl = stored[STORAGE_SERVER_URL] || '';
   state.apiToken  = stored[STORAGE_API_TOKEN]  || '';
-  state.masterKey = stored[STORAGE_MASTER_KEY] || null;
+  state.autofill  = (await chrome.storage.local.get(STORAGE_AUTOFILL))[STORAGE_AUTOFILL] !== false;
+  state.lastFolderId = (await chrome.storage.local.get(STORAGE_LAST_FOLDER))[STORAGE_LAST_FOLDER] || null;
+  applyHash();
 
-  // masterKey ausente não é motivo para ir ao setup — basta o URL e o token
+  // Cofre bloqueado não é motivo para ir ao setup — basta o URL e o token
   if (!state.serverUrl || !state.apiToken) {
     state.view = 'setup';
     render();
     return;
   }
 
+  state.keyring = await loadKeyring(makeApi(state.serverUrl, state.apiToken));
   await loadCredentials();
 
   // Verificar se há senha pendente para salvar (detectada pelo content script)
@@ -714,27 +853,19 @@ async function init() {
   }
 }
 
-const PENDING_SAVE_KEY = 'vaultguard_pending_save';
-
 async function checkPendingSave() {
-  const data = await chrome.storage.local.get(PENDING_SAVE_KEY);
+  const data = await chrome.storage.session.get(PENDING_SAVE_KEY);
   const pending = data[PENDING_SAVE_KEY];
   if (!pending) return;
 
-  // Expirar após 5 minutos
-  if (Date.now() - pending.savedAt > 5 * 60 * 1000) {
-    await chrome.storage.local.remove(PENDING_SAVE_KEY);
+  if (Date.now() - pending.savedAt > PENDING_SAVE_TTL_MS) {
+    await chrome.storage.session.remove(PENDING_SAVE_KEY);
     return;
   }
 
-  let folders = [];
-  try {
-    const data = await apiFetch('/folders');
-    folders = [
-      ...flattenFolderTree(data.shared   || []),
-      ...flattenFolderTree(data.personal || []),
-    ];
-  } catch { /* sem pastas */ }
+  // Atualização de senha existente é concluída pelo aviso na própria página
+  if (pending.type === 'update') return;
+  const folders = await writableFolders();
 
   let title = pending.title || '';
   try { title = new URL(pending.url).hostname; } catch {}
@@ -743,8 +874,9 @@ async function checkPendingSave() {
     title,
     username: pending.username || '',
     password: pending.password || '',
-    url:      pending.url || '',
+    url:      pageOrigin(pending.url || ''),
     folders,
+    lastFolderId: state.lastFolderId,
   };
   state.view  = 'save-form';
   state.error = null;
@@ -752,3 +884,14 @@ async function checkPendingSave() {
 }
 
 init();
+
+// Janela aberta por muito tempo: confere a cada minuto se o cofre bloqueou
+setInterval(async () => {
+  if (!state.keyring?.isUnlocked) return;
+  const data = (await chrome.storage.session.get(STORAGE_KEYRING))[STORAGE_KEYRING];
+  if (!data?.session || Date.now() - (data.lastUsed || 0) > IDLE_LOCK_MS) {
+    state.keyring.lock();
+    await clearKeyring();
+    render();
+  }
+}, 60 * 1000);

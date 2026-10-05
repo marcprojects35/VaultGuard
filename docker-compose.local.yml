@@ -6,7 +6,7 @@ services:
     environment:
       POSTGRES_DB: vaultguard
       POSTGRES_USER: vaultguard
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-VaultGuard@Local2024!}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Defina DB_PASSWORD no .env (rode install.sh)}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -25,16 +25,19 @@ services:
     container_name: vaultguard-api
     restart: unless-stopped
     ports:
-      - "${HTTP_PORT:-8080}:3001"
+      # Só na própria máquina; para expor na rede use BIND_ADDR=0.0.0.0 no .env
+      - "${BIND_ADDR:-127.0.0.1}:${HTTP_PORT:-8080}:3001"
     environment:
-      DATABASE_URL: postgresql://vaultguard:${DB_PASSWORD:-VaultGuard@Local2024!}@postgres:5432/vaultguard
-      JWT_SECRET: ${JWT_SECRET:-changeme-please-use-random-64-chars-minimum}
+      DATABASE_URL: postgresql://vaultguard:${DB_PASSWORD:?Defina DB_PASSWORD no .env (rode install.sh)}@postgres:5432/vaultguard
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no .env (openssl rand -hex 64)}
       NODE_ENV: production
       PORT: 3001
+      # Sem proxy na frente: não confiar em X-Forwarded-For vindo do cliente
+      TRUST_PROXY: 0
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8080}
       COMPANY_NAME: ${COMPANY_NAME:-VaultGuard}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@vaultguard.local}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123456}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Defina ADMIN_PASSWORD no .env}
     volumes:
       - uploads_data:/app/uploads
       - logs_data:/app/logs

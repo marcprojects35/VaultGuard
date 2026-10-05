@@ -12,6 +12,7 @@ const DEFAULT_CONFIG = {
   host: '',
   port: 389,
   useTLS: false,
+  startTLS: false,
   verifyCert: true,
   domain: '',
   baseDn: '',
@@ -292,7 +293,13 @@ export default function AdminLdapPage() {
                 <Toggle checked={config.useTLS} onChange={v => set('useTLS', v)} />
                 LDAPS (TLS)
               </label>
-              {config.useTLS && (
+              {!config.useTLS && (
+                <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
+                  <Toggle checked={!!config.startTLS} onChange={v => set('startTLS', v)} />
+                  StartTLS
+                </label>
+              )}
+              {(config.useTLS || config.startTLS) && (
                 <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
                   <Toggle checked={config.verifyCert} onChange={v => set('verifyCert', v)} />
                   Verificar certificado
@@ -300,6 +307,13 @@ export default function AdminLdapPage() {
               )}
             </div>
           </Field>
+
+          {!config.useTLS && !config.startTLS && (
+            <div className="mb-4 p-3 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
+              Conexão sem criptografia: as senhas dos usuários e da conta de serviço trafegam em texto puro na rede.
+              Ative LDAPS (porta 636) ou StartTLS.
+            </div>
+          )}
 
           <Field label="Domínio" description="Ex: empresa.local (opcional, usado para montar UPN)">
             <Input value={config.domain} onChange={v => set('domain', v)} placeholder="empresa.local" />

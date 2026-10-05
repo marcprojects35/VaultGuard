@@ -120,7 +120,7 @@ function CredentialList({ items, emptyMsg, type }) {
                 background: type === 'expired' ? '#ef444422' : '#f59e0b22',
                 color: type === 'expired' ? '#ef4444' : '#f59e0b'
               }}>
-              {new Date(c.expiresAt).toLocaleDateString('pt-BR')}
+              {new Date(c.expiresAt).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
             </span>
           ) : (
             <span className="text-xs flex-shrink-0 font-semibold" style={{ color: getStrengthColor(c.strength || 0) }}>

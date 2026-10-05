@@ -11,6 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { testConnection, fetchADGroups, syncAllUsersFromAD, fetchUsersForPreview, linkUsersFromAD } from '../services/ldap.js';
 import { createAuditLog } from '../services/audit.js';
+import { pruneFolderKeys } from '../services/keys.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -18,6 +19,14 @@ const prisma = new PrismaClient();
 
 // Estado de sync em memória (simples — para produção usar Redis/BullMQ)
 let syncState = { running: false, lastRun: null, lastResult: null };
+
+// A senha salva da conta de serviço só é reaproveitada para o mesmo servidor
+// e a mesma conta; senão bastaria trocar o host para recebê-la em outro lugar.
+function sameServer(cfg, saved) {
+  if (!saved?.bindPassword) return false;
+  const norm = (c) => [String(c.host || '').trim().toLowerCase(), String(c.port || ''), String(c.bindDn || '').trim().toLowerCase(), !!c.useTLS, !!c.startTLS];
+  return JSON.stringify(norm(cfg)) === JSON.stringify(norm(saved));
+}
 
 // ── Resolve a config efetiva: usa a enviada pelo form (não salva ainda),
 // caindo para a config salva no banco quando não vier nenhuma no body.
@@ -30,7 +39,7 @@ async function resolveConfig(bodyConfig) {
   if (!cfg) return null;
 
   if (cfg.bindPassword === '••••••••') {
-    cfg = { ...cfg, bindPassword: saved?.bindPassword || '' };
+    cfg = { ...cfg, bindPassword: sameServer(cfg, saved) ? saved.bindPassword : '' };
   }
   if (cfg.port) cfg = { ...cfg, port: parseInt(cfg.port, 10) };
 
@@ -76,7 +85,10 @@ router.put('/config', authenticate, requireAdmin, async (req, res, next) => {
     let finalConfig = { ...config };
     if (config?.bindPassword === '••••••••') {
       const existing = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
-      finalConfig.bindPassword = existing?.ldapConfig?.bindPassword || '';
+      if (!sameServer(config, existing?.ldapConfig)) {
+        return res.status(400).json({ error: 'Ao trocar servidor, porta, TLS ou conta de serviço, informe a senha da conta de serviço novamente' });
+      }
+      finalConfig.bindPassword = existing.ldapConfig.bindPassword;
     }
 
     // Sanitizar porta
@@ -150,7 +162,9 @@ router.post('/sync', authenticate, requireAdmin, async (req, res, next) => {
 
     // Roda em background
     syncAllUsersFromAD(settings.ldapConfig)
-      .then(result => {
+      .then(async result => {
+        // Cargos e status podem ter mudado: revisa quem ainda deve ter cada chave
+        await pruneFolderKeys().catch(err => logger.error('pruneFolderKeys after LDAP sync failed', { error: err.message }));
         syncState = { running: false, lastRun: new Date().toISOString(), lastResult: result };
         createAuditLog(req.user.id, 'ldap.sync_completed', 'User', null, result, req.ip);
         logger.info('LDAP sync completed', result);

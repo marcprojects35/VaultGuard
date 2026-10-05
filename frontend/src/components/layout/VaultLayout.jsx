@@ -9,6 +9,8 @@ import {
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
 import { useAuthStore, useIsAdmin } from '../../stores/authStore.js';
+import { useVaultStore } from '../../stores/vaultStore.js';
+import UnlockVault from '../UnlockVault.jsx';
 import { useSettingsStore } from '../../stores/settingsStore.js';
 import { SUPPORTED_LANGUAGES } from '../../i18n/index.js';
 
@@ -95,6 +97,7 @@ export default function VaultLayout() {
   const user = useAuthStore(s => s.user);
   const isAdmin = useIsAdmin();
   const settings = useSettingsStore(s => s.settings);
+  const vaultUnlocked = useVaultStore(s => s.unlocked);
 
   const [open, setOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(
@@ -115,7 +118,7 @@ export default function VaultLayout() {
     e.preventDefault();
     const { name, email, subject, message } = contactForm;
     const body = `Nome: ${name}\nE-mail: ${email}\n\n${message}`;
-    window.open(`mailto:VaultGuard2026@outlook.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+    window.open(`mailto:${settings.supportEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
     setContactSent(true);
     setTimeout(() => {
       setContactOpen(false);
@@ -444,8 +447,8 @@ export default function VaultLayout() {
             )}
           </button>
 
-          {/* Support */}
-          <button
+          {/* Suporte: só aparece com e-mail configurado (Configurações → Geral) */}
+          {settings.supportEmail && <button
             onClick={() => setContactOpen(true)}
             title={!open ? 'Suporte' : undefined}
             style={{
@@ -463,7 +466,7 @@ export default function VaultLayout() {
           >
             <HelpCircle style={iconSize} />
             {open && <span>Suporte</span>}
-          </button>
+          </button>}
 
           {/* Logout */}
           <button
@@ -498,6 +501,9 @@ export default function VaultLayout() {
         >
           <Outlet />
         </main>
+
+        {/* Perfil fica acessível bloqueado (ex.: ativar o 2FA obrigatório) */}
+        {!vaultUnlocked && location.pathname !== '/profile' && <UnlockVault onLogout={handleLogout} />}
 
         {/* Footer */}
         <footer style={{
@@ -703,7 +709,7 @@ export default function VaultLayout() {
 
                 <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--color-muted)', marginTop: '-4px' }}>
                   Enviado para{' '}
-                  <span style={{ fontWeight: 500, color: 'var(--color-primary)' }}>VaultGuard2026@outlook.com</span>
+                  <span style={{ fontWeight: 500, color: 'var(--color-primary)' }}>{settings.supportEmail}</span>
                 </p>
               </form>
             )}

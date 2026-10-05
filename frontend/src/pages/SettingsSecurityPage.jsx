@@ -1,34 +1,50 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ShieldCheck, Save, RefreshCw, Lock, AlertTriangle, Smartphone, Eye } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
 
-export default function SettingsSecurityPage() {
-  const currentSettings = useSettingsStore(s => s.settings);
-  const policy = currentSettings.passwordPolicy || {};
-
-  const [form, setForm] = useState({
-    minPasswordLength: policy.minLength || 10,
+// Valores salvos (ou padrões, se a política nunca foi salva)
+function formFromSettings(settings) {
+  const policy = settings.passwordPolicy || {};
+  return {
+    minPasswordLength: policy.minLength ?? 10,
     requireUppercase: policy.requireUppercase ?? true,
     requireNumbers: policy.requireNumbers ?? true,
     requireSymbols: policy.requireSymbols ?? true,
-    passwordExpireDays: policy.expireDays || 90,
-    preventPasswordReuse: policy.preventReuse || 5,
-    maxLoginAttempts: currentSettings.maxLoginAttempts || 5,
-    lockoutDurationMin: policy.lockoutDurationMin || 15,
-    require2FA: currentSettings.require2FA || false,
-    allow2FARecovery: true,
-    logFailedLogins: true,
-    alertOnNewDevice: true,
-    allowedIPs: '',
+    passwordExpireDays: policy.expireDays ?? 0,
+    preventPasswordReuse: policy.preventReuse ?? 5,
+    maxLoginAttempts: settings.maxLoginAttempts ?? 5,
+    lockoutDurationMin: policy.lockoutDurationMin ?? 15,
+    require2FA: settings.require2FA ?? false,
+    allow2FARecovery: policy.allow2FARecovery ?? true,
+    logFailedLogins: policy.logFailedLogins ?? true,
+    alertOnNewDevice: policy.alertOnNewDevice ?? true,
+    allowedIPs: policy.allowedIPs ?? '',
+  };
+}
+
+export default function SettingsSecurityPage() {
+  const currentSettings = useSettingsStore(s => s.settings);
+  const updateSettings = useSettingsStore(s => s.updateSettings);
+
+  const [form, setForm] = useState(() => formFromSettings(currentSettings));
+  // Política completa (a whitelist de IPs não vem nas configurações públicas)
+  const { data: saved } = useQuery({
+    queryKey: ['security-settings'],
+    queryFn: () => api.get('/settings/security').then(r => r.data),
+    refetchOnWindowFocus: false,
   });
+  useEffect(() => { if (saved) setForm(formFromSettings(saved)); }, [saved]);
 
   const { mutate: save, isPending } = useMutation({
     mutationFn: data => api.put('/settings/security', data),
-    onSuccess: () => toast.success('Configurações de segurança salvas!'),
-    onError: () => toast.error('Erro ao salvar configurações.'),
+    onSuccess: (res) => {
+      updateSettings(res.data);
+      toast.success('Configurações de segurança salvas!');
+    },
+    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao salvar configurações.'),
   });
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));

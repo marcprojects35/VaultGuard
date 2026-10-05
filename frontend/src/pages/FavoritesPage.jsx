@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Star, Eye, EyeOff, Copy, Check, ExternalLink, RefreshCw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
+import { safeUrl } from '../utils/safeUrl.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-import { decryptPassword } from '../utils/crypto.js';
+import { keyring, keyErrorMessage } from '../stores/vaultStore.js';
 
 function FavoriteCard({ cred, onRemove, settings }) {
   const [passVisible, setPassVisible] = useState(false);
@@ -17,10 +18,10 @@ function FavoriteCard({ cred, onRemove, settings }) {
     setLoading(true);
     try {
       const { data } = await api.get(`/credentials/${cred.id}`);
-      const plain = await decryptPassword(data.encryptedPass, null);
+      const plain = await keyring.decryptValue(data, data.encryptedPass);
       setDecryptedPass(plain);
       setPassVisible(true);
-    } catch { toast.error('Erro ao carregar senha'); }
+    } catch (e) { toast.error(keyErrorMessage(e, 'Erro ao carregar senha')); }
     finally { setLoading(false); }
   };
 
@@ -28,14 +29,13 @@ function FavoriteCard({ cred, onRemove, settings }) {
     try {
       let text = field === 'password'
         ? decryptedPass || await api.get(`/credentials/${cred.id}`).then(async r => {
-            const p = await decryptPassword(r.data.encryptedPass, null);
-            return p;
+            return keyring.decryptValue(r.data, r.data.encryptedPass);
           })
         : cred[field];
       await navigator.clipboard.writeText(text);
       setCopied(field);
       setTimeout(() => setCopied(null), 2000);
-    } catch { toast.error('Erro ao copiar'); }
+    } catch (e) { toast.error(keyErrorMessage(e, 'Erro ao copiar')); }
   };
 
   return (
@@ -44,12 +44,7 @@ function FavoriteCard({ cred, onRemove, settings }) {
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
           style={{ background: `${settings.primaryColor}22` }}>
-          {cred.url ? (
-            <img src={`https://www.google.com/s2/favicons?domain=${new URL(cred.url).hostname}&sz=32`}
-              className="w-5 h-5"
-              onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-          ) : null}
-          <Star className="w-4 h-4" style={{ color: settings.primaryColor, display: cred.url ? 'none' : 'block' }} />
+          <Star className="w-4 h-4" style={{ color: settings.primaryColor }} />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -104,7 +99,7 @@ function FavoriteCard({ cred, onRemove, settings }) {
 
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           {cred.url && (
-            <a href={cred.url} target="_blank" rel="noopener noreferrer"
+            <a href={safeUrl(cred.url)} target="_blank" rel="noopener noreferrer"
               className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
               style={{ color: 'var(--color-muted)' }}>
               <ExternalLink className="w-4 h-4" />

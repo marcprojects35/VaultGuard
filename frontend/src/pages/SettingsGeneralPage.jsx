@@ -1,19 +1,9 @@
 import { useState } from 'react';
-import { SlidersHorizontal, Save, Globe, Clock, Monitor, RefreshCw } from 'lucide-react';
+import { SlidersHorizontal, Save, Globe, Clock, Monitor, RefreshCw, Mail } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-
-const TIMEZONES = [
-  'America/Sao_Paulo', 'America/Fortaleza', 'America/Manaus', 'America/Belem',
-  'America/Recife', 'America/Cuiaba', 'America/Porto_Velho', 'America/Boa_Vista',
-  'America/Rio_Branco', 'America/Noronha',
-  'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-  'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Europe/Madrid',
-  'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Australia/Sydney',
-  'UTC',
-];
 
 const LANGUAGES = [
   { value: 'pt-BR', label: 'Português (Brasil)' },
@@ -32,12 +22,8 @@ export default function SettingsGeneralPage() {
     siteName: currentSettings.siteName || 'VaultGuard',
     siteSubtitle: currentSettings.siteSubtitle || 'Cofre de Senhas Corporativo',
     defaultLanguage: currentSettings.defaultLanguage || 'pt-BR',
-    timezone: 'America/Sao_Paulo',
     sessionTimeout: currentSettings.sessionTimeout || 480,
-    maxSessionAge: 8,
-    maintenanceMode: false,
-    allowSelfRegistration: currentSettings.allowSelfReg || false,
-    requireEmailVerification: true,
+    supportEmail: currentSettings.supportEmail || '',
   });
 
   const { mutate: save, isPending } = useMutation({
@@ -47,10 +33,12 @@ export default function SettingsGeneralPage() {
         siteName: form.siteName,
         siteSubtitle: form.siteSubtitle,
         defaultLanguage: form.defaultLanguage,
+        sessionTimeout: form.sessionTimeout,
+        supportEmail: form.supportEmail || null,
       });
       toast.success('Configurações gerais salvas!');
     },
-    onError: () => toast.error('Erro ao salvar configurações.'),
+    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao salvar configurações.'),
   });
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
@@ -85,27 +73,7 @@ export default function SettingsGeneralPage() {
     </div>
   );
 
-  const Toggle = ({ label, description, value, onChange }) => (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{label}</div>
-        {description && (
-          <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{description}</div>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!value)}
-        className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none"
-        style={{ background: value ? 'var(--color-primary)' : 'var(--color-surface-2)' }}
-      >
-        <span
-          className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
-          style={{ transform: value ? 'translateX(20px)' : 'translateX(0)' }}
-        />
-      </button>
-    </div>
-  );
+
 
   return (
     <div className="p-8 max-w-2xl mx-auto">
@@ -164,82 +132,43 @@ export default function SettingsGeneralPage() {
               Idioma exibido para novos usuários. Cada usuário pode alterar individualmente.
             </p>
           </div>
-          <div>
-            <label className={labelClass} style={labelStyle}>Fuso Horário</label>
-            <select
-              className={inputClass}
-              style={inputStyle}
-              value={form.timezone}
-              onChange={e => set('timezone', e.target.value)}
-            >
-              {TIMEZONES.map(tz => (
-                <option key={tz} value={tz}>{tz}</option>
-              ))}
-            </select>
-            <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-              Usado para datas no log de auditoria e notificações.
-            </p>
-          </div>
         </Section>
 
         {/* Sessão */}
         <Section icon={Clock} title="Sessão">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass} style={labelStyle}>Timeout por inatividade (min)</label>
-              <input
-                type="number"
-                min={5}
-                max={480}
-                className={inputClass}
-                style={inputStyle}
-                value={form.sessionTimeout}
-                onChange={e => set('sessionTimeout', Number(e.target.value))}
-              />
-              <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                Sessão encerrada após inatividade.
-              </p>
-            </div>
-            <div>
-              <label className={labelClass} style={labelStyle}>Duração máxima (horas)</label>
-              <input
-                type="number"
-                min={1}
-                max={72}
-                className={inputClass}
-                style={inputStyle}
-                value={form.maxSessionAge}
-                onChange={e => set('maxSessionAge', Number(e.target.value))}
-              />
-              <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                Mesmo com atividade, requer novo login.
-              </p>
-            </div>
+          <div>
+            <label className={labelClass} style={labelStyle}>Duração da sessão (minutos)</label>
+            <input
+              type="number"
+              min={5}
+              max={10080}
+              className={inputClass}
+              style={inputStyle}
+              value={form.sessionTimeout}
+              onChange={e => set('sessionTimeout', Number(e.target.value))}
+            />
+            <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+              Depois desse tempo é preciso entrar de novo. O cofre também bloqueia ao recarregar a página.
+            </p>
           </div>
         </Section>
 
-        {/* Acesso */}
-        <Section icon={RefreshCw} title="Acesso e Cadastro">
-          <Toggle
-            label="Permitir auto-cadastro"
-            description="Usuários podem criar contas sem convite de administrador."
-            value={form.allowSelfRegistration}
-            onChange={v => set('allowSelfRegistration', v)}
-          />
-          <div className="border-t" style={{ borderColor: 'var(--color-border)' }} />
-          <Toggle
-            label="Exigir verificação de e-mail"
-            description="Conta fica pendente até o usuário confirmar o e-mail."
-            value={form.requireEmailVerification}
-            onChange={v => set('requireEmailVerification', v)}
-          />
-          <div className="border-t" style={{ borderColor: 'var(--color-border)' }} />
-          <Toggle
-            label="Modo manutenção"
-            description="Apenas administradores conseguem acessar o sistema."
-            value={form.maintenanceMode}
-            onChange={v => set('maintenanceMode', v)}
-          />
+        {/* Suporte */}
+        <Section icon={Mail} title="Suporte">
+          <div>
+            <label className={labelClass} style={labelStyle}>E-mail de suporte</label>
+            <input
+              type="email"
+              className={inputClass}
+              style={inputStyle}
+              value={form.supportEmail}
+              onChange={e => set('supportEmail', e.target.value)}
+              placeholder="ti@suaempresa.com"
+            />
+            <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-muted)' }}>
+              Aparece na tela de login e no botão "Suporte" do menu. Vazio = não exibe.
+            </p>
+          </div>
         </Section>
       </div>
 

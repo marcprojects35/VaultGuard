@@ -1,111 +1,12 @@
 /**
- * Client-side AES-256-GCM encryption.
- * Master key is derived from the user's login password + server-provided salt via PBKDF2.
- * Zero-knowledge: the server never sees plain passwords.
+ * Backup offline do cofre (.vaultguard), força e gerador de senhas.
+ * A criptografia das credenciais fica em vaultCrypto.js / keyring.js.
  */
+
+import { bytesToB64 } from './vaultCrypto.js';
 
 const ALGO = 'AES-GCM';
 const KEY_LENGTH = 256;
-
-// ─── Key utilities ──────────────────────────────────────────────────────────
-
-export async function generateKey() {
-  const key = await crypto.subtle.generateKey(
-    { name: ALGO, length: KEY_LENGTH },
-    true,
-    ['encrypt', 'decrypt']
-  );
-  const raw = await crypto.subtle.exportKey('raw', key);
-  return btoa(String.fromCharCode(...new Uint8Array(raw)));
-}
-
-async function importKey(b64Key) {
-  const raw = Uint8Array.from(atob(b64Key), c => c.charCodeAt(0));
-  return crypto.subtle.importKey('raw', raw, { name: ALGO }, false, ['encrypt', 'decrypt']);
-}
-
-/**
- * Derive an AES-256-GCM key from user password + hex salt using PBKDF2.
- * Returns a base64-encoded raw key.
- */
-export async function deriveKeyFromPassword(password, hexSalt) {
-  const enc = new TextEncoder();
-  const saltBytes = Uint8Array.from(
-    hexSalt.match(/.{1,2}/g).map(b => parseInt(b, 16))
-  );
-
-  const keyMaterial = await crypto.subtle.importKey(
-    'raw',
-    enc.encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits', 'deriveKey']
-  );
-
-  const derived = await crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt: saltBytes,
-      iterations: 210000,
-      hash: 'SHA-256',
-    },
-    keyMaterial,
-    { name: ALGO, length: KEY_LENGTH },
-    true,
-    ['encrypt', 'decrypt']
-  );
-
-  const raw = await crypto.subtle.exportKey('raw', derived);
-  return btoa(String.fromCharCode(...new Uint8Array(raw)));
-}
-
-// ─── Credential encrypt/decrypt ─────────────────────────────────────────────
-
-/**
- * Encrypt a plaintext password.
- * v:0 = dev fallback (base64, no key needed)
- * v:1 = AES-256-GCM with derived master key
- */
-export async function encryptPassword(plaintext, masterKey) {
-  if (!masterKey) {
-    return JSON.stringify({ plain: btoa(unescape(encodeURIComponent(plaintext))), v: 0 });
-  }
-
-  const key = await importKey(masterKey);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encoded = new TextEncoder().encode(plaintext);
-  const ciphertext = await crypto.subtle.encrypt({ name: ALGO, iv }, key, encoded);
-
-  return JSON.stringify({
-    iv: btoa(String.fromCharCode(...iv)),
-    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
-    v: 1,
-  });
-}
-
-export async function decryptPassword(encryptedJson, masterKey) {
-  if (!encryptedJson) return '';
-
-  let parsed;
-  try {
-    parsed = JSON.parse(encryptedJson);
-  } catch {
-    return encryptedJson;
-  }
-
-  if (parsed.v === 0) {
-    return decodeURIComponent(escape(atob(parsed.plain)));
-  }
-
-  if (!masterKey) return '••••••••••';
-
-  const key = await importKey(masterKey);
-  const iv = Uint8Array.from(atob(parsed.iv), c => c.charCodeAt(0));
-  const ciphertext = Uint8Array.from(atob(parsed.ciphertext), c => c.charCodeAt(0));
-
-  const decrypted = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ciphertext);
-  return new TextDecoder().decode(decrypted);
-}
 
 // ─── Vault (offline backup) encrypt/decrypt ─────────────────────────────────
 
@@ -139,7 +40,7 @@ export async function encryptVault(data, passphrase) {
     v: 1,
     salt: btoa(String.fromCharCode(...salt)),
     iv: btoa(String.fromCharCode(...iv)),
-    ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext))),
+    ciphertext: bytesToB64(new Uint8Array(ciphertext)),
   });
 }
 

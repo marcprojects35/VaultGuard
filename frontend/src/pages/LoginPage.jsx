@@ -4,23 +4,44 @@ import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
-import { useAuthStore, deriveMasterKey } from '../stores/authStore.js';
+import { useAuthStore } from '../stores/authStore.js';
+import { useVaultStore } from '../stores/vaultStore.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
 
 export default function LoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const setAuth = useAuthStore(s => s.setAuth);
+  const unlockVault = useVaultStore(s => s.unlock);
   const settings = useSettingsStore(s => s.settings);
 
   const [step, setStep] = useState('credentials');
   const [tempToken, setTempToken] = useState('');
-  const [pendingSalt, setPendingSalt] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [form, setForm] = useState({ login: '', password: '', totp: '' });
+  // Sem acesso ao app autenticador: entra com um código de recuperação
+  const [useRecovery, setUseRecovery] = useState(false);
+  const codeReady = useRecovery ? form.totp.trim().length >= 10 : form.totp.length === 6;
 
   const logoSrc = settings.logoUrl || '/logo.png';
+
+  const finishLogin = async (data) => {
+    setAuth({ ...data.user, requires2FASetup: !!data.requires2FASetup, requiresPasswordChange: !!data.requiresPasswordChange });
+    // Abre as chaves com a mesma senha; se falhar, a tela de desbloqueio continua dali
+    if (!data.requires2FASetup) {
+      await unlockVault(form.password).catch(() => {});
+    }
+    if (data.requiresPasswordChange) {
+      toast('Sua senha expirou ou foi definida pelo administrador. Crie uma senha nova.', { icon: '🔑' });
+      navigate('/profile?tab=security');
+    } else if (data.requires2FASetup) {
+      toast('A organização exige 2FA. Ative-o para continuar.', { icon: '🔐' });
+      navigate('/profile?tab=security');
+    } else {
+      navigate('/');
+    }
+  };
 
   const handleCredentials = async (e) => {
     e.preventDefault();
@@ -29,12 +50,9 @@ export default function LoginPage() {
       const { data } = await api.post('/auth/login', { login: form.login, password: form.password });
       if (data.requires2FA) {
         setTempToken(data.tempToken);
-        setPendingSalt(data.encryptionSalt || '');
         setStep('2fa');
       } else {
-        await deriveMasterKey(form.password, data.user?.encryptionSalt);
-        setAuth(data.user, data.token);
-        navigate('/');
+        await finishLogin(data);
       }
     } catch (err) {
       toast.error(err.response?.data?.error || t('auth.invalidCredentials'));
@@ -47,10 +65,10 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/2fa/validate', { token: form.totp, tempToken });
-      await deriveMasterKey(form.password, data.user?.encryptionSalt || pendingSalt);
-      setAuth(data.user, data.token);
-      navigate('/');
+      const { data } = await api.post('/auth/2fa/validate', useRecovery
+        ? { recoveryCode: form.totp.trim(), tempToken }
+        : { token: form.totp, tempToken });
+      await finishLogin(data);
     } catch (err) {
       toast.error(err.response?.data?.error || 'Código inválido');
     } finally {
@@ -345,9 +363,12 @@ export default function LoginPage() {
               <input
                 type="text"
                 value={form.totp}
-                onChange={e => setForm(f => ({ ...f, totp: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
-                placeholder="000000"
-                maxLength={6}
+                onChange={e => setForm(f => ({
+                  ...f,
+                  totp: useRecovery ? e.target.value.slice(0, 11) : e.target.value.replace(/\D/g, '').slice(0, 6),
+                }))}
+                placeholder={useRecovery ? 'xxxxx-xxxxx' : '000000'}
+                maxLength={useRecovery ? 11 : 6}
                 autoFocus
                 required
                 style={{
@@ -355,8 +376,8 @@ export default function LoginPage() {
                   padding: '0.875rem 1rem',
                   borderRadius: '10px',
                   textAlign: 'center',
-                  fontSize: '2rem',
-                  letterSpacing: '0.45em',
+                  fontSize: useRecovery ? '1.4rem' : '2rem',
+                  letterSpacing: useRecovery ? '0.15em' : '0.45em',
                   fontFamily: 'JetBrains Mono, monospace',
                   fontWeight: 500,
                   background: '#111111',
@@ -377,21 +398,32 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading || form.totp.length !== 6}
+                disabled={loading || !codeReady}
                 style={{
                   width: '100%', padding: '0.85rem', borderRadius: '12px',
                   fontWeight: 700, fontSize: '0.9rem', color: '#0D0D0D',
-                  background: (loading || form.totp.length !== 6)
+                  background: (loading || !codeReady)
                     ? 'rgba(199,140,0,0.3)'
                     : 'linear-gradient(135deg, #E7A300 0%, #C78C00 50%, #AD7B04 100%)',
                   border: 'none',
-                  cursor: (loading || form.totp.length !== 6) ? 'not-allowed' : 'pointer',
+                  cursor: (loading || !codeReady) ? 'not-allowed' : 'pointer',
                   boxShadow: '0 4px 20px rgba(199,140,0,0.25)',
                   fontFamily: 'Outfit, sans-serif',
                   transition: 'opacity 150ms ease, box-shadow 150ms ease',
                 }}
               >
                 {loading ? t('common.loading') : t('common.confirm')}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => { setUseRecovery(r => !r); setForm(f => ({ ...f, totp: '' })); }}
+                style={{
+                  width: '100%', padding: '0.4rem', background: 'none', border: 'none', cursor: 'pointer',
+                  fontSize: '0.8125rem', color: '#C78C00', fontFamily: 'Outfit, sans-serif',
+                }}
+              >
+                {useRecovery ? 'Usar o código do app autenticador' : 'Sem acesso ao app? Usar código de recuperação'}
               </button>
 
               <button
@@ -414,22 +446,22 @@ export default function LoginPage() {
         )}
       </div>
 
-      {/* Footer */}
-      <p className="animate-slideUp delay-300" style={{
+      {/* Footer: contato de suporte configurado em Configurações → Geral */}
+      {settings.supportEmail && <p className="animate-slideUp delay-300" style={{
         position: 'relative', marginTop: '1.5rem',
         fontSize: '0.75rem', color: '#333330', fontFamily: 'Outfit, sans-serif',
         textAlign: 'center',
       }}>
         Suporte:{' '}
         <a
-          href="mailto:VaultGuard2026@outlook.com"
+          href={`mailto:${settings.supportEmail}`}
           style={{ color: '#4A4A47', textDecoration: 'underline', textUnderlineOffset: '3px', transition: 'color 150ms ease' }}
           onMouseEnter={e => e.currentTarget.style.color = '#C78C00'}
           onMouseLeave={e => e.currentTarget.style.color = '#4A4A47'}
         >
-          VaultGuard2026@outlook.com
+          {settings.supportEmail}
         </a>
-      </p>
+      </p>}
     </div>
   );
 }

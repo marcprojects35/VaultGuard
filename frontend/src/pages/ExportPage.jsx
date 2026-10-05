@@ -6,8 +6,8 @@ import {
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-import { getMasterKey } from '../stores/authStore.js';
-import { encryptVault, decryptPassword } from '../utils/crypto.js';
+import { keyring } from '../stores/vaultStore.js';
+import { encryptVault } from '../utils/crypto.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Encrypted Vault Export
@@ -26,16 +26,25 @@ function VaultExportSection({ settings }) {
     setLoading(true);
     try {
       const { data } = await api.get('/credentials/vault-export');
-      const masterKey = getMasterKey();
+      await keyring.loadFolderKeys();
 
+      // Pastas pessoais de outros usuários (e legadas não migradas) não abrem
+      let unreadable = 0;
       const plainCredentials = await Promise.all(
         data.credentials.map(async (cred) => {
           let plainPassword = '';
-          try { plainPassword = await decryptPassword(cred.encryptedPass, masterKey); } catch { /* */ }
-          const { encryptedPass, ...rest } = cred;
-          return { ...rest, plainPassword };
+          let customFields = cred.customFields || [];
+          let notes = '';
+          try {
+            plainPassword = await keyring.decryptValue(cred, cred.encryptedPass);
+            customFields = await keyring.decryptCustomFields(cred, customFields);
+            notes = await keyring.decryptNotes(cred);
+          } catch { unreadable++; }
+          const { encryptedPass, wrappedKey, ...rest } = cred;
+          return { ...rest, notes, customFields, plainPassword };
         })
       );
+      if (unreadable) toast(`${unreadable} credencial(is) não puderam ser abertas e foram exportadas sem senha`, { icon: '⚠️' });
 
       const vaultData = {
         version: 1,
