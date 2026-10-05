@@ -4,8 +4,8 @@ import { Upload, FileText, AlertTriangle, CheckCircle, Download, X, RefreshCw, L
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-import { getMasterKey } from '../stores/authStore.js';
-import { encryptPassword, decryptVault } from '../utils/crypto.js';
+import { keyring, keyErrorMessage } from '../stores/vaultStore.js';
+import { decryptVault } from '../utils/crypto.js';
 
 const CSV_TEMPLATE = `Título,Usuário,Senha,URL,Tags,Notas
 Gmail Corporativo,usuario@empresa.com,SenhaSuperForte@123,https://gmail.com,"email;google","Conta corporativa principal"
@@ -80,19 +80,23 @@ function VaultRestoreSection({ settings }) {
     if (!preview || !targetFolderId) { toast.error('Selecione uma pasta de destino'); return; }
     setImporting(true);
     try {
-      const masterKey = getMasterKey();
+      // Cada credencial ganha chave própria, cifrada com a chave da pasta de destino
+      await keyring.getFolderKeyEntry(targetFolderId);
       const rows = await Promise.all(
         (preview.credentials || []).map(async (cred) => {
-          let encryptedPass = '';
-          try { encryptedPass = await encryptPassword(cred.plainPassword || '', masterKey); } catch { encryptedPass = ''; }
+          const { payload } = await keyring.buildCredentialPayload({
+            folderId: targetFolderId,
+            password: cred.plainPassword || '',
+            customFields: cred.customFields || [],
+            notes: cred.notes || '',
+          });
           return {
             title: cred.title,
             username: cred.username,
-            encryptedPass,
             url: cred.url,
             notes: cred.notes,
             tags: Array.isArray(cred.tags) ? cred.tags.join(';') : (cred.tags || ''),
-            customFields: cred.customFields || [],
+            ...payload,
           };
         })
       );
@@ -101,7 +105,7 @@ function VaultRestoreSection({ settings }) {
       toast.success(`${data.imported} credenciais restauradas!`);
       if (data.errors?.length) toast.error(`${data.errors.length} erros durante a restauração`);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Erro ao restaurar');
+      toast.error(keyErrorMessage(err, 'Erro ao restaurar'));
     } finally {
       setImporting(false);
     }
@@ -285,11 +289,13 @@ export default function ImportPage() {
 
   const importMutation = useMutation({
     mutationFn: async () => {
-      const masterKey = getMasterKey();
-      const rows = await Promise.all(parsedRows.map(async ({ password, ...row }) => ({
-        ...row,
-        encryptedPass: await encryptPassword(password || '', masterKey),
-      })));
+      await keyring.getFolderKeyEntry(selectedFolder);
+      const rows = await Promise.all(parsedRows.map(async ({ password, customFields, ...row }) => {
+        const { payload } = await keyring.buildCredentialPayload({
+          folderId: selectedFolder, password: password || '', customFields: customFields || [], notes: row.notes || '',
+        });
+        return { ...row, ...payload };
+      }));
       return api.post('/credentials/import', { folderId: selectedFolder, rows });
     },
     onSuccess: (res) => {
@@ -303,7 +309,7 @@ export default function ImportPage() {
         toast.error(`${res.data.errors.length} erro(s) durante importação`);
       }
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao importar'),
+    onError: (e) => toast.error(keyErrorMessage(e, 'Erro ao importar')),
   });
 
   const parseCSV = (text) => {

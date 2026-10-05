@@ -4,6 +4,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { PrismaClient } from '@prisma/client';
 import { createAuditLog } from '../services/audit.js';
+import { pruneFolderKeys } from '../services/keys.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -159,7 +160,11 @@ router.delete('/:key', authenticate, requireAdmin, async (req, res, next) => {
       await prisma.user.updateMany({ where: { role: role.key }, data: { role: reassignTo } });
     }
 
+    // Permissões de pasta do cargo excluído deixam de valer
+    await prisma.folderPermission.deleteMany({ where: { role: role.key } });
     await prisma.role.delete({ where: { key: role.key } });
+    // Cargo mudou = pastas visíveis mudaram: tira cópias de chave de quem perdeu acesso
+    await pruneFolderKeys();
 
     await createAuditLog(req.user.id, 'role.delete', role.key, 'Role',
       { reassignedUsers: usersCount, reassignTo: req.body.reassignTo || null }, req.ip);

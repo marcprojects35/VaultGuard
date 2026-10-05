@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { PrismaClient } from '@prisma/client';
+import { getAccessibleFolderIds } from '../services/permissions.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -12,22 +13,8 @@ router.get('/security', authenticate, async (req, res, next) => {
     const userRole = req.user.role;
     const isAdmin = userRole === 'ADMINISTRADOR';
 
-    // Get accessible folder IDs
-    let folderIds;
-    if (isAdmin) {
-      const all = await prisma.folder.findMany({ select: { id: true } });
-      folderIds = all.map(f => f.id);
-    } else {
-      const perms = await prisma.folderPermission.findMany({
-        where: { canView: true, OR: [{ userId }, { role: userRole }] },
-        select: { folderId: true }
-      });
-      const personal = await prisma.folder.findMany({
-        where: { isPersonal: true, ownerId: userId },
-        select: { id: true }
-      });
-      folderIds = [...new Set([...perms.map(p => p.folderId), ...personal.map(f => f.id)])];
-    }
+    // Mesmas pastas da listagem do cofre (corporativas, equipes e pessoal incluídas)
+    const folderIds = await getAccessibleFolderIds(userId, userRole);
 
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);

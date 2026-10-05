@@ -65,7 +65,7 @@ validate_email() {
 
 validate_password() {
     local p="$1"
-    [[ ${#p} -ge 8 ]] && \
+    [[ ${#p} -ge 10 ]] && \
     [[ "$p" =~ [A-Z] ]] && \
     [[ "$p" =~ [a-z] ]] && \
     [[ "$p" =~ [0-9] ]]
@@ -222,7 +222,7 @@ while true; do
         fi
         err "As senhas não coincidem. Tente novamente."
     else
-        err "Senha fraca. Mínimo: 8 chars, maiúscula, minúscula e número."
+        err "Senha fraca. Mínimo: 10 caracteres, maiúscula, minúscula e número."
     fi
 done
 

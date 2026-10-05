@@ -61,7 +61,8 @@ router.post('/', authenticate,
       const { folderId, message } = req.body;
 
       const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-      if (!folder) return res.status(404).json({ error: 'Folder not found' });
+      // Pasta pessoal não é solicitável (mesma resposta de inexistente, para não revelar)
+      if (!folder || folder.isPersonal) return res.status(404).json({ error: 'Folder not found' });
 
       // Check if already has access
       const existingPerm = await prisma.folderPermission.findFirst({

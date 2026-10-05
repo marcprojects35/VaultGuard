@@ -85,7 +85,8 @@ export default function AppearancePage() {
     applyTheme({ ...settings, ...next });
   };
 
-  const ColorPicker = ({ label, field, description }) => (
+  // Chamado como função (não como <Componente />): um componente declarado dentro do render seria recriado a cada tecla e o campo perderia o foco
+  const renderColorPicker = ({ label, field, description }) => (
     <div className="flex items-center justify-between py-3 border-b border-[var(--color-border)]">
       <div>
         <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{label}</div>
@@ -217,8 +218,8 @@ export default function AppearancePage() {
           </button>
         </div>
 
-        <ColorPicker label="Cor Primária (Dourado)" field="primaryColor" description="Botões, links, destaques" />
-        <ColorPicker label="Cor de Acento (Dourado Escuro)" field="accentColor" description="Gradientes e bordas ativas" />
+        {renderColorPicker({ label: 'Cor Primária (Dourado)', field: 'primaryColor', description: 'Botões, links, destaques' })}
+        {renderColorPicker({ label: 'Cor de Acento (Dourado Escuro)', field: 'accentColor', description: 'Gradientes e bordas ativas' })}
 
         {/* Preview */}
         <div className="mt-5 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)]">

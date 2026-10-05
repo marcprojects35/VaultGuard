@@ -7,9 +7,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
+import { safeUrl } from '../utils/safeUrl.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-import { decryptPassword } from '../utils/crypto.js';
-import { getMasterKey } from '../stores/authStore.js';
+import { keyring, keyErrorMessage } from '../stores/vaultStore.js';
 import { getStrengthColor } from '../utils/crypto.js';
 
 function ExpiryBadge({ expiresAt }) {
@@ -76,15 +76,15 @@ export default function SearchPage() {
     try {
       if (field === 'password') {
         const { data } = await api.get(`/credentials/${credId}`);
-        const plain = await decryptPassword(data.encryptedPass, getMasterKey());
+        const plain = await keyring.decryptValue(data, data.encryptedPass);
         await navigator.clipboard.writeText(plain);
       } else {
         await navigator.clipboard.writeText(plainValue);
       }
       setCopied(`${credId}-${field}`);
       setTimeout(() => setCopied(null), 2000);
-    } catch {
-      toast.error('Erro ao copiar');
+    } catch (e) {
+      toast.error(keyErrorMessage(e, 'Erro ao copiar'));
     }
   };
 
@@ -254,11 +254,7 @@ export default function SearchPage() {
 
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {cred.url ? (
-                          <img src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(cred.url).hostname; } catch { return ''; } })()}&sz=16`}
-                            className="w-4 h-4 flex-shrink-0"
-                            onError={e => { e.target.style.display = 'none'; }} />
-                        ) : <Key className="w-4 h-4 flex-shrink-0" style={{ color: settings.primaryColor }} />}
+                        <Key className="w-4 h-4 flex-shrink-0" style={{ color: settings.primaryColor }} />
                         <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{cred.title}</span>
                       </div>
                     </td>
@@ -291,7 +287,7 @@ export default function SearchPage() {
 
                     <td className="px-4 py-3 max-w-[140px]">
                       {cred.url ? (
-                        <a href={cred.url} target="_blank" rel="noopener noreferrer"
+                        <a href={safeUrl(cred.url)} target="_blank" rel="noopener noreferrer"
                           className="text-sm truncate block hover:underline"
                           style={{ color: settings.primaryColor }}>
                           {cred.url.replace(/^https?:\/\//, '')}
@@ -333,7 +329,7 @@ export default function SearchPage() {
                           {copied === `${cred.id}-password` ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
                         {cred.url && (
-                          <a href={cred.url} target="_blank" rel="noopener noreferrer"
+                          <a href={safeUrl(cred.url)} target="_blank" rel="noopener noreferrer"
                             className="p-1.5 rounded-lg hover:bg-white/5 transition-colors"
                             style={{ color: 'var(--color-muted)' }}
                             title="Abrir URL">

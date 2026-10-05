@@ -1,6 +1,13 @@
 #!/bin/sh
 set -e
 
+# Roda como usuário sem privilégios: ajusta dono dos volumes (que podem ter
+# sido criados como root em versões antigas) e reexecuta como "node"
+if [ "$(id -u)" = "0" ]; then
+    chown -R node:node /app/uploads /app/logs
+    exec setpriv --reuid=node --regid=node --init-groups "$0" "$@"
+fi
+
 echo "=== VaultGuard startup ==="
 
 # Aguarda o banco aceitar conexões (segurança extra além do healthcheck)

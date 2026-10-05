@@ -6,7 +6,8 @@ const prisma = new PrismaClient();
 async function main() {
   const companyName    = process.env.COMPANY_NAME    || 'VaultGuard';
   const adminEmail     = process.env.ADMIN_EMAIL     || 'admin@vaultguard.local';
-  const adminPassword  = process.env.ADMIN_PASSWORD  || 'Admin@123456';
+  // Sem senha padrão: um admin com senha conhecida seria a porta de entrada mais fácil
+  const adminPassword  = process.env.ADMIN_PASSWORD;
 
   console.log(`Configurando "${companyName}"...`);
 
@@ -37,7 +38,12 @@ async function main() {
     }
   });
 
-  const adminHash = await bcrypt.hash(adminPassword, 12);
+  const adminExists = await prisma.user.findUnique({ where: { email: adminEmail } });
+  if (!adminExists && (!adminPassword || adminPassword.length < 10)) {
+    console.log('ADMIN_PASSWORD ausente ou com menos de 10 caracteres: administrador inicial NÃO criado.');
+    return;
+  }
+  const adminHash = await bcrypt.hash(adminPassword || 'unused', 12);
   const username  = adminEmail.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 30) || 'admin';
 
   const admin = await prisma.user.upsert({

@@ -15,7 +15,7 @@ export default function ApiTokensPage() {
   const [activeTab, setActiveTab] = useState('personal');
   const [showCreate, setShowCreate] = useState(false);
   const [newToken, setNewToken] = useState(null);
-  const [form, setForm] = useState({ name: '', expiresInDays: '' });
+  const [form, setForm] = useState({ name: '', expiresInDays: '', write: true });
   const [copied, setCopied] = useState(false);
 
   /* ── Meus tokens (usuário atual) ── */
@@ -34,6 +34,7 @@ export default function ApiTokensPage() {
   const createMutation = useMutation({
     mutationFn: (data) => api.post('/tokens', {
       name: data.name,
+      scopes: data.write ? ['read', 'write'] : ['read'],
       expiresAt: data.expiresInDays
         ? new Date(Date.now() + Number(data.expiresInDays) * 86400000).toISOString()
         : undefined,
@@ -43,7 +44,7 @@ export default function ApiTokensPage() {
       qc.invalidateQueries({ queryKey: ['api-tokens-all'] });
       setNewToken(res.data.token);
       setShowCreate(false);
-      setForm({ name: '', expiresInDays: '' });
+      setForm({ name: '', expiresInDays: '', write: true });
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao criar token'),
   });
@@ -287,6 +288,10 @@ export default function ApiTokensPage() {
                   min="1"
                 />
               </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer" style={{ color: 'var(--color-text-muted)' }}>
+                <input type="checkbox" checked={form.write} onChange={e => setForm({ ...form, write: e.target.checked })} />
+                Permitir escrita (necessário para salvar senhas pela extensão)
+              </label>
             </div>
             <div className="flex gap-3 mt-6">
               <button

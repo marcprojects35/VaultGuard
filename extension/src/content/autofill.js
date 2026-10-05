@@ -1,324 +1,461 @@
 // VaultGuard Content Script
+//
+// Roda só no frame principal. Não vê token, chaves nem senhas guardadas: pede
+// ao service worker, que confere o domínio da aba. Tudo que é desenhado na
+// página fica num shadow root fechado (o site não lê nem clica por script).
 
 (function () {
   'use strict';
+  if (window.top !== window) return;
 
-  const STORAGE_SERVER_URL = 'vaultguard_server_url';
-  const STORAGE_API_TOKEN  = 'vaultguard_api_token';
-  const STORAGE_MASTER_KEY = 'vaultguard_master_key';
-  const PENDING_SAVE_KEY   = 'vaultguard_pending_save';
+  const send = (msg) => new Promise(resolve => {
+    try {
+      chrome.runtime.sendMessage(msg, (r) => { void chrome.runtime.lastError; resolve(r ?? null); });
+    } catch { resolve(null); }
+  });
 
-  // ── Crypto (espelho de frontend/src/utils/crypto.js) ──────────────────────
-  const ALGO = 'AES-GCM';
+  let page = { configured: false, unlocked: false, autofill: false, logins: [], certs: [], stepUsername: '' };
+  let autofilled = false;
+  let promptShown = false;
+  let userTyped = false; // a pessoa já digitou em algum campo desta página
 
-  async function decryptPassword(encryptedJson, masterKey) {
-    if (!encryptedJson) return '';
-    let parsed;
-    try { parsed = JSON.parse(encryptedJson); } catch { return encryptedJson; }
-    if (parsed.v === 0) return decodeURIComponent(escape(atob(parsed.plain)));
-    if (!masterKey) return '';
-    const raw  = Uint8Array.from(atob(masterKey), c => c.charCodeAt(0));
-    const key  = await crypto.subtle.importKey('raw', raw, { name: ALGO }, false, ['decrypt']);
-    const iv   = Uint8Array.from(atob(parsed.iv), c => c.charCodeAt(0));
-    const ct   = Uint8Array.from(atob(parsed.ciphertext), c => c.charCodeAt(0));
-    const dec  = await crypto.subtle.decrypt({ name: ALGO, iv }, key, ct);
-    return new TextDecoder().decode(dec);
+  // ─── Campos ────────────────────────────────────────────────────────────────
+
+  const USER_HINT = /user|usu[aá]rio|email|e-mail|login|conta|account|cpf|cnpj|documento|matr[ií]cula/i;
+
+  function isVisible(el) {
+    if (!el || el.disabled || el.readOnly) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 4 || r.height < 4) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.05;
   }
 
-  // ── Buscar e descriptografar credencial ───────────────────────────────────
-  async function fetchAndFill(credId, passwordField, usernameField) {
-    const stored = await chrome.storage.local.get([STORAGE_SERVER_URL, STORAGE_API_TOKEN, STORAGE_MASTER_KEY]);
-    const { [STORAGE_SERVER_URL]: serverUrl, [STORAGE_API_TOKEN]: apiToken, [STORAGE_MASTER_KEY]: masterKey } = stored;
-    if (!serverUrl || !apiToken) return;
+  function passwordFields(root = document) {
+    return [...root.querySelectorAll('input[type="password"]')].filter(isVisible);
+  }
 
-    const res = await fetch(`${serverUrl}/api/credentials/${credId}`, {
-      headers: { 'Authorization': `Bearer ${apiToken}` }
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const detail = await res.json();
+  // Cadastro ou troca de senha (campo de senha nova / mais de um campo de senha)
+  function isNewPasswordForm() {
+    const pws = passwordFields();
+    return pws.length > 1 || pws.some(el => (el.autocomplete || '').toLowerCase() === 'new-password');
+  }
 
-    const plain = await decryptPassword(detail.encryptedPass, masterKey);
-    if (detail.username && usernameField) setNativeInputValue(usernameField, detail.username);
-    if (plain && passwordField) setNativeInputValue(passwordField, plain);
+  // Senha a guardar: em "trocar senha" (atual + nova + confirmação) é a nova,
+  // reconhecida pelo autocomplete ou por aparecer repetida na confirmação
+  function chosenPassword() {
+    const filled = passwordFields().filter(el => el.value);
+    if (filled.length <= 1) return filled[0] || null;
+    const byHint = filled.find(el => (el.autocomplete || '').toLowerCase() === 'new-password');
+    if (byHint) return byHint;
+    const repeated = filled.find((el, i) => filled.some((o, j) => j !== i && o.value === el.value));
+    return repeated || filled[filled.length - 1];
+  }
 
-    [usernameField, passwordField].filter(Boolean).forEach(el => {
+  function isUsernameLike(el) {
+    if (!el || el.tagName !== 'INPUT' || !isVisible(el)) return false;
+    const type = (el.type || 'text').toLowerCase();
+    if (!['text', 'email', 'tel', ''].includes(type)) return false;
+    const ac = (el.autocomplete || '').toLowerCase();
+    if (ac === 'username' || ac === 'email') return true;
+    return USER_HINT.test(`${el.name} ${el.id} ${el.placeholder} ${el.getAttribute('aria-label') || ''}`);
+  }
+
+  // Campo de usuário que acompanha um campo de senha (o mais próximo antes dele)
+  function usernameFieldFor(pw) {
+    const scope = pw.closest('form') || document;
+    const inputs = [...scope.querySelectorAll('input')].filter(el => el !== pw && isVisible(el));
+    const before = inputs.filter(el => el.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const typed = (list) => list.filter(el => ['text', 'email', 'tel', ''].includes((el.type || 'text').toLowerCase()));
+    return [...before].reverse().find(isUsernameLike) || typed(before).pop() || inputs.find(isUsernameLike) || null;
+  }
+
+  // Tela só de usuário (1ª etapa de login em duas telas)
+  function loneUsernameField() {
+    if (passwordFields().length) return null;
+    return [...document.querySelectorAll('input')].find(isUsernameLike) || null;
+  }
+
+  // Foco causado pelo próprio preenchimento não abre a lista de credenciais
+  let filling = false;
+
+  // focus=false no preenchimento automático: não tira o cursor de onde o usuário está
+  function setNativeInputValue(el, value, focus = true) {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    filling = true;
+    if (focus) el.focus();
+    setTimeout(() => { filling = false; }, 300);
+    if (setter) setter.call(el, value); else el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function highlight(...els) {
+    els.filter(Boolean).forEach(el => {
       el.style.transition = 'outline 0.3s';
       el.style.outline = '2px solid #C78C00';
       setTimeout(() => { el.style.outline = ''; }, 1500);
     });
   }
 
-  // ── Mensagens do popup ─────────────────────────────────────────────────────
+  async function fillCredential(credId, { interactive = true, passwordOnly = false } = {}) {
+    const pw = passwordFields()[0] || null;
+    const user = pw ? usernameFieldFor(pw) : loneUsernameField();
+    if (!pw && !user) return false;
+    const result = await send({ type: 'FILL_CREDENTIAL', credId, interactive, usernameOnly: !pw });
+    if (!result || result.error) return false;
+    // Automático: a resposta leva um instante; se nesse meio-tempo a pessoa
+    // começou a digitar, não sobrescreve o que ela escreveu
+    if (!interactive && (userTyped || pw?.value || (!passwordOnly && user?.value))) return false;
+    if (user && result.username && !passwordOnly) setNativeInputValue(user, result.username, interactive);
+    if (pw && result.password) setNativeInputValue(pw, result.password, interactive);
+    highlight(user, pw);
+    if (!pw && result.username) send({ type: 'REMEMBER_USERNAME', username: result.username });
+    return true;
+  }
+
+  // ─── Shadow root fechado ───────────────────────────────────────────────────
+
+  const BASE_CSS = `
+    *{box-sizing:border-box;font-family:system-ui,-apple-system,'Segoe UI',sans-serif}
+    .card{background:#111111;border:1px solid #C78C00;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.6);color:#e2e8f0;overflow:hidden;animation:pop .18s ease}
+    @keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+    .head{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0D0D0D;border-bottom:1px solid #1E1E1E;font-size:12px;font-weight:600;color:#94a3b8}
+    .head b{color:#E7A300;font-weight:600}
+    .x{margin-left:auto;background:none;border:none;color:#555552;font-size:14px;cursor:pointer;padding:2px 4px}
+    .x:hover{color:#f87171}
+    .item{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #1A1A1A;cursor:pointer}
+    .item:last-child{border-bottom:none}
+    .item:hover{background:#1A1A1A}
+    .av{width:26px;height:26px;border-radius:6px;background:#C78C0022;color:#E7A300;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+    .info{flex:1;min-width:0}
+    .t{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .s{font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+    .body{padding:12px 14px}
+    .msg{font-size:13px;margin-bottom:10px;line-height:1.4}
+    .msg small{display:block;color:#64748b;font-size:11px;margin-top:2px}
+    select{width:100%;background:#1A1A1A;border:1px solid #2A2A2A;border-radius:8px;padding:7px 10px;color:#e2e8f0;font-size:12px;margin-bottom:10px;outline:none}
+    .row{display:flex;gap:8px;align-items:center}
+    .btn{border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:default}
+    .pri{background:linear-gradient(135deg,#C78C00,#AD7B04);color:#fff}
+    .sec{background:none;border:1px solid #2A2A2A;color:#94a3b8}
+    .link{background:none;border:none;color:#64748b;font-size:11px;cursor:pointer;margin-left:auto;text-decoration:underline}
+    .ok{color:#22c55e;font-size:13px;padding:12px 14px}
+    .err{color:#f87171;font-size:11px;margin-bottom:8px}
+  `;
+
+  function esc(str) {
+    return String(str ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  const initial = (s) => esc(String(s || '?').trim().charAt(0).toUpperCase() || '?');
+
+  function makeLayer(style) {
+    const host = document.createElement('div');
+    host.style.cssText = style;
+    const shadow = host.attachShadow({ mode: 'closed' });
+    const css = document.createElement('style');
+    css.textContent = BASE_CSS;
+    shadow.appendChild(css);
+    document.documentElement.appendChild(host);
+    return { host, shadow };
+  }
+
+  // Ação só com clique real do usuário (a página não consegue disparar)
+  function onTrusted(el, fn) {
+    el?.addEventListener('click', (e) => { if (e.isTrusted) fn(e); });
+  }
+
+  // ─── Lista de credenciais junto ao campo ───────────────────────────────────
+
+  let dropdown = null;
+  function closeDropdown() { dropdown?.host.remove(); dropdown = null; }
+
+  function showDropdown(field) {
+    closeDropdown();
+    if (!page.logins.length) return;
+    const r = field.getBoundingClientRect();
+    const width = Math.max(260, Math.min(340, r.width));
+    const height = Math.min(page.logins.length * 46 + 40, 300);
+    const below = window.innerHeight - r.bottom > height + 8;
+    const top = (below ? r.bottom + 4 : r.top - height - 4) + window.scrollY;
+    const left = Math.max(8, Math.min(r.left + window.scrollX, window.scrollX + window.innerWidth - width - 8));
+
+    dropdown = makeLayer(`position:absolute;top:${top}px;left:${left}px;width:${width}px;z-index:2147483647`);
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="head">VaultGuard <span style="font-weight:400">· ${esc(location.hostname)}</span><button class="x" title="Fechar">✕</button></div>
+      <div style="max-height:260px;overflow-y:auto">
+        ${page.logins.map(c => `
+          <div class="item" data-id="${esc(c.id)}">
+            <div class="av">${initial(c.title)}</div>
+            <div class="info"><div class="t">${esc(c.username || c.title)}</div><div class="s">${esc(c.title)}</div></div>
+          </div>`).join('')}
+      </div>`;
+    dropdown.shadow.appendChild(card);
+    onTrusted(card.querySelector('.x'), closeDropdown);
+    card.querySelectorAll('.item').forEach(item => onTrusted(item, async () => {
+      item.style.opacity = '0.5';
+      await fillCredential(item.dataset.id);
+      closeDropdown();
+    }));
+  }
+
+  document.addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (filling || !(el instanceof HTMLInputElement) || !page.logins.length) return;
+    const isPw = el.type === 'password';
+    if (!isPw && !(isUsernameLike(el) && (passwordFields().length || loneUsernameField() === el))) return;
+    // Campo já preenchido: a lista só abre com clique (ver mousedown)
+    if (el.value) return;
+    setTimeout(() => { if (!filling && !el.value && document.activeElement === el) showDropdown(el); }, 120);
+  }, true);
+
+  document.addEventListener('mousedown', (e) => {
+    if (dropdown && e.target !== dropdown.host) closeDropdown();
+    // Clique num campo de login já preenchido (ex.: após o preenchimento
+    // automático) abre a lista para trocar de conta
+    const el = e.target;
+    if (e.isTrusted && el instanceof HTMLInputElement && el.value && page.logins.length &&
+        (el.type === 'password' || isUsernameLike(el))) {
+      setTimeout(() => showDropdown(el), 50);
+    }
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDropdown(); }, true);
+  // Digitou no campo: a pessoa não quer a lista (como no Chrome) e ela não
+  // pode ficar por cima do botão de entrar
+  // Também marca que a pessoa já está digitando: o preenchimento automático
+  // (que pode chegar um pouco depois) não sobrescreve o que ela escreveu
+  document.addEventListener('input', (e) => {
+    if (!e.isTrusted || filling) return;
+    userTyped = true;
+    closeDropdown();
+  }, true);
+  // Posição absoluta fica errada ao rolar ou redimensionar: fecha
+  window.addEventListener('scroll', closeDropdown, { passive: true, capture: true });
+  window.addEventListener('resize', closeDropdown, { passive: true });
+
+  // ─── Pedido de salvar / atualizar senha ────────────────────────────────────
+
+  let promptLayer = null;
+  function closePrompt() { promptLayer?.host.remove(); promptLayer = null; }
+
+  const FOLDER_ICON = { personal: '🔒', team: '👥', shared: '🏢' };
+
+  function showPrompt(p) {
+    if (!p || promptShown) return;
+    promptShown = true;
+    closeDropdown();
+    closePrompt();
+    promptLayer = makeLayer('position:fixed;top:16px;right:16px;width:340px;z-index:2147483647');
+    const card = document.createElement('div');
+    card.className = 'card';
+    const who = esc(p.username || 'sem usuário');
+
+    if (p.type === 'update') {
+      card.innerHTML = `
+        <div class="head">VaultGuard<button class="x" title="Fechar">✕</button></div>
+        <div class="body">
+          <div class="msg">Atualizar a senha salva?<small>${who} · ${esc(p.credTitle || p.host)}</small></div>
+          <div class="err" hidden></div>
+          <div class="row"><button class="btn pri act">Atualizar</button><button class="btn sec no">Agora não</button></div>
+        </div>`;
+    } else {
+      const folders = p.folders || [];
+      const selected = folders.some(f => f.id === p.lastFolderId) ? p.lastFolderId : folders[0]?.id;
+      card.innerHTML = `
+        <div class="head">VaultGuard<button class="x" title="Fechar">✕</button></div>
+        <div class="body">
+          <div class="msg">Salvar senha de <b>${esc(p.host)}</b>?<small>${who}</small></div>
+          ${folders.length ? `
+            <select class="folder" title="Pasta">
+              ${folders.map(f => `<option value="${esc(f.id)}" ${f.id === selected ? 'selected' : ''}>${FOLDER_ICON[f.type] || '📁'} ${esc(f.path)}</option>`).join('')}
+            </select>` : '<div class="err">Você não tem nenhuma pasta onde possa salvar.</div>'}
+          <div class="err" hidden></div>
+          <div class="row">
+            <button class="btn pri act" ${folders.length ? '' : 'disabled'}>${p.locked ? 'Desbloquear e salvar' : 'Salvar'}</button>
+            <button class="btn sec no">Agora não</button>
+            <button class="link never">Nunca neste site</button>
+          </div>
+        </div>`;
+    }
+    promptLayer.shadow.appendChild(card);
+    const errBoxes = card.querySelectorAll('.err');
+    const errBox = errBoxes[errBoxes.length - 1];
+    const done = (text) => {
+      card.innerHTML = `<div class="ok">✓ ${esc(text)}</div>`;
+      setTimeout(closePrompt, 1800);
+    };
+
+    onTrusted(card.querySelector('.x'), () => { send({ type: 'DISMISS_PROMPT' }); closePrompt(); });
+    onTrusted(card.querySelector('.no'), () => { send({ type: 'DISMISS_PROMPT' }); closePrompt(); });
+    onTrusted(card.querySelector('.never'), () => { send({ type: 'NEVER_SAVE' }); closePrompt(); });
+    onTrusted(card.querySelector('.act'), async (e) => {
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      const r = p.type === 'update'
+        ? await send({ type: 'UPDATE_PENDING' })
+        : await send({ type: 'SAVE_PENDING', folderId: card.querySelector('.folder')?.value });
+      if (r?.ok) return done(p.type === 'update' ? 'Senha atualizada no VaultGuard' : 'Senha salva no VaultGuard');
+      if (r?.needsUnlock) return done('Desbloqueie o cofre na janela do VaultGuard para concluir');
+      btn.disabled = false;
+      errBox.hidden = false;
+      errBox.textContent = r?.error || 'Não foi possível concluir';
+    });
+
+    // Some sozinho depois de um tempo, sem descartar (ainda aparece na próxima página)
+    setTimeout(() => { if (promptLayer?.shadow.contains(card)) closePrompt(); }, 45000);
+  }
+
+  // ─── Aviso de certificado digital ──────────────────────────────────────────
+
+  function showCertBanner(certs) {
+    if (!certs.length) return;
+    const layer = makeLayer('position:fixed;bottom:16px;right:16px;width:340px;z-index:2147483646');
+    const card = document.createElement('div');
+    card.className = 'card';
+    // Validade é data sem hora (meia-noite UTC): exibir em UTC para não voltar um dia
+    const fmt = (d) => { try { return new Date(d).toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch { return ''; } };
+    card.innerHTML = `
+      <div class="head">🔐 Certificado digital no VaultGuard<button class="x" title="Fechar">✕</button></div>
+      ${certs.map(c => `
+        <div class="item" data-id="${esc(c.id)}">
+          <div class="av">🔐</div>
+          <div class="info"><div class="t">${esc(c.title)}</div><div class="s">${esc(c.username)}${c.expiresAt ? ` · vence ${esc(fmt(c.expiresAt))}` : ''}</div></div>
+          <button class="btn pri">Abrir</button>
+        </div>`).join('')}`;
+    layer.shadow.appendChild(card);
+    onTrusted(card.querySelector('.x'), () => { send({ type: 'DISMISS_CERT' }); layer.host.remove(); });
+    card.querySelectorAll('.item').forEach(item => onTrusted(item, () => send({ type: 'OPEN_POPUP', view: 'certs', credId: item.dataset.id })));
+  }
+
+  // ─── Captura do login (formulário, botão por JavaScript, Enter) ────────────
+
+  let lastCapture = { key: '', at: 0 };
+
+  function capture() {
+    if (!page.configured) return;
+    const pw = chosenPassword();
+    if (!pw) {
+      // 1ª etapa (só usuário): guarda para quando a senha for pedida
+      const user = loneUsernameField();
+      if (user?.value) send({ type: 'REMEMBER_USERNAME', username: user.value });
+      return;
+    }
+    // Na troca de senha o campo de usuário costuma não existir: fica vazio e o
+    // service worker usa o da credencial salva do site
+    const user = usernameFieldFor(passwordFields()[0] || pw);
+    const username = user?.value || '';
+    const key = `${username}\u0000${pw.value}`;
+    if (key === lastCapture.key && Date.now() - lastCapture.at < 5000) return;
+    lastCapture = { key, at: Date.now() };
+
+    const typed = pw.value;
+    send({ type: 'CAPTURE_LOGIN', username, password: typed, title: document.title }).then(prompt => {
+      if (!prompt) return;
+      // Sites que não recarregam a página (SPA): se o campo de senha continua
+      // na tela com o mesmo valor, o login provavelmente falhou (senha errada)
+      // e não oferece salvar. Se a página navegar, a próxima mostra o aviso.
+      setTimeout(() => {
+        if (pw.isConnected && isVisible(pw) && pw.value === typed) { send({ type: 'DISMISS_PROMPT' }); return; }
+        showPrompt(prompt);
+      }, 1500);
+    });
+  }
+
+  document.addEventListener('submit', capture, true);
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted) return;
+    const btn = e.target.closest?.('button, input[type="submit"], input[type="button"], [role="button"], a');
+    if (!btn) return;
+    const label = `${btn.innerText || btn.value || ''} ${btn.id} ${btn.name || ''} ${btn.className || ''}`.toLowerCase();
+    if (btn.type === 'submit' || /entrar|login|log in|sign in|acessar|continuar|avançar|pr[oó]ximo|next|continue|enviar|confirmar/.test(label)) {
+      capture();
+    }
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.isTrusted && e.target instanceof HTMLInputElement) capture();
+  }, true);
+
+  // ─── Mensagens do popup ────────────────────────────────────────────────────
+
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (sender.id !== chrome.runtime.id) return;
     if (message.type === 'AUTOFILL') {
-      const { usernameField, passwordField } = findLoginFields();
-      if (message.username && usernameField) setNativeInputValue(usernameField, message.username);
-      if (message.password && passwordField) setNativeInputValue(passwordField, message.password);
-      [usernameField, passwordField].filter(Boolean).forEach(el => {
-        el.style.transition = 'outline 0.3s';
-        el.style.outline = '2px solid #C78C00';
-        setTimeout(() => { el.style.outline = ''; }, 1500);
-      });
+      const pw = passwordFields()[0];
+      const user = pw ? usernameFieldFor(pw) : loneUsernameField();
+      if (message.username && user) setNativeInputValue(user, message.username);
+      if (message.password && pw) setNativeInputValue(pw, message.password);
+      highlight(user, pw);
       sendResponse({ success: true });
     }
     if (message.type === 'GET_CREDENTIALS') {
-      sendResponse(getPageCredentials());
+      const pw = passwordFields()[0];
+      const user = pw ? usernameFieldFor(pw) : loneUsernameField();
+      sendResponse({ username: user?.value || '', password: pw?.value || '' });
     }
     return true;
   });
 
-  // ── Simula digitação real (React/Vue/Angular) ─────────────────────────────
-  function setNativeInputValue(el, value) {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-    if (setter) setter.call(el, value); else el.value = value;
-    el.dispatchEvent(new Event('input',  { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }
+  // ─── Início ────────────────────────────────────────────────────────────────
 
-  // ── Detectar campos de login ───────────────────────────────────────────────
-  function findLoginFields(root) {
-    const container = root || document;
-    const passwordFields = Array.from(container.querySelectorAll('input[type="password"]'))
-      .filter(isVisible);
-    if (!passwordFields.length) return {};
-    const passwordField = passwordFields[0];
-    const form = passwordField.closest('form');
-    const selectors = [
-      'input[type="email"]',
-      'input[type="text"][name*="user"]', 'input[type="text"][name*="email"]',
-      'input[type="text"][name*="login"]', 'input[autocomplete="username"]',
-      'input[autocomplete="email"]', 'input[id*="user"]', 'input[id*="email"]',
-      'input[id*="login"]', 'input[type="text"]',
-    ];
-    let usernameField = null;
-    for (const sel of selectors) {
-      const found = Array.from((form || container).querySelectorAll(sel))
-        .filter(el => isVisible(el) && el !== passwordField);
-      if (found.length) { usernameField = found[0]; break; }
-    }
-    return { usernameField, passwordField };
-  }
-
-  function isVisible(el) {
-    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length) &&
-      getComputedStyle(el).visibility !== 'hidden' &&
-      getComputedStyle(el).display !== 'none';
-  }
-
-  function getPageCredentials() {
-    const { usernameField, passwordField } = findLoginFields();
-    return { username: usernameField?.value || '', password: passwordField?.value || '' };
-  }
-
-  // ── Popup de autofill na página ───────────────────────────────────────────
-  let autofillPopupVisible = false;
-
-  function removeAutofillPopup() {
-    document.querySelectorAll('.vg-autofill-popup').forEach(el => el.remove());
-    autofillPopupVisible = false;
-  }
-
-  async function showAutofillPopup(creds, passwordField) {
-    removeAutofillPopup();
-    if (!creds.length) return;
-
-    autofillPopupVisible = true;
-    const { usernameField } = findLoginFields();
-
-    // Posição: abaixo do campo de senha
-    const rect = passwordField.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const popupHeight = Math.min(creds.length * 64 + 60, 300);
-    const top = spaceBelow > popupHeight + 8
-      ? rect.bottom + window.scrollY + 6
-      : rect.top  + window.scrollY - popupHeight - 6;
-    const left = Math.max(8, Math.min(rect.left + window.scrollX, window.innerWidth - 360 - 8));
-
-    // Injetar estilos uma vez
-    if (!document.getElementById('vg-styles')) {
-      const s = document.createElement('style');
-      s.id = 'vg-styles';
-      s.textContent = `
-        .vg-autofill-popup{position:absolute;z-index:2147483647;width:340px;background:#111111;border:1px solid #C78C00;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.7);font-family:system-ui,-apple-system,sans-serif;overflow:hidden;animation:vg-pop .2s ease}
-        @keyframes vg-pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
-        .vg-popup-header{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0D0D0D;border-bottom:1px solid #1E1E1E}
-        .vg-popup-title{flex:1;font-size:12px;font-weight:600;color:#94a3b8}
-        .vg-popup-close{background:none;border:none;cursor:pointer;color:#555552;font-size:14px;line-height:1;padding:2px 4px}
-        .vg-popup-close:hover{color:#f87171}
-        .vg-cred-item{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #1A1A1A;cursor:default}
-        .vg-cred-item:last-child{border-bottom:none}
-        .vg-cred-info{flex:1;min-width:0}
-        .vg-cred-title{font-size:13px;font-weight:500;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        .vg-cred-user{font-size:11px;color:#64748b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
-        .vg-fill-btn{background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:7px;padding:6px 12px;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
-        .vg-fill-btn:hover{opacity:.85}
-        .vg-fill-btn.loading{opacity:.6;pointer-events:none}
-      `;
-      document.head.appendChild(s);
-    }
-
-    const popup = document.createElement('div');
-    popup.className = 'vg-autofill-popup';
-    popup.style.top  = top  + 'px';
-    popup.style.left = left + 'px';
-
-    const hostname = (() => { try { return new URL(window.location.href).hostname; } catch { return window.location.hostname; } })();
-
-    popup.innerHTML = `
-      <div class="vg-popup-header">
-        <svg width="14" height="14" viewBox="0 0 24 24" style="flex-shrink:0"><path fill="#C78C00" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-        <span class="vg-popup-title">Senhas salvas para <strong style="color:#E7A300">${hostname}</strong></span>
-        <button class="vg-popup-close" title="Fechar">✕</button>
-      </div>
-      ${creds.map(c => `
-        <div class="vg-cred-item">
-          <img src="https://www.google.com/s2/favicons?domain=${encodeURIComponent(c.url || hostname)}&sz=32"
-            style="width:24px;height:24px;border-radius:5px;flex-shrink:0"
-            onerror="this.style.display='none'">
-          <div class="vg-cred-info">
-            <div class="vg-cred-title">${esc(c.title)}</div>
-            <div class="vg-cred-user">${esc(c.username || '')}</div>
-          </div>
-          <button class="vg-fill-btn" data-id="${esc(c.id)}">↗ Preencher</button>
-        </div>
-      `).join('')}
-    `;
-
-    document.body.appendChild(popup);
-
-    // Fechar
-    popup.querySelector('.vg-popup-close').addEventListener('click', removeAutofillPopup);
-
-    // Clicar fora fecha
-    const onOutside = (e) => {
-      if (!popup.contains(e.target) && e.target !== passwordField && e.target !== usernameField) {
-        removeAutofillPopup();
-        document.removeEventListener('mousedown', onOutside);
+  // Preencher sozinho só quando é inequívoco: uma credencial (ou a do usuário
+  // da 1ª etapa), cofre desbloqueado, campos vazios e página https/local
+  function canAutofill() {
+    if (autofilled || userTyped || !page.autofill || !page.unlocked) return null;
+    const secure = location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    if (!secure) return null;
+    const byStep = page.stepUsername && page.logins.filter(c => c.username.toLowerCase() === page.stepUsername.toLowerCase());
+    const choice = byStep?.length === 1 ? byStep[0] : page.logins.length === 1 ? page.logins[0] : null;
+    const pw = passwordFields()[0];
+    // Cadastro / troca de senha: nunca preenche sozinho (o usuário escolhe na lista)
+    if (pw) {
+      if (pw.value || isNewPasswordForm()) return null;
+      // Site já trouxe o usuário preenchido ("lembrar e-mail"): completa só a
+      // senha, se for de uma credencial salva para esse usuário
+      const prefilled = usernameFieldFor(pw)?.value?.trim().toLowerCase();
+      if (prefilled) {
+        const same = page.logins.filter(c => c.username.toLowerCase() === prefilled);
+        return same.length === 1 ? { ...same[0], passwordOnly: true } : null;
       }
-    };
-    setTimeout(() => document.addEventListener('mousedown', onOutside), 100);
-
-    // Botões de preencher
-    popup.querySelectorAll('.vg-fill-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const credId = btn.dataset.id;
-        btn.classList.add('loading');
-        btn.textContent = '...';
-        try {
-          await fetchAndFill(credId, passwordField, usernameField);
-          removeAutofillPopup();
-        } catch (e) {
-          btn.textContent = 'Erro';
-          setTimeout(() => { btn.textContent = '↗ Preencher'; btn.classList.remove('loading'); }, 1500);
-        }
-      });
-    });
+      return choice;
+    }
+    const user = loneUsernameField();
+    return choice && user && !user.value ? choice : null;
   }
 
-  function esc(str) {
-    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  async function tryAutofill() {
+    const choice = canAutofill();
+    if (!choice) return;
+    autofilled = true;
+    if (!(await fillCredential(choice.id, { interactive: false, passwordOnly: !!choice.passwordOnly }))) autofilled = false;
   }
 
-  // ── Mostrar popup ao focar campo de senha ─────────────────────────────────
-  let focusTimeout;
-  document.addEventListener('focusin', (e) => {
-    if (e.target.type !== 'password') return;
-    clearTimeout(focusTimeout);
-    focusTimeout = setTimeout(async () => {
-      if (autofillPopupVisible) return;
-      const creds = await new Promise(resolve =>
-        chrome.runtime.sendMessage({ type: 'FETCH_CREDS_FOR_URL', url: window.location.href }, r => resolve(r || []))
-      );
-      if (creds.length > 0) showAutofillPopup(creds, e.target);
-    }, 300);
-  }, true);
-
-  // Fechar popup ao pressionar Escape
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') removeAutofillPopup();
-  }, true);
-
-  // ── Detecção de submit de formulário de login ─────────────────────────────
-  document.addEventListener('submit', (e) => {
-    const { usernameField, passwordField } = findLoginFields(e.target);
-    if (!passwordField?.value) return;
-
-    chrome.storage.local.set({
-      [PENDING_SAVE_KEY]: {
-        username: usernameField?.value || '',
-        password: passwordField.value,
-        url:      window.location.href,
-        title:    document.title || window.location.hostname,
-        savedAt:  Date.now(),
-      }
-    });
-
-    setTimeout(() => showSaveBanner(usernameField?.value || '', passwordField.value), 1000);
-  }, true);
-
-  // Verificar pendingSave de navegação anterior
-  chrome.storage.local.get(PENDING_SAVE_KEY, (data) => {
-    const pending = data[PENDING_SAVE_KEY];
-    if (!pending) return;
-    if (Date.now() - pending.savedAt > 3 * 60 * 1000) { chrome.storage.local.remove(PENDING_SAVE_KEY); return; }
-    try {
-      if (new URL(pending.url).hostname !== window.location.hostname) return;
-      if (pending.url === window.location.href) return;
-    } catch { return; }
-    setTimeout(() => showSaveBanner(pending.username, pending.password), 800);
-  });
-
-  // ── Banner de salvar senha ────────────────────────────────────────────────
-  function showSaveBanner(username, password) {
-    document.querySelectorAll('.vg-save-banner').forEach(el => el.remove());
-
-    if (!document.getElementById('vg-styles')) {
-      const s = document.createElement('style');
-      s.id = 'vg-styles';
-      s.textContent = '';
-      document.head.appendChild(s);
+  async function init() {
+    page = { ...page, ...((await send({ type: 'PAGE_INFO' })) || {}) };
+    if (!page.configured) return;
+    tryAutofill();
+    showCertBanner(page.certs || []);
+    const pending = await send({ type: 'GET_PROMPT' });
+    if (pending) {
+      // Voltou para uma tela com campo de senha (ex.: "senha incorreta"): o
+      // login falhou; não oferece salvar a senha errada
+      setTimeout(() => {
+        if (pending.type === 'save' && passwordFields().length) { send({ type: 'DISMISS_PROMPT' }); return; }
+        showPrompt(pending);
+      }, 800);
     }
 
-    const banner = document.createElement('div');
-    banner.className = 'vg-save-banner';
-    banner.style.cssText = `
-      position:fixed!important;top:16px!important;right:16px!important;
-      z-index:2147483647!important;background:#111111!important;
-      border:1px solid #C78C00!important;border-radius:12px!important;
-      padding:12px 14px!important;display:flex!important;align-items:center!important;
-      gap:10px!important;box-shadow:0 8px 32px rgba(0,0,0,0.6)!important;
-      font-family:system-ui,sans-serif!important;min-width:280px!important;max-width:380px!important;
-      animation:vg-slide-in .3s ease!important;
-    `;
-
-    if (!document.getElementById('vg-banner-styles')) {
-      const s = document.createElement('style');
-      s.id = 'vg-banner-styles';
-      s.textContent = `@keyframes vg-slide-in{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}`;
-      document.head.appendChild(s);
-    }
-
-    banner.innerHTML = `
-      <svg width="22" height="22" viewBox="0 0 24 24" style="flex-shrink:0"><path fill="#C78C00" d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:600;color:#f1f5f9;line-height:1.3">Salvar senha?</div>
-        <div style="font-size:11px;color:#94a3b8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">${esc(username || window.location.hostname)}</div>
-      </div>
-      <button class="vg-save-yes" style="background:linear-gradient(135deg,#C78C00,#AD7B04);border:none;border-radius:7px;padding:6px 12px;color:white;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap">Salvar</button>
-      <button class="vg-save-no"  style="background:none;border:1px solid #2A2A2A;border-radius:7px;padding:6px 8px;color:#64748b;font-size:12px;cursor:pointer;line-height:1">✕</button>
-    `;
-
-    document.body.appendChild(banner);
-
-    banner.querySelector('.vg-save-yes').addEventListener('click', () => {
-      banner.remove();
-      chrome.runtime.sendMessage({ type: 'OPEN_SIDE_PANEL' });
+    // Formulários que aparecem depois (SPA, modais de login)
+    let tries = 0;
+    const obs = new MutationObserver(() => {
+      if (autofilled || ++tries > 200) { obs.disconnect(); return; }
+      tryAutofill();
     });
-    banner.querySelector('.vg-save-no').addEventListener('click', () => {
-      banner.remove();
-      chrome.storage.local.remove(PENDING_SAVE_KEY);
-    });
-
-    setTimeout(() => banner.remove(), 12000);
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+    setTimeout(() => obs.disconnect(), 15000);
   }
+
+  init();
 })();

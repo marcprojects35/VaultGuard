@@ -3,8 +3,9 @@ import { body } from 'express-validator';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { PrismaClient } from '@prisma/client';
-import { canAccessFolder } from '../services/permissions.js';
+import { canAccessFolder, getAccessibleFolderIds } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
+import { pruneFolderKeys } from '../services/keys.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -68,6 +69,39 @@ router.get('/', authenticate, async (req, res, next) => {
     const personalTree = buildTree(personalFolders);
 
     res.json({ shared: sharedTree, personal: personalTree });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/folders/writable — lista plana das pastas onde o usuário pode criar
+// credenciais (usada pela extensão para "salvar senha"): pessoal primeiro
+router.get('/writable', authenticate, async (req, res, next) => {
+  try {
+    const ids = await getAccessibleFolderIds(req.user.id, req.user.role);
+    const folders = await prisma.folder.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true, parentId: true, isPersonal: true, ownerId: true, teamId: true, visibleToAll: true },
+    });
+    const byId = new Map(folders.map(f => [f.id, f]));
+    const pathOf = (f) => {
+      const parts = [f.name];
+      let p = f.parentId && byId.get(f.parentId);
+      for (let i = 0; p && i < 10; i++) { parts.unshift(p.name); p = p.parentId && byId.get(p.parentId); }
+      return parts.join(' / ');
+    };
+    const result = [];
+    for (const f of folders) {
+      if (await canAccessFolder(req.user.id, req.user.role, f.id, 'canEdit')) {
+        result.push({
+          id: f.id, name: f.name, path: pathOf(f),
+          type: f.isPersonal ? 'personal' : f.teamId ? 'team' : 'shared',
+        });
+      }
+    }
+    const order = { personal: 0, team: 1, shared: 2 };
+    result.sort((a, b) => order[a.type] - order[b.type] || a.path.localeCompare(b.path, 'pt-BR'));
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -223,6 +257,10 @@ router.put('/:id/permissions', authenticate, requireAdmin, async (req, res, next
     const { permissions } = req.body;
     const folderId = req.params.id;
 
+    const folder = await prisma.folder.findUnique({ where: { id: folderId } });
+    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    if (folder.isPersonal) return res.status(400).json({ error: 'Pastas pessoais não aceitam permissões' });
+
     await prisma.folderPermission.deleteMany({ where: { folderId } });
 
     if (permissions && permissions.length > 0) {
@@ -238,6 +276,8 @@ router.put('/:id/permissions', authenticate, requireAdmin, async (req, res, next
         }))
       });
     }
+
+    await pruneFolderKeys([folderId]);
 
     const updated = await prisma.folderPermission.findMany({ where: { folderId } });
     res.json(updated);

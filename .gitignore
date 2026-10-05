@@ -35,3 +35,6 @@ backend/prisma/*.db-journal
 
 # Docker
 *.pid
+
+# Testes de ponta a ponta
+tests/e2e/.out/

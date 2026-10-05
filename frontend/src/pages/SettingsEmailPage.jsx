@@ -130,7 +130,7 @@ export default function SettingsEmailPage() {
   const { mutate: save, isPending: isSaving } = useMutation({
     mutationFn: data => api.put('/settings/email', data),
     onSuccess: () => toast.success('Configurações de e-mail salvas!'),
-    onError: () => toast.error('Erro ao salvar configurações.'),
+    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao salvar configurações.'),
   });
 
   const { mutate: startOAuth, isPending: isAuthenticating } = useMutation({
@@ -142,20 +142,12 @@ export default function SettingsEmailPage() {
           clientSecret: office365.clientSecret,
         })
         .then(r => r.data),
-    onSuccess: data => {
-      if (data?.authUrl) window.open(data.authUrl, '_blank', 'width=600,height=700');
-      // Poll for connection after user completes OAuth
-      const poll = setInterval(async () => {
-        const status = await api.get('/settings/email/office365/status').then(r => r.data);
-        if (status?.connected) {
-          clearInterval(poll);
-          refetchO365Status();
-          toast.success('Microsoft 365 conectado com sucesso!');
-        }
-      }, 2000);
-      setTimeout(() => clearInterval(poll), 120000);
+    onSuccess: () => {
+      refetchO365Status();
+      setOffice365(s => ({ ...s, clientSecret: '' }));
+      toast.success('Microsoft 365 conectado com sucesso!');
     },
-    onError: () => toast.error('Erro ao iniciar autenticação. Verifique as credenciais.'),
+    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao conectar. Verifique as credenciais.'),
   });
 
   const { mutate: revokeOAuth, isPending: isRevoking } = useMutation({
@@ -169,13 +161,13 @@ export default function SettingsEmailPage() {
 
   const { mutate: testConnection, isPending: isTesting } = useMutation({
     mutationFn: () => api.post('/settings/email/test', { to: testEmail }),
-    onSuccess: () => {
+    onSuccess: (res) => {
       setTestStatus('success');
-      toast.success('E-mail de teste enviado!');
+      toast.success(res.data?.message || 'E-mail de teste enviado!');
     },
-    onError: () => {
+    onError: (e) => {
       setTestStatus('error');
-      toast.error('Falha ao enviar e-mail de teste.');
+      toast.error(e.response?.data?.error || 'Falha ao enviar e-mail de teste.');
     },
   });
 
@@ -427,12 +419,8 @@ export default function SettingsEmailPage() {
             >
               <Info className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-primary)' }} />
               <div className="space-y-1">
-                <p>Registre um <strong style={{ color: 'var(--color-text)' }}>App no Azure AD</strong> com permissão <code className="px-1 rounded" style={{ background: 'var(--color-surface)', color: 'var(--color-primary)' }}>Mail.Send</code> (Microsoft Graph).</p>
-                <p>Na configuração do App, adicione o URI de redirecionamento:<br />
-                  <code className="px-1 rounded" style={{ background: 'var(--color-surface)', color: 'var(--color-primary)' }}>
-                    {window.location.origin}/api/settings/email/office365/callback
-                  </code>
-                </p>
+                <p>Registre um <strong style={{ color: 'var(--color-text)' }}>App no Azure AD</strong> com a permissão de <strong style={{ color: 'var(--color-text)' }}>aplicativo</strong> <code className="px-1 rounded" style={{ background: 'var(--color-surface)', color: 'var(--color-primary)' }}>Mail.Send</code> (Microsoft Graph) e conceda o consentimento do administrador.</p>
+                <p>Os e-mails saem da caixa informada em <strong style={{ color: 'var(--color-text)' }}>E-mail do remetente</strong>. Recomenda-se restringir o app a essa caixa com uma Application Access Policy.</p>
               </div>
             </div>
 

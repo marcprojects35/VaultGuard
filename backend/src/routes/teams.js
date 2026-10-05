@@ -5,6 +5,7 @@ import { validate } from '../middleware/validate.js';
 import { PrismaClient } from '@prisma/client';
 import { createAuditLog } from '../services/audit.js';
 import { sendTeamInviteNotification } from '../services/email.js';
+import { pruneFolderKeys } from '../services/keys.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -184,6 +185,14 @@ router.post('/:id/invite', authenticate,
 // GET /api/teams/:id/members — lista membros ACTIVE (qualquer membro/dono/admin vê)
 router.get('/:id/members', authenticate, async (req, res, next) => {
   try {
+    const isAdmin = req.user.role === 'ADMINISTRADOR';
+    if (!isAdmin) {
+      const me = await prisma.teamMember.findUnique({
+        where: { teamId_userId: { teamId: req.params.id, userId: req.user.id } },
+      });
+      if (!me || me.status !== 'ACTIVE') return res.status(403).json({ error: 'Forbidden' });
+    }
+
     const members = await prisma.teamMember.findMany({
       where: { teamId: req.params.id, status: { in: ['ACTIVE', 'PENDING'] } },
       orderBy: { createdAt: 'asc' },
@@ -214,6 +223,8 @@ router.delete('/:id/members/:userId', authenticate, async (req, res, next) => {
     if (req.params.userId === team.ownerId) return res.status(400).json({ error: 'Não é possível remover o dono da equipe' });
 
     await prisma.teamMember.deleteMany({ where: { teamId: team.id, userId: req.params.userId } });
+    const teamFolders = await prisma.folder.findMany({ where: { teamId: team.id }, select: { id: true } });
+    if (teamFolders.length) await pruneFolderKeys(teamFolders.map(f => f.id));
     await createAuditLog(req.user.id, 'team.member_remove', team.id, 'Team', { userId: req.params.userId }, req.ip);
     res.json({ message: 'Removido da equipe' });
   } catch (err) {

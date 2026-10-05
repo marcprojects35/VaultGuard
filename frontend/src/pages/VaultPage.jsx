@@ -8,15 +8,16 @@ import {
   History, ArrowLeft, Link, Bell, Clock, Globe, User,
   FileText, Lock, Paperclip, Upload, Download, PlusCircle, Minus,
   Share2, Users, CalendarClock, LayoutTemplate, CheckSquare, Square,
-  AlertCircle, MoreVertical,
+  AlertCircle, MoreVertical, FileBadge,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
+import { safeUrl } from '../utils/safeUrl.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-import { useAuthStore, getMasterKey } from '../stores/authStore.js';
+import { useAuthStore } from '../stores/authStore.js';
+import { keyring, keyErrorMessage } from '../stores/vaultStore.js';
 import {
-  encryptPassword, decryptPassword, calculateStrength,
-  getStrengthColor, getStrengthLabel, generatePassword
+  calculateStrength, getStrengthColor, getStrengthLabel, generatePassword
 } from '../utils/crypto.js';
 
 // ── Palette constants ──────────────────────────────────────────────────────────
@@ -126,6 +127,8 @@ const CREDENTIAL_TEMPLATES = [
   { id: 'api', label: 'API / Token', fields: [{ name: 'API Key', value: '', fieldType: 'password' }, { name: 'Endpoint', value: '', fieldType: 'url' }] },
   { id: 'email', label: 'E-mail', fields: [{ name: 'Servidor SMTP', value: '', fieldType: 'text' }, { name: 'Porta', value: '587', fieldType: 'text' }] },
   { id: 'wifi', label: 'Wi-Fi', fields: [{ name: 'SSID', value: '', fieldType: 'text' }, { name: 'Segurança', value: 'WPA2', fieldType: 'text' }] },
+  // Certificado A1: o .pfx vai em Anexos, a senha do certificado no campo Senha
+  { id: 'cert', label: 'Certificado Digital', kind: 'certificate', fields: [{ name: 'Titular', value: '', fieldType: 'text' }, { name: 'CPF/CNPJ', value: '', fieldType: 'text' }, { name: 'Emissor', value: '', fieldType: 'text' }] },
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -152,12 +155,10 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
       )}
       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
         style={{ background: '#1E1E1E' }}>
-        {cred.url ? (
-          <img src={`https://www.google.com/s2/favicons?domain=${(() => { try { return new URL(cred.url).hostname; } catch { return ''; } })()}&sz=16`}
-            className="w-4 h-4"
-            onError={e => { e.target.style.display = 'none'; }} />
-        ) : null}
-        <Key className="w-3.5 h-3.5" style={{ color: settings.primaryColor, display: cred.url ? 'none' : 'block' }} />
+        {/* Ícone local: um favicon remoto revelaria ao serviço de ícones os sites do cofre */}
+        {cred.kind === 'certificate'
+          ? <FileBadge className="w-3.5 h-3.5" style={{ color: settings.primaryColor }} />
+          : <Key className="w-3.5 h-3.5" style={{ color: settings.primaryColor }} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>{cred.title}</div>
@@ -197,6 +198,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
   const [visibleCustomFields, setVisibleCustomFields] = useState({});
   const [visibleHistoryPass, setVisibleHistoryPass] = useState({});
   const [decryptedHistoryPass, setDecryptedHistoryPass] = useState({});
+  const [decryptedFields, setDecryptedFields] = useState({});
+  const [notesText, setNotesText] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
 
   const expiryStatus = getExpiryStatus(cred.expiresAt);
@@ -214,7 +217,11 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
   });
 
   useEffect(() => {
-    setPassVisible(false); setDecryptedPass(''); setVisibleCustomFields({});
+    setPassVisible(false); setDecryptedPass(''); setVisibleCustomFields({}); setDecryptedFields({});
+    setNotesText('');
+    if (cred.notes) {
+      keyring.decryptNotes(cred).then(setNotesText).catch(() => setNotesText('🔒 Não foi possível abrir as anotações'));
+    }
     setVisibleHistoryPass({}); setDecryptedHistoryPass({}); setActiveView('detail');
   }, [cred.id]);
 
@@ -224,10 +231,24 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
       return;
     }
     try {
-      const plain = await decryptPassword(entry.encryptedPass, getMasterKey());
+      const plain = await keyring.decryptValue(cred, entry.encryptedPass);
       setDecryptedHistoryPass(p => ({ ...p, [entry.id]: plain }));
       setVisibleHistoryPass(p => ({ ...p, [entry.id]: true }));
-    } catch { toast.error('Erro ao descriptografar'); }
+    } catch (e) { toast.error(keyErrorMessage(e)); }
+  };
+
+  const revealField = async (cf) => {
+    if (decryptedFields[cf.id] !== undefined) return decryptedFields[cf.id];
+    const plain = await keyring.decryptField(cred, cf);
+    setDecryptedFields(p => ({ ...p, [cf.id]: plain }));
+    return plain;
+  };
+
+  const toggleField = async (cf) => {
+    try {
+      if (!visibleCustomFields[cf.id]) await revealField(cf);
+      setVisibleCustomFields(p => ({ ...p, [cf.id]: !p[cf.id] }));
+    } catch (e) { toast.error(keyErrorMessage(e)); }
   };
 
   const loadPassword = async () => {
@@ -235,9 +256,9 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
     setLoading(true);
     try {
       const { data } = await api.get(`/credentials/${cred.id}`);
-      const plain = await decryptPassword(data.encryptedPass, getMasterKey());
+      const plain = await keyring.decryptValue(data, data.encryptedPass);
       setDecryptedPass(plain); setPassVisible(true);
-    } catch { toast.error('Erro ao carregar senha'); }
+    } catch (e) { toast.error(keyErrorMessage(e, 'Erro ao carregar senha')); }
     finally { setLoading(false); }
   };
 
@@ -246,29 +267,29 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
       if (field === 'password') {
         if (!decryptedPass) {
           const { data } = await api.get(`/credentials/${cred.id}`);
-          const plain = await decryptPassword(data.encryptedPass, getMasterKey());
+          const plain = await keyring.decryptValue(data, data.encryptedPass);
           await navigator.clipboard.writeText(plain);
         } else {
           await navigator.clipboard.writeText(decryptedPass);
         }
       } else {
-        await navigator.clipboard.writeText(value);
+        await navigator.clipboard.writeText(typeof value === 'function' ? await value() : value);
       }
       setCopied(field);
       setTimeout(() => setCopied(null), 2000);
-    } catch { toast.error('Erro ao copiar'); }
+    } catch (e) { toast.error(keyErrorMessage(e, 'Erro ao copiar')); }
   };
 
   const downloadAttachment = async (att) => {
     try {
       const { data } = await api.get(`/attachments/${cred.id}/${att.id}/download`);
-      const bytes = Uint8Array.from(atob(data.data), c => c.charCodeAt(0));
+      const bytes = await keyring.decryptAttachment(cred, data.data);
       const blob = new Blob([bytes], { type: data.mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = data.fileName; a.click();
       URL.revokeObjectURL(url);
-    } catch { toast.error('Erro ao baixar anexo'); }
+    } catch (e) { toast.error(keyErrorMessage(e, 'Erro ao baixar anexo')); }
   };
 
   const CopyBtn = ({ field, value }) => (
@@ -315,8 +336,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
           style={{ background: expiryStatus === 'expired' ? '#ef444422' : '#f9731622', color: expiryStatus === 'expired' ? '#ef4444' : '#f97316' }}>
           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
           {expiryStatus === 'expired'
-            ? `Senha expirada em ${new Date(cred.expiresAt).toLocaleDateString('pt-BR')}`
-            : `Expira em ${new Date(cred.expiresAt).toLocaleDateString('pt-BR')} — atualize em breve`}
+            ? `Senha expirada em ${new Date(cred.expiresAt).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`
+            : `Expira em ${new Date(cred.expiresAt).toLocaleDateString('pt-BR', { timeZone: 'UTC' })} — atualize em breve`}
         </div>
       )}
 
@@ -365,7 +386,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                 <Field icon={Globe} label="URL">
                   {cred.url ? (
                     <div className="flex items-center gap-2">
-                      <a href={cred.url} target="_blank" rel="noopener noreferrer"
+                      <a href={safeUrl(cred.url)} target="_blank" rel="noopener noreferrer"
                         className="text-sm hover:underline flex-1 truncate" style={{ color: settings.primaryColor }}>{cred.url}</a>
                       <CopyBtn field="url" value={cred.url} />
                     </div>
@@ -396,20 +417,20 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                         {cf.fieldType === 'password' ? (
                           <>
                             <span className="text-sm font-mono flex-1" style={{ color: 'var(--color-text)', letterSpacing: visibleCustomFields[cf.id] ? 'normal' : '3px' }}>
-                              {visibleCustomFields[cf.id] ? cf.value : '★ ★ ★ ★ ★'}
+                              {visibleCustomFields[cf.id] ? decryptedFields[cf.id] : '★ ★ ★ ★ ★'}
                             </span>
-                            <button onClick={() => setVisibleCustomFields(p => ({ ...p, [cf.id]: !p[cf.id] }))}
+                            <button onClick={() => toggleField(cf)}
                               className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--color-muted)' }}>
                               {visibleCustomFields[cf.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                             </button>
                           </>
                         ) : cf.fieldType === 'url' ? (
-                          <a href={cf.value} target="_blank" rel="noopener noreferrer"
+                          <a href={safeUrl(cf.value)} target="_blank" rel="noopener noreferrer"
                             className="text-sm hover:underline flex-1 truncate" style={{ color: settings.primaryColor }}>{cf.value}</a>
                         ) : (
                           <span className="text-sm flex-1" style={{ color: 'var(--color-text)' }}>{cf.value}</span>
                         )}
-                        <CopyBtn field={`cf-${cf.id}`} value={cf.value} />
+                        <CopyBtn field={`cf-${cf.id}`} value={cf.fieldType === 'password' ? () => revealField(cf) : cf.value} />
                       </div>
                     </Field>
                   ))}
@@ -423,7 +444,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                   <FileText className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />
                   <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Anotações</span>
                 </div>
-                <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--color-text)' }}>{cred.notes}</p>
+                <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--color-text)' }}>{notesText}</p>
               </div>
             )}
 
@@ -472,7 +493,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                   color: expiryStatus === 'expired' ? '#ef4444' : expiryStatus === 'critical' ? '#f97316' : expiryStatus === 'warning' ? '#f59e0b' : '#10b981',
                 }}>
                 <CalendarClock className="w-3.5 h-3.5 flex-shrink-0" />
-                Expira em: {new Date(cred.expiresAt).toLocaleDateString('pt-BR')}
+                Expira em: {new Date(cred.expiresAt).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}
                 {expiryStatus === 'expired' && ' (EXPIRADA)'}
               </div>
             )}
@@ -525,7 +546,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
           </div>
         ) : (
-          <SharesView credId={cred.id} shares={shares} sharesLoading={sharesLoading}
+          <SharesView cred={cred} credId={cred.id} shares={shares} sharesLoading={sharesLoading}
             refetchShares={refetchShares} settings={settings}
             showShareModal={showShareModal} setShowShareModal={setShowShareModal} />
         )}
@@ -537,24 +558,32 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
 // ────────────────────────────────────────────────────────────────────────────
 // Shares View
 // ────────────────────────────────────────────────────────────────────────────
-function SharesView({ credId, shares, sharesLoading, refetchShares, settings, showShareModal, setShowShareModal }) {
+function SharesView({ cred, credId, shares, sharesLoading, refetchShares, settings, showShareModal, setShowShareModal }) {
   const qc = useQueryClient();
   const [canEdit, setCanEdit] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState('');
+  const [userQuery, setUserQuery] = useState('');
 
+  // /users é só de admin; a busca leve funciona para qualquer usuário
   const { data: allUsers = [] } = useQuery({
-    queryKey: ['users-list'],
-    queryFn: () => api.get('/users').then(r => r.data),
-    enabled: showShareModal,
+    queryKey: ['users-search', userQuery],
+    queryFn: () => api.get('/users/search', { params: { q: userQuery } }).then(r => r.data),
+    enabled: showShareModal && userQuery.trim().length >= 2,
   });
 
   const shareMutation = useMutation({
-    mutationFn: () => api.post(`/credentials/${credId}/shares`, { sharedWithId: selectedUserId, canEdit }),
+    mutationFn: async () => {
+      // A chave da credencial vai cifrada com a chave pública do destinatário
+      const { data: target } = await api.get(`/keys/users/${selectedUserId}/public`);
+      if (!target.publicKey) throw new Error('O usuário ainda não ativou as chaves (precisa entrar no cofre uma vez)');
+      const wrappedKey = await keyring.wrapCredentialKeyFor(cred, target.publicKey);
+      return api.post(`/credentials/${credId}/shares`, { sharedWithId: selectedUserId, canEdit, wrappedKey });
+    },
     onSuccess: () => {
       refetchShares(); qc.invalidateQueries({ queryKey: ['cred-shares', credId] });
       toast.success('Compartilhado!'); setSelectedUserId(''); setCanEdit(false); setShowShareModal(false);
     },
-    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao compartilhar'),
+    onError: (e) => toast.error(e.response?.data?.error || keyErrorMessage(e, e.message || 'Erro ao compartilhar')),
   });
 
   const removeMutation = useMutation({
@@ -579,6 +608,10 @@ function SharesView({ credId, shares, sharesLoading, refetchShares, settings, sh
       {showShareModal && (
         <div className="rounded-xl p-4 mb-4" style={{ background: '#1A1A1A', border: `1px solid ${settings.primaryColor}44` }}>
           <p className="text-xs font-medium mb-3" style={{ color: 'var(--color-text)' }}>Compartilhar com usuário</p>
+          <input value={userQuery} onChange={e => { setUserQuery(e.target.value); setSelectedUserId(''); }}
+            className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-2"
+            style={{ background: '#111111', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}
+            placeholder="Buscar por nome ou e-mail (mín. 2 letras)" />
           <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}
             className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-2"
             style={{ background: '#111111', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
@@ -648,12 +681,13 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
   const fileInputRef = useRef(null);
 
   const [selectedTemplate, setSelectedTemplate] = useState('web');
+  const isCertificate = isEdit ? credential?.kind === 'certificate' : selectedTemplate === 'cert';
   const [form, setForm] = useState({
     title: credential?.title || '',
     username: credential?.username || '',
     password: '',
     url: credential?.url || '',
-    notes: credential?.notes || '',
+    notes: '',
     folderId: credential?.folderId || defaultFolderId || '',
     tags: credential?.tags?.join(', ') || '',
     strength: 0,
@@ -667,6 +701,21 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
   const [showPass, setShowPass] = useState(false);
   const [activeTab, setActiveTab] = useState('basic');
 
+  // Campos secretos e notas chegam cifrados: abre para edição
+  const [notesReady, setNotesReady] = useState(!credential?.notes);
+  useEffect(() => {
+    if (credential?.customFields?.length) {
+      keyring.decryptCustomFields(credential, credential.customFields)
+        .then(setCustomFields)
+        .catch(e => toast.error(keyErrorMessage(e)));
+    }
+    if (credential?.notes) {
+      keyring.decryptNotes(credential)
+        .then(n => { setForm(f => ({ ...f, notes: n })); setNotesReady(true); })
+        .catch(e => toast.error(keyErrorMessage(e)));
+    }
+  }, [credential?.id]);
+
   const flatFolders = flattenFolders(folders?.shared || []).concat(
     flattenFolders(folders?.personal || []).map(f => ({ ...f, name: `🔒 ${f.name}` }))
   );
@@ -676,32 +725,40 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const masterKey = getMasterKey();
-      const encrypted = form.password ? await encryptPassword(form.password, masterKey) : null;
       const validCustomFields = customFields.filter(f => f.name.trim() && f.value.trim());
+      const { payload: secret, key, onSaved } = await keyring.buildCredentialPayload({
+        existing: isEdit ? credential : null,
+        folderId: form.folderId,
+        // Em edição, senha vazia = manter a atual
+        password: form.password ? form.password : (isEdit ? undefined : ''),
+        customFields: validCustomFields,
+        // Notas ainda não abertas = não mexe nelas
+        notes: notesReady ? form.notes : undefined,
+      });
       const payload = {
         title: form.title, username: form.username || undefined,
-        ...(encrypted && { encryptedPass: encrypted }),
-        url: form.url || undefined, notes: form.notes || undefined,
+        url: form.url || undefined,
+        kind: isCertificate ? 'certificate' : 'login',
         folderId: form.folderId,
         tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [],
         strength: form.strength, expiresAt: form.expiresAt || null,
-        customFields: validCustomFields,
+        ...secret,
       };
       let credId;
       if (isEdit) {
         const { data } = await api.put(`/credentials/${credential.id}`, payload);
         credId = data.id;
       } else {
-        const finalPayload = { ...payload, encryptedPass: payload.encryptedPass || await encryptPassword('', masterKey) };
-        const { data } = await api.post('/credentials', finalPayload);
+        const { data } = await api.post('/credentials', payload);
         credId = data.id;
       }
+      onSaved(credId);
       for (const attId of deletedAttachmentIds) {
         await api.delete(`/attachments/${credId}/${attId}`).catch(() => {});
       }
       for (const file of newFiles) {
-        await api.post(`/attachments/${credId}`, file).catch(err => {
+        const data = await keyring.encryptAttachmentWith(key, file.data);
+        await api.post(`/attachments/${credId}`, { ...file, data }).catch(err => {
           toast.error(`Erro ao enviar ${file.fileName}`);
         });
       }
@@ -711,7 +768,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
       toast.success(isEdit ? 'Credencial atualizada!' : 'Credencial criada!');
       onClose();
     },
-    onError: (err) => toast.error(err.response?.data?.error || 'Erro'),
+    onError: (err) => toast.error(keyErrorMessage(err, 'Erro')),
   });
 
   const Tab = ({ id, label }) => (
@@ -792,7 +849,9 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 </div>
                 <div>
                   <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
-                    {isEdit ? 'Nova Senha (vazio = manter)' : 'Senha'}
+                    {isCertificate
+                      ? (isEdit ? 'Nova senha do certificado (vazio = manter)' : 'Senha do certificado')
+                      : (isEdit ? 'Nova Senha (vazio = manter)' : 'Senha')}
                   </label>
                   <div className="relative">
                     <input type={showPass ? 'text' : 'password'} value={form.password}

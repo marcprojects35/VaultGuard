@@ -28,6 +28,11 @@
       position: relative;
     }
     input, select, button { font-family: inherit; }
+    .icon-btn { background: none; border: none; cursor: pointer; color: #555552; padding: 4px; display: flex; align-items: center; transition: color .15s; }
+    .icon-btn:hover { color: #C78C00; }
+    .tab-btn { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; color: #64748b; font-size: 12px; font-weight: 600; padding: 9px 4px; cursor: pointer; }
+    .tab-btn.active { color: #E7A300; border-bottom-color: #C78C00; }
+    .cred-avatar { width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0; background: #C78C0022; color: #E7A300; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: #111111; }
     ::-webkit-scrollbar-thumb { background: #2A2A2A; border-radius: 2px; }

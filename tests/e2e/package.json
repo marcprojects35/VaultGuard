@@ -1,0 +1,13 @@
+{
+  "name": "vaultguard-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Testes de ponta a ponta do VaultGuard (cofre web e extensão)",
+  "scripts": {
+    "ext": "./run.sh ext.mjs",
+    "web": "./run.sh web.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

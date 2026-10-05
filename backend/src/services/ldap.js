@@ -14,6 +14,7 @@
  */
 
 import { Client } from 'ldapts';
+import { pruneFolderKeys } from './keys.js';
 import { PrismaClient } from '@prisma/client';
 import { createAuditLog } from './audit.js';
 import logger from '../utils/logger.js';
@@ -79,10 +80,17 @@ function createClient(cfg) {
   });
 }
 
+// StartTLS: criptografa a conexão na porta 389 antes de qualquer senha trafegar
+async function maybeStartTLS(client, cfg) {
+  if (cfg.useTLS || !cfg.startTLS) return;
+  await client.startTLS({ rejectUnauthorized: cfg.verifyCert !== false });
+}
+
 // ── Testar conexão e bind de serviço ─────────────────────────────────────────
 export async function testConnection(cfg) {
   const client = createClient(cfg);
   try {
+    await maybeStartTLS(client, cfg);
     await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
     // Busca de teste no baseDN
     const { searchEntries } = await client.search(cfg.baseDn, {
@@ -103,7 +111,7 @@ export async function testConnection(cfg) {
 
 // ── Buscar usuário no AD ──────────────────────────────────────────────────────
 async function searchUser(client, cfg, login) {
-  const escapedLogin = login.replace(/[*()\\\x00]/g, c => `\\${c.charCodeAt(0).toString(16)}`);
+  const escapedLogin = login.replace(/[*()\\\x00]/g, c => `\\${c.charCodeAt(0).toString(16).padStart(2, '0')}`);
 
   // Filtro flexível: sAMAccountName, userPrincipalName ou uid (OpenLDAP)
   const filter = cfg.userFilter
@@ -174,6 +182,7 @@ export async function authenticateWithAD(login, password, ip, ua) {
 
   try {
     // 1. Bind com service account
+    await maybeStartTLS(client, cfg);
     await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
 
     // 2. Buscar o usuário
@@ -229,12 +238,27 @@ export async function authenticateWithAD(login, password, ip, ua) {
   }
 }
 
+// ── Localiza o usuário local que corresponde a uma conta do AD ───────────────
+// Por DN/GUID; por e-mail só se a conta local já for do AD. Uma conta local
+// (senha própria) com o mesmo e-mail nunca é convertida automaticamente: isso
+// permitiria a uma conta do AD assumir, por exemplo, o admin de emergência.
+// Vincular contas locais existentes é uma ação explícita do admin (linkUsersFromAD).
+async function findLdapMatch({ ldapDn, ldapGuid, email }) {
+  const byId = await prisma.user.findFirst({
+    where: { OR: [{ ldapDn }, ...(ldapGuid ? [{ ldapGuid }] : [])] },
+  });
+  if (byId) return byId;
+  const byEmail = await prisma.user.findFirst({ where: { email } });
+  if (!byEmail) return null;
+  if (byEmail.authSource === 'ldap') return byEmail;
+  const e = new Error('Já existe uma conta local com este e-mail. Peça ao administrador para vinculá-la ao AD.');
+  e.code = 'LOCAL_ACCOUNT_CONFLICT';
+  throw e;
+}
+
 // ── Upsert do usuário LDAP no banco local ─────────────────────────────────────
 async function upsertLdapUser({ email, username, firstName, lastName, ldapDn, ldapGuid, role, syncGroups }) {
-  // Buscar por ldapDn ou email
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ ldapDn }, { email }] }
-  });
+  const existing = await findLdapMatch({ ldapDn, ldapGuid, email });
 
   const data = {
     email,
@@ -244,17 +268,23 @@ async function upsertLdapUser({ email, username, firstName, lastName, ldapDn, ld
     ldapDn,
     ldapGuid,
     authSource: 'ldap',
-    status: 'ACTIVE',
     lastLogin: new Date(),
     // Só atualiza role se sincronização de grupos estiver ativa
     ...(syncGroups ? { role } : {}),
   };
 
+  // Status não é tocado: quem foi desativado no VaultGuard continua desativado
   if (existing) {
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: existing.id },
       data,
     });
+    // Cargo mudou pelos grupos do AD: ajusta acesso às chaves
+    if (syncGroups && existing.role !== updated.role) {
+      if (updated.role !== 'ADMINISTRADOR') await prisma.orgKeyGrant.deleteMany({ where: { userId: updated.id } });
+      await pruneFolderKeys();
+    }
+    return updated;
   }
 
   // Criar novo usuário
@@ -262,6 +292,7 @@ async function upsertLdapUser({ email, username, firstName, lastName, ldapDn, ld
     data: {
       ...data,
       role: role || 'AUXILIAR',
+      status: 'ACTIVE',
       // passwordHash null = autenticação apenas por LDAP
     },
   });
@@ -273,6 +304,7 @@ export async function syncAllUsersFromAD(cfg) {
   const results = { created: 0, updated: 0, disabled: 0, errors: [] };
 
   try {
+    await maybeStartTLS(client, cfg);
     await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
 
     const filter = cfg.syncFilter || '(&(objectClass=user)(objectCategory=person))';
@@ -305,9 +337,7 @@ export async function syncAllUsersFromAD(cfg) {
         const groups = extractGroups(entry);
         const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR', priorityMap);
 
-        const existing = await prisma.user.findFirst({
-          where: { OR: [{ ldapDn }, { email }] }
-        });
+        const existing = await findLdapMatch({ ldapDn, ldapGuid, email });
 
         if (existing) {
           await prisma.user.update({
@@ -315,7 +345,8 @@ export async function syncAllUsersFromAD(cfg) {
             data: {
               email, username, firstName, lastName, ldapDn, ldapGuid,
               authSource: 'ldap',
-              status: active ? 'ACTIVE' : 'INACTIVE',
+              // Desabilitado no AD desativa aqui; reativar é decisão do admin
+              ...(!active && { status: 'INACTIVE', tokenVersion: { increment: 1 } }),
               ...(cfg.syncGroups !== false ? { role } : {}),
             },
           });
@@ -350,6 +381,7 @@ export async function syncAllUsersFromAD(cfg) {
 export async function fetchUsersForPreview(cfg) {
   const client = createClient(cfg);
   try {
+    await maybeStartTLS(client, cfg);
     await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
 
     const filter = cfg.syncFilter || '(&(objectClass=user)(objectCategory=person))';
@@ -441,6 +473,7 @@ export async function linkUsersFromAD(cfg, emails) {
 export async function fetchADGroups(cfg) {
   const client = createClient(cfg);
   try {
+    await maybeStartTLS(client, cfg);
     await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
     const filter = cfg.groupFilter || '(objectClass=group)';
     const { searchEntries } = await client.search(cfg.baseDn, {
