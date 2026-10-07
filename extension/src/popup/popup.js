@@ -83,6 +83,29 @@ async function fillSiteTab(detail, password) {
   return true;
 }
 
+// fetch() rejeitado (sem resposta HTTP): em https quase sempre é certificado
+// não confiável (ex.: autoassinado); em http, servidor fora do ar ou URL errada
+function networkErrorMessage(url) {
+  if (/^https:\/\//i.test(url || '')) {
+    state.certHelpUrl = url;
+    return 'Este computador ainda não confia no certificado do servidor. Baixe o certificado da autoridade do '
+      + 'VaultGuard (botão abaixo), instale como "Autoridade de Certificação Raiz Confiável", reabra o Chrome e '
+      + 'conecte de novo. É feito uma única vez por computador (a TI pode distribuir).';
+  }
+  state.certHelpUrl = null;
+  return 'O servidor não respondeu. Confira a URL (inclusive a porta) e se ele está no ar.';
+}
+
+function certHelpButton() {
+  return state.certHelpUrl ? `
+    <button id="btnDownloadCa" style="width:100%;margin-top:8px;background:#1A1A1A;border:1px solid #C78C00;color:#E7A300;border-radius:8px;padding:7px;font-size:12px;font-weight:600;cursor:pointer">
+      Baixar certificado da autoridade
+    </button>
+    <button id="btnOpenServer" style="width:100%;margin-top:6px;background:none;border:none;color:#94a3b8;font-size:11px;cursor:pointer;text-decoration:underline">
+      Ou abrir o servidor e aceitar o aviso (vale só até reiniciar o Chrome)
+    </button>` : '';
+}
+
 function isUnlocked() {
   return !!state.keyring?.isUnlocked;
 }
@@ -149,7 +172,7 @@ function renderSetup() {
         </div>
       </div>
 
-      ${state.error ? `<div style="background:#fee2e220;border:1px solid #fca5a5;color:#f87171;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px">${escapeHtml(state.error)}</div>` : ''}
+      ${state.error ? `<div style="background:#fee2e220;border:1px solid #fca5a5;color:#f87171;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px">${escapeHtml(state.error)}${certHelpButton()}</div>` : ''}
 
       <div id="insecureWarn" style="display:${isInsecureServer(state.serverUrl) ? 'block' : 'none'};background:#f59e0b15;border:1px solid #f59e0b44;color:#f59e0b;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:12px">
         ⚠ Servidor sem HTTPS: o token e os dados trafegam sem criptografia na rede. Use https:// fora da própria máquina.
@@ -266,7 +289,7 @@ function renderVault() {
         ` : state.tab === 'logins' && showDomain ? `<div style="margin-top:6px;font-size:11px;color:#475569">Site: <span style="color:#555552">${escapeHtml(domain)}</span> — <span style="color:#64748b">sem matches, mostrando todas</span></div>` : ''}
       </div>
 
-      ${state.loadError ? `<div style="background:#fee2e220;border-bottom:1px solid #fca5a544;color:#f87171;padding:8px 14px;font-size:12px">${escapeHtml(state.loadError)}</div>` : ''}
+      ${state.loadError ? `<div style="background:#fee2e220;border-bottom:1px solid #fca5a544;color:#f87171;padding:8px 14px;font-size:12px">${escapeHtml(state.loadError)}${certHelpButton()}</div>` : ''}
 
       <!-- Credential list -->
       <div style="flex:1;overflow-y:auto;background:#0D0D0D">
@@ -429,6 +452,13 @@ function renderSaveForm() {
 
 // ─── Event binding ──────────────────────────────────────────────────────────
 function bindEvents() {
+  document.getElementById('btnOpenServer')?.addEventListener('click', () => {
+    if (state.certHelpUrl) chrome.tabs.create({ url: state.certHelpUrl });
+  });
+  // Certificado público da autoridade servido pelo próprio servidor (scripts/gen-certs.sh)
+  document.getElementById('btnDownloadCa')?.addEventListener('click', () => {
+    if (state.certHelpUrl) chrome.tabs.create({ url: `${state.certHelpUrl.replace(/\/+$/, '')}/ca.crt` });
+  });
   if (state.view === 'setup') {
     document.getElementById('btnConnect')?.addEventListener('click', handleConnect);
     ['serverUrl', 'apiToken'].forEach(id => {
@@ -557,6 +587,9 @@ async function handleConnect() {
   const serverUrl = document.getElementById('serverUrl')?.value?.trim().replace(/\/$/, '');
   const apiToken  = document.getElementById('apiToken')?.value?.trim();
 
+  // Mantém o que foi digitado: se a conexão falhar, o formulário não volta vazio
+  state.serverUrl = serverUrl || '';
+  state.apiToken  = apiToken || '';
   if (!serverUrl || !apiToken) {
     state.error = 'Preencha todos os campos'; render(); return;
   }
@@ -587,9 +620,11 @@ async function handleConnect() {
     await loadCredentials();
   } catch (e) {
     state.loading = false;
+    state.certHelpUrl = null;
     state.error = e.friendly ? e.message
       : e.message === 'token_invalid'
       ? 'Token de API inválido ou URL do servidor incorreta'
+      : e instanceof TypeError ? networkErrorMessage(serverUrl)
       : 'Não foi possível conectar. Verifique os dados.';
     render();
   }
@@ -695,7 +730,9 @@ async function loadCredentials() {
       state.siteMatches      = [];
       state.filteredCreds    = [];
       state.view             = 'vault';
-      state.loadError        = 'Não foi possível falar com o servidor do VaultGuard. Verifique a conexão e clique em Atualizar.';
+      state.loadError        = e instanceof TypeError
+        ? networkErrorMessage(state.serverUrl)
+        : 'Não foi possível falar com o servidor do VaultGuard. Verifique a conexão e clique em Atualizar.';
     }
   }
   state.loading = false;
