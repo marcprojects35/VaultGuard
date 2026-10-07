@@ -294,19 +294,32 @@ Pergunta separadamente sobre remoção de containers, volumes de dados e imagens
 
 ### HTTPS
 
-Durante a instalação, ao responder **s** para HTTPS:
+O cofre e a extensão **só funcionam em HTTPS** (a criptografia do navegador exige conexão segura), e o Chrome recusa certificados em que não confia — a extensão nem conecta. Duas formas:
 
-- O script gera `ssl/cert.pem` + `ssl/key.pem` (autoassinado, 10 anos) ou copia um certificado existente
-- Ativa `docker-compose.ssl.yml` via `COMPOSE_FILE` no `.env`
-- `nginx-https.conf` faz redirect HTTP → HTTPS + TLS 1.2/1.3
-
-Para trocar o certificado depois (Let's Encrypt, CA corporativa):
+**1. Autoridade própria (uso interno, sem domínio público)** — padrão do `install.sh`:
 
 ```bash
-cp /caminho/cert.pem ssl/cert.pem
-cp /caminho/key.pem  ssl/key.pem
+bash scripts/gen-certs.sh 192.168.0.10 vault.empresa.local   # IPs e/ou nomes do servidor
 docker compose restart nginx
 ```
+
+- Cria uma autoridade certificadora da instalação (`ssl-ca/ca.key`, fora da pasta montada no nginx — faça backup) e o certificado do servidor com SAN (`ssl/cert.pem`, 825 dias).
+- Em **cada computador**, instale **uma vez** o certificado público da autoridade como raiz confiável. Ele fica em `ssl/ca.crt` e também em `https://<servidor>:<porta>/ca.crt`:
+  - **Windows:** duplo clique em `ca.crt` → *Instalar certificado* → *Máquina local* → *Autoridades de Certificação Raiz Confiáveis* (ou distribua por GPO).
+  - **macOS:** *Acesso às Chaves* → *Sistema* → importar → *Sempre confiar*.
+  - **Linux (Chrome):** `certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n "VaultGuard CA" -i ca.crt` (pacote `libnss3-tools`).
+  - Depois, feche e abra o Chrome. Confira a impressão digital (SHA-256) do `ca.crt` com a TI antes de instalar.
+- Para renovar o certificado do servidor, rode o script de novo: a autoridade é reaproveitada e os computadores não precisam de nada.
+
+**2. Certificado de uma autoridade pública ou corporativa** (ex.: Let's Encrypt para `vault.suaempresa.com`):
+
+```bash
+cp /caminho/fullchain.pem ssl/cert.pem
+cp /caminho/privkey.pem   ssl/key.pem
+docker compose restart nginx
+```
+
+O `docker-compose.ssl.yml` (ativado via `COMPOSE_FILE` no `.env`) publica a porta HTTPS; o `nginx-https.conf` usa TLS 1.2/1.3. As pastas `ssl/` e `ssl-ca/` estão no `.gitignore`.
 
 ### O que o container executa na inicialização
 

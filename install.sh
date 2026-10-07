@@ -285,7 +285,7 @@ else
 
         echo
         echo -e "  Como configurar o certificado SSL?"
-        echo -e "  ${W}1)${NC} Gerar certificado autoassinado (recomendado para uso interno)"
+        echo -e "  ${W}1)${NC} Gerar certificado com autoridade própria (recomendado para uso interno)"
         echo -e "  ${W}2)${NC} Usar certificado existente (Let's Encrypt ou CA própria)"
         ask "Opção [1]: "
         read -r SSL_OPT
@@ -307,14 +307,12 @@ else
         fi
 
         if [ "$SSL_OPT" = "1" ]; then
-            ok "Gerando certificado autoassinado (válido por 10 anos)..."
-            openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-                -keyout ssl/key.pem -out ssl/cert.pem \
-                -subj "/CN=${SERVER_IP}/O=${COMPANY_NAME}/C=BR" \
-                2>/dev/null
-            ok "Certificado gerado em ssl/"
-            warn "Certificado autoassinado: o navegador vai exibir aviso de segurança."
-            warn "Para produção, substitua ssl/cert.pem e ssl/key.pem e reinicie o nginx."
+            # CA própria + certificado com SAN: o Chrome passa a confiar depois de
+            # instalar ssl/ca.crt uma vez em cada computador (sem aviso de segurança)
+            COMPANY_NAME="$COMPANY_NAME" bash scripts/gen-certs.sh "$SERVER_IP" "$(hostname)"
+            ok "Certificado gerado em ssl/ (autoridade em ssl-ca/)"
+            warn "Instale ssl/ca.crt como autoridade confiável nos computadores (instruções acima)."
+            warn "Guarde backup de ssl-ca/ca.key: é ela que renova o certificado."
         fi
 
         HTTPS_URL="https://${SERVER_IP}:${HTTPS_PORT}"

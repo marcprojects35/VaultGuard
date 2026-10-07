@@ -38,3 +38,7 @@ backend/prisma/*.db-journal
 
 # Testes de ponta a ponta
 tests/e2e/.out/
+
+# Certificados e chaves da instalação (nunca versionar)
+ssl/
+ssl-ca/
