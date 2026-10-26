@@ -16,10 +16,10 @@ export default {
         border: 'var(--color-border)',
         muted: 'var(--color-muted)',
         gold: {
-          dark: '#AD7B04',
-          DEFAULT: '#C78C00',
-          light: '#E7A300',
-          hover: '#FFB400',
+          dark: 'var(--color-accent)',
+          DEFAULT: 'var(--color-primary)',
+          light: 'var(--color-primary-light)',
+          hover: 'var(--color-primary-hover)',
         },
       },
       fontFamily: {

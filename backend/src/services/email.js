@@ -1,9 +1,8 @@
 import nodemailer from 'nodemailer';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { logger } from '../utils/logger.js';
 import { getFolderAudiences } from './keys.js';
 
-const prisma = new PrismaClient();
 
 // Nomes, mensagens e títulos vêm de usuários: escapa antes de montar o HTML
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

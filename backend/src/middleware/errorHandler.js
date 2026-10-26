@@ -4,10 +4,10 @@ export const errorHandler = (err, req, res, next) => {
   logger.error(err.message, { stack: err.stack, url: req.url, method: req.method });
 
   if (err.code === 'P2002') {
-    return res.status(409).json({ error: 'Record already exists' });
+    return res.status(409).json({ error: 'Já existe um registro com esses dados' });
   }
   if (err.code === 'P2025') {
-    return res.status(404).json({ error: 'Record not found' });
+    return res.status(404).json({ error: 'Registro não encontrado' });
   }
   // Tipo errado num campo (ex.: número onde se espera texto): erro do cliente, não do servidor
   if (err.name === 'PrismaClientValidationError' || err.code === 'P2023') {
@@ -22,6 +22,6 @@ export const errorHandler = (err, req, res, next) => {
 
   const status = err.status || err.statusCode || 500;
   res.status(status).json({
-    error: status === 500 ? 'Internal server error' : err.message
+    error: status === 500 ? 'Erro interno no servidor. Tente de novo.' : err.message
   });
 };

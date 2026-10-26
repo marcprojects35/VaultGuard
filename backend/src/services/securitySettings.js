@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 
-const prisma = new PrismaClient();
 
 const CACHE_MS = 10 * 1000;
 let cached = null;

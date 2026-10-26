@@ -115,8 +115,8 @@ function VaultRestoreSection({ settings }) {
     <div className="rounded-2xl p-6 mb-5" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{ background: `${settings.primaryColor}22` }}>
-          <Lock className="w-5 h-5" style={{ color: settings.primaryColor }} />
+          style={{ background: 'rgba(var(--color-primary-rgb),0.13)' }}>
+          <Lock className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
         </div>
         <div>
           <h2 className="font-semibold">Restaurar Backup Criptografado</h2>
@@ -233,7 +233,7 @@ function VaultRestoreSection({ settings }) {
             onClick={handleImport}
             disabled={importing || !targetFolderId}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {importing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             {importing ? 'Restaurando...' : `Restaurar ${preview.credentials?.length || 0} credenciais`}
           </button>
@@ -527,7 +527,7 @@ export default function ImportPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <Upload className="w-6 h-6" style={{ color: settings.primaryColor }} />
+        <Upload className="w-6 h-6" style={{ color: 'var(--color-primary)' }} />
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Importar</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
@@ -553,10 +553,10 @@ export default function ImportPage() {
             <button key={f.id} onClick={() => { setFormat(f.id); reset(); }}
               className="p-3 rounded-xl text-left transition-all"
               style={{
-                background: format === f.id ? `${settings.primaryColor}22` : 'var(--color-surface-2)',
-                border: `1px solid ${format === f.id ? settings.primaryColor + '66' : 'var(--color-border)'}`,
+                background: format === f.id ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)',
+                border: `1px solid ${format === f.id ? 'rgba(var(--color-primary-rgb),0.4)' : 'var(--color-border)'}`,
               }}>
-              <p className="text-sm font-medium" style={{ color: format === f.id ? settings.primaryColor : 'var(--color-text)' }}>{f.label}</p>
+              <p className="text-sm font-medium" style={{ color: format === f.id ? 'var(--color-primary)' : 'var(--color-text)' }}>{f.label}</p>
               <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{f.desc}</p>
             </button>
           ))}
@@ -589,7 +589,7 @@ export default function ImportPage() {
         <div
           className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors"
           style={{ borderColor: 'var(--color-border)' }}
-          onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = settings.primaryColor; }}
+          onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = 'var(--color-primary)'; }}
           onDragLeave={e => { e.currentTarget.style.borderColor = 'var(--color-border)'; }}
           onDrop={e => {
             e.preventDefault();
@@ -600,7 +600,7 @@ export default function ImportPage() {
         >
           <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" style={{ color: 'var(--color-text-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            Arraste o arquivo CSV aqui ou <span style={{ color: settings.primaryColor }}>clique para selecionar</span>
+            Arraste o arquivo CSV aqui ou <span style={{ color: 'var(--color-primary)' }}>clique para selecionar</span>
           </p>
           <input ref={fileInputRef} type="file" accept=".csv,.json,text/csv,application/json" className="hidden"
             onChange={e => handleFile(e.target.files?.[0])} />
@@ -608,11 +608,11 @@ export default function ImportPage() {
 
         {fileName && (
           <div className="mt-3 flex items-center gap-2 text-sm" style={{ color: 'var(--color-text-muted)' }}>
-            <FileText className="w-4 h-4" style={{ color: settings.primaryColor }} />
+            <FileText className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
             <span>{fileName}</span>
             {parsedRows.length > 0 && (
               <span className="ml-1 text-xs px-2 py-0.5 rounded-full"
-                style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+                style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                 {parsedRows.length} linha{parsedRows.length !== 1 ? 's' : ''} válida{parsedRows.length !== 1 ? 's' : ''}
               </span>
             )}
@@ -686,7 +686,7 @@ export default function ImportPage() {
             onClick={() => importMutation.mutate()}
             disabled={importMutation.isPending || !selectedFolder}
             className="mt-4 w-full py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {importMutation.isPending
               ? <><RefreshCw className="w-4 h-4 animate-spin" /> Importando...</>
               : <><Upload className="w-4 h-4" /> Importar {parsedRows.length} Credencial{parsedRows.length !== 1 ? 'is' : ''}</>}
@@ -719,7 +719,7 @@ export default function ImportPage() {
             </div>
           )}
           {importResult.imported > 0 && (
-            <button onClick={reset} className="mt-3 text-sm" style={{ color: settings.primaryColor }}>
+            <button onClick={reset} className="mt-3 text-sm" style={{ color: 'var(--color-primary)' }}>
               Importar mais arquivos
             </button>
           )}

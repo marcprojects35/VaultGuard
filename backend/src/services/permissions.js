@@ -1,103 +1,106 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 
-const prisma = new PrismaClient();
 
-/**
- * Check if a user can access a folder with the given permission level
- * @param {string} userId
- * @param {string} userRole
- * @param {string} folderId
- * @param {'canView'|'canEdit'|'canDelete'|'canShare'} level
- */
-export async function canAccessFolder(userId, userRole, folderId, level = 'canView') {
+const NONE = { canView: false, canEdit: false, canDelete: false, canShare: false };
+const ALL = { canView: true, canEdit: true, canDelete: true, canShare: true };
+
+// Capacidades do cargo (Configurações > Cargos). Cache curto: são lidas em toda
+// checagem de permissão; invalidateRoleCaps() é chamado quando o admin altera.
+export const ROLE_CAPS = ['canEdit', 'canDelete', 'canShare', 'canCreateTeams', 'canExport', 'canImport', 'canUseApiTokens'];
+let capsCache = null;
+let capsAt = 0;
+export function invalidateRoleCaps() { capsCache = null; }
+export async function getRoleCaps(roleKey) {
+  if (roleKey === 'ADMINISTRADOR') return Object.fromEntries(ROLE_CAPS.map(c => [c, true]));
+  if (!capsCache || Date.now() - capsAt > 30000) {
+    const roles = await prisma.role.findMany({ select: { key: true, ...Object.fromEntries(ROLE_CAPS.map(c => [c, true])) } });
+    capsCache = Object.fromEntries(roles.map(r => [r.key, r]));
+    capsAt = Date.now();
+  }
+  // Cargo desconhecido: nada além de ver
+  return capsCache[roleKey] || Object.fromEntries(ROLE_CAPS.map(c => [c, false]));
+}
+
+/** Middleware: exige uma capacidade do cargo (ex.: canExport) */
+export function requireCap(cap, message) {
+  return async (req, res, next) => {
+    try {
+      if ((await getRoleCaps(req.user.role))[cap]) return next();
+      res.status(403).json({ error: message || 'Seu cargo não tem permissão para esta ação', code: 'ROLE_FORBIDDEN' });
+    } catch (err) { next(err); }
+  };
+}
+
+/** Permissões do membro nas pastas do grupo: dono tem todas; os demais seguem o padrão do grupo ou o ajuste individual */
+export function teamMemberPerms(team, member) {
+  if (team.ownerId === member.userId) return { ...ALL };
+  return {
+    canView: true,
+    canEdit: member.canEdit ?? team.memberCanEdit,
+    canDelete: member.canDelete ?? team.memberCanDelete,
+    canShare: member.canShare ?? team.memberCanShare,
+  };
+}
+
+/** Permissões efetivas na pasta (sem o teto do cargo) */
+async function rawFolderPermissions(userId, userRole, folder) {
+  if (!folder) return { ...NONE };
   // Dono de pasta pessoal sempre tem acesso total à própria pasta —
   // pastas pessoais nunca têm FolderPermission cadastrada.
-  const folder = await prisma.folder.findUnique({
-    where: { id: folderId },
-    select: { isPersonal: true, ownerId: true, teamId: true, visibleToAll: true }
-  });
-  if (folder?.isPersonal && folder.ownerId === userId) return true;
-  // Pasta pessoal de outra pessoa: ninguém vê o conteúdo, nem o admin
-  // (o admin ainda pode renomear/excluir a pasta pelas rotas de pastas)
-  if (folder?.isPersonal) return false;
-
-  if (userRole === 'ADMINISTRADOR') return true;
-
-  // Pasta corporativa: todo mundo vê; só admin edita/apaga/compartilha
-  // (admin já retornou true acima, então aqui só sobra o canView).
-  if (folder?.visibleToAll) return level === 'canView';
-
-  // Pasta de equipe: membro ACTIVE vê/edita; excluir/compartilhar só o dono do time.
-  if (folder?.teamId) {
+  if (folder.isPersonal) return folder.ownerId === userId ? { ...ALL, personal: true } : { ...NONE };
+  if (userRole === 'ADMINISTRADOR') return { ...ALL };
+  // Pasta corporativa: todo mundo vê; editar/excluir/compartilhar só com
+  // permissão explícita (cargo ou usuário) definida pelo admin em Pastas
+  let result = folder.visibleToAll ? { ...NONE, canView: true } : { ...NONE };
+  if (folder.teamId) {
     const membership = await prisma.teamMember.findUnique({
-      where: { teamId_userId: { teamId: folder.teamId, userId } }
+      where: { teamId_userId: { teamId: folder.teamId, userId } },
     });
     if (membership?.status === 'ACTIVE') {
-      if (level === 'canView' || level === 'canEdit') return true;
-      const team = await prisma.team.findUnique({ where: { id: folder.teamId }, select: { ownerId: true } });
-      return team?.ownerId === userId;
+      const team = await prisma.team.findUnique({
+        where: { id: folder.teamId },
+        select: { ownerId: true, memberCanEdit: true, memberCanDelete: true, memberCanShare: true },
+      });
+      if (team) result = teamMemberPerms(team, membership);
     }
   }
 
-  // Check user-specific permission first
-  const userPerm = await prisma.folderPermission.findFirst({
-    where: { folderId, userId }
-  });
-
-  if (userPerm) return userPerm[level] === true;
-
-  // Check role-based permission
-  const rolePerm = await prisma.folderPermission.findFirst({
-    where: { folderId, role: userRole }
-  });
-
-  if (rolePerm) return rolePerm[level] === true;
-
-  return false;
+  // Permissão explícita na pasta: a do usuário prevalece sobre a do cargo
+  const perm = await prisma.folderPermission.findFirst({ where: { folderId: folder.id, userId } })
+    || await prisma.folderPermission.findFirst({ where: { folderId: folder.id, role: userRole } });
+  if (perm) {
+    // Grupo e permissão explícita somam
+    for (const k of ['canView', 'canEdit', 'canDelete', 'canShare']) result[k] = result[k] || perm[k] === true;
+  }
+  return result;
 }
 
+/**
+ * Permissões do usuário na pasta, já limitadas pelo cargo
+ * (ex.: Auxiliar pode editar mas não excluir em nenhuma pasta compartilhada)
+ */
 export async function getUserPermissionsForFolder(userId, userRole, folderId) {
   const folder = await prisma.folder.findUnique({
     where: { id: folderId },
-    select: { isPersonal: true, ownerId: true, teamId: true, visibleToAll: true }
+    select: { id: true, isPersonal: true, ownerId: true, teamId: true, visibleToAll: true },
   });
-  if (folder?.isPersonal && folder.ownerId === userId) {
-    return { canView: true, canEdit: true, canDelete: true, canShare: true };
-  }
-  if (folder?.isPersonal) {
-    return { canView: false, canEdit: false, canDelete: false, canShare: false };
-  }
+  const raw = await rawFolderPermissions(userId, userRole, folder);
+  if (raw.personal) return { ...ALL };
+  const caps = await getRoleCaps(userRole);
+  return {
+    canView: raw.canView,
+    canEdit: raw.canEdit && caps.canEdit,
+    canDelete: raw.canDelete && caps.canDelete,
+    canShare: raw.canShare && caps.canShare,
+  };
+}
 
-  if (userRole === 'ADMINISTRADOR') {
-    return { canView: true, canEdit: true, canDelete: true, canShare: true };
-  }
-
-  if (folder?.visibleToAll) {
-    return { canView: true, canEdit: false, canDelete: false, canShare: false };
-  }
-
-  if (folder?.teamId) {
-    const membership = await prisma.teamMember.findUnique({
-      where: { teamId_userId: { teamId: folder.teamId, userId } }
-    });
-    if (membership?.status === 'ACTIVE') {
-      const team = await prisma.team.findUnique({ where: { id: folder.teamId }, select: { ownerId: true } });
-      const isTeamOwner = team?.ownerId === userId;
-      return { canView: true, canEdit: true, canDelete: isTeamOwner, canShare: isTeamOwner };
-    }
-  }
-
-  const userPerm = await prisma.folderPermission.findFirst({
-    where: { folderId, userId }
-  });
-  if (userPerm) return userPerm;
-
-  const rolePerm = await prisma.folderPermission.findFirst({
-    where: { folderId, role: userRole }
-  });
-  if (rolePerm) return rolePerm;
-
-  return { canView: false, canEdit: false, canDelete: false, canShare: false };
+/**
+ * Check if a user can access a folder with the given permission level
+ * @param {'canView'|'canEdit'|'canDelete'|'canShare'} level
+ */
+export async function canAccessFolder(userId, userRole, folderId, level = 'canView') {
+  return (await getUserPermissionsForFolder(userId, userRole, folderId))[level] === true;
 }
 
 export async function getAccessibleFolderIds(userId, userRole) {
@@ -156,7 +159,8 @@ export async function canAccessCredential(userId, userRole, cred, permission = '
   // Check folder-level access (já trata admin e pastas pessoais)
   const folderAccess = await canAccessFolder(userId, userRole, cred.folderId, permission);
   if (folderAccess) return true;
-  // Check individual share (view only, or edit if canEdit)
+  // Check individual share (view only, or edit if canEdit); editar segue o teto do cargo
+  if (permission === 'canEdit' && !(await getRoleCaps(userRole)).canEdit) return false;
   if (permission === 'canView' || permission === 'canEdit') {
     const share = await prisma.credentialShare.findFirst({
       where: {
@@ -169,4 +173,28 @@ export async function canAccessCredential(userId, userRole, cred, permission = '
     return !!share;
   }
   return false;
+}
+
+/**
+ * Permissões do usuário em cada credencial da lista (para a interface esconder
+ * editar/excluir/compartilhar). Calcula uma vez por pasta.
+ */
+export async function attachCredentialPermissions(user, credentials) {
+  const byFolder = new Map();
+  for (const folderId of new Set(credentials.map(c => c.folderId))) {
+    byFolder.set(folderId, await getUserPermissionsForFolder(user.id, user.role, folderId));
+  }
+  const viaShare = credentials.filter(c => !byFolder.get(c.folderId)?.canView).map(c => c.id);
+  const shares = viaShare.length ? await prisma.credentialShare.findMany({
+    where: { credentialId: { in: viaShare }, sharedWithId: user.id, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+    select: { credentialId: true, canEdit: true },
+  }) : [];
+  const shareMap = new Map(shares.map(s => [s.credentialId, s]));
+  const caps = await getRoleCaps(user.role);
+  return credentials.map(c => {
+    const folderPerms = byFolder.get(c.folderId);
+    if (folderPerms?.canView) return { ...c, myPermissions: folderPerms };
+    const share = shareMap.get(c.id);
+    return { ...c, myPermissions: { canView: !!share, canEdit: !!share?.canEdit && caps.canEdit, canDelete: false, canShare: false } };
+  });
 }

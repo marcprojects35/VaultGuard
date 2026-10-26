@@ -2,12 +2,11 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { createAuditLog } from '../services/audit.js';
 import { sendAccessRequestNotification, sendAccessRequestResult } from '../services/email.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/access-requests — user sees own, admin sees all
 router.get('/', authenticate, async (req, res, next) => {
@@ -62,14 +61,14 @@ router.post('/', authenticate,
 
       const folder = await prisma.folder.findUnique({ where: { id: folderId } });
       // Pasta pessoal não é solicitável (mesma resposta de inexistente, para não revelar)
-      if (!folder || folder.isPersonal) return res.status(404).json({ error: 'Folder not found' });
+      if (!folder || folder.isPersonal) return res.status(404).json({ error: 'Pasta não encontrada' });
 
       // Check if already has access
       const existingPerm = await prisma.folderPermission.findFirst({
         where: { folderId, OR: [{ userId: req.user.id }, { role: req.user.role }] }
       });
       if (existingPerm?.canView) {
-        return res.status(409).json({ error: 'You already have access to this folder' });
+        return res.status(409).json({ error: 'Você já tem acesso a esta pasta' });
       }
 
       // Check for pending request
@@ -77,7 +76,7 @@ router.post('/', authenticate,
         where: { userId: req.user.id, folderId, status: 'PENDING' }
       });
       if (existing) {
-        return res.status(409).json({ error: 'You already have a pending request for this folder' });
+        return res.status(409).json({ error: 'Você já tem um pedido pendente para esta pasta' });
       }
 
       const request = await prisma.accessRequest.create({
@@ -111,8 +110,8 @@ router.put('/:id', authenticate, requireAdmin, async (req, res, next) => {
     }
 
     const request = await prisma.accessRequest.findUnique({ where: { id: req.params.id } });
-    if (!request) return res.status(404).json({ error: 'Request not found' });
-    if (request.status !== 'PENDING') return res.status(409).json({ error: 'Request already reviewed' });
+    if (!request) return res.status(404).json({ error: 'Pedido não encontrado' });
+    if (request.status !== 'PENDING') return res.status(409).json({ error: 'Este pedido já foi analisado' });
 
     const updated = await prisma.accessRequest.update({
       where: { id: req.params.id },
@@ -165,14 +164,14 @@ router.put('/:id', authenticate, requireAdmin, async (req, res, next) => {
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
     const request = await prisma.accessRequest.findUnique({ where: { id: req.params.id } });
-    if (!request) return res.status(404).json({ error: 'Not found' });
+    if (!request) return res.status(404).json({ error: 'Não encontrado' });
 
     const isAdmin = req.user.role === 'ADMINISTRADOR';
     if (!isAdmin && request.userId !== req.user.id) {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
     }
     if (request.status !== 'PENDING' && !isAdmin) {
-      return res.status(409).json({ error: 'Cannot cancel a reviewed request' });
+      return res.status(409).json({ error: 'Não dá para cancelar um pedido já analisado' });
     }
 
     await prisma.accessRequest.delete({ where: { id: req.params.id } });

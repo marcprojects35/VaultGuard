@@ -21,11 +21,11 @@ import {
 } from '../utils/crypto.js';
 
 // ── Palette constants ──────────────────────────────────────────────────────────
-const FOLDER_BG      = '#111111';
-const FOLDER_BORDER  = '#1E1E1E';
-const GOLD           = '#C78C00';
-const GOLD_DIM       = '#C78C0044';
-const GOLD_TEXT      = '#E7A300';
+const FOLDER_BG      = 'var(--color-bg-secondary)';
+const FOLDER_BORDER  = 'var(--color-surface-2)';
+const GOLD           = 'var(--color-primary)';
+const GOLD_DIM       = 'rgba(var(--color-primary-rgb),0.27)';
+const GOLD_TEXT      = 'var(--color-primary-light)';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Folder Tree Item
@@ -54,18 +54,18 @@ function FolderItem({ folder, selectedId, onSelect, level = 0, onDelete, isAdmin
           className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all text-left"
           style={{
             paddingLeft: `${12 + level * 16}px`,
-            background: isSelected ? `${GOLD}22` : 'transparent',
-            color: isSelected ? GOLD_TEXT : '#A0A09E',
+            background: isSelected ? 'rgba(var(--color-primary-rgb),0.13)' : 'transparent',
+            color: isSelected ? GOLD_TEXT : 'var(--color-text-muted)',
           }}
         >
           {hasChildren ? (
             expanded
               ? <ChevronDown className="w-3 h-3 flex-shrink-0" style={{ color: GOLD_TEXT }} />
-              : <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: '#636360' }} />
+              : <ChevronRight className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--color-muted)' }} />
           ) : <span className="w-3" />}
           <span className="text-base">{folder.isPersonal ? '🔒' : folder.icon === 'folder' ? '📁' : '📂'}</span>
           <span className="truncate flex-1">{folder.name}</span>
-          <span className="text-xs" style={{ color: '#4A4A48' }}>
+          <span className="text-xs" style={{ color: 'var(--color-muted)' }}>
             {folder._count?.credentials || 0}
           </span>
         </button>
@@ -76,12 +76,12 @@ function FolderItem({ folder, selectedId, onSelect, level = 0, onDelete, isAdmin
             <button
               onClick={(e) => { e.stopPropagation(); setMenuOpen(!menuOpen); }}
               className="p-1 rounded hover:bg-white/10"
-              style={{ color: '#636360' }}>
+              style={{ color: 'var(--color-muted)' }}>
               <MoreVertical className="w-3.5 h-3.5" />
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-full mt-1 w-36 rounded-xl overflow-hidden z-30"
-                style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+                style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(folder); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-red-500/10 transition-colors"
@@ -141,24 +141,24 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
     <div
       className="w-full flex items-center gap-3 px-4 py-3 text-left transition-all cursor-pointer"
       style={{
-        background: isSelected ? `${settings.primaryColor}15` : 'transparent',
-        borderBottom: '1px solid #1E1E1E',
-        borderLeft: isSelected ? `3px solid ${settings.primaryColor}` : '3px solid transparent',
+        background: isSelected ? 'rgba(var(--color-primary-rgb),0.08)' : 'transparent',
+        borderBottom: '1px solid var(--color-border)',
+        borderLeft: isSelected ? `3px solid var(--color-primary)` : '3px solid transparent',
       }}
       onClick={() => onClick(cred)}
     >
       {onSelect && (
         <button onClick={e => { e.stopPropagation(); onSelect(cred.id); }}
-          className="flex-shrink-0 mr-0" style={{ color: selected ? settings.primaryColor : 'var(--color-muted)' }}>
+          className="flex-shrink-0 mr-0" style={{ color: selected ? 'var(--color-primary)' : 'var(--color-muted)' }}>
           {selected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
         </button>
       )}
       <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-        style={{ background: '#1E1E1E' }}>
+        style={{ background: 'var(--color-surface-2)' }}>
         {/* Ícone local: um favicon remoto revelaria ao serviço de ícones os sites do cofre */}
         {cred.kind === 'certificate'
-          ? <FileBadge className="w-3.5 h-3.5" style={{ color: settings.primaryColor }} />
-          : <Key className="w-3.5 h-3.5" style={{ color: settings.primaryColor }} />}
+          ? <FileBadge className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />
+          : <Key className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>{cred.title}</div>
@@ -172,12 +172,12 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
         {expiryStatus === 'warning' && <Clock className="w-3.5 h-3.5 text-yellow-400" title="Expira em menos de 30 dias" />}
         {cred.attachments?.length > 0 && <Paperclip className="w-3 h-3" style={{ color: 'var(--color-muted)' }} />}
         {cred.customFields?.length > 0 && (
-          <span className="text-xs px-1 rounded" style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+          <span className="text-xs px-1 rounded" style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
             +{cred.customFields.length}
           </span>
         )}
         {cred.strength != null && (
-          <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: '#2A2A2A' }}>
+          <div className="w-10 h-1 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
             <div className="h-full rounded-full" style={{ width: `${cred.strength}%`, background: getStrengthColor(cred.strength) }} />
           </div>
         )}
@@ -190,6 +190,7 @@ function CredentialRow({ cred, isSelected, onClick, settings, selected, onSelect
 // Credential Detail Panel
 // ────────────────────────────────────────────────────────────────────────────
 function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite, settings, onClose }) {
+  const perms = cred.myPermissions || {};
   const [passVisible, setPassVisible] = useState(false);
   const [decryptedPass, setDecryptedPass] = useState('');
   const [loading, setLoading] = useState(false);
@@ -301,7 +302,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
   );
 
   const Field = ({ icon: Icon, label, children }) => (
-    <div className="flex items-start py-3" style={{ borderBottom: '1px solid #252525' }}>
+    <div className="flex items-start py-3" style={{ borderBottom: '1px solid var(--color-border)' }}>
       <div className="w-28 flex items-center gap-2 flex-shrink-0 pt-0.5">
         {Icon && <Icon className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />}
         <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>{label}</span>
@@ -311,8 +312,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
   );
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#0D0D0D' }}>
-      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid #1E1E1E', background: '#111111' }}>
+    <div className="flex flex-col h-full" style={{ background: 'var(--color-bg-secondary)' }}>
+      <div className="flex items-center gap-3 px-5 py-4" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}>
         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" style={{ color: 'var(--color-muted)' }}>
           <ArrowLeft className="w-4 h-4" />
         </button>
@@ -341,14 +342,15 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
         </div>
       )}
 
-      <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto" style={{ borderBottom: '1px solid #1E1E1E', background: '#111111' }}>
+      <div className="flex items-center gap-1 px-4 py-2 overflow-x-auto" style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}>
         {[
-          { icon: Edit2, label: 'Editar', action: () => onEdit(cred), color: 'var(--color-text-muted)' },
-          { icon: Trash2, label: 'Excluir', action: () => onDelete(cred), color: '#ef4444' },
+          // Permissões vindas do servidor (cargo + pasta/grupo); sem a informação, mostra e o servidor decide
+          perms.canEdit !== false && { icon: Edit2, label: 'Editar', action: () => onEdit(cred), color: 'var(--color-text-muted)' },
+          perms.canDelete !== false && { icon: Trash2, label: 'Excluir', action: () => onDelete(cred), color: '#ef4444' },
           { icon: Copy, label: 'Copiar', action: () => copyField('password', null), color: 'var(--color-text-muted)' },
-          { icon: Share2, label: 'Compartilhar', action: () => { setActiveView('shares'); setShowShareModal(true); }, color: activeView === 'shares' ? settings.primaryColor : 'var(--color-text-muted)' },
-          { icon: History, label: 'Versões', action: () => setActiveView(v => v === 'history' ? 'detail' : 'history'), color: activeView === 'history' ? settings.primaryColor : 'var(--color-text-muted)' },
-        ].map(({ icon: Icon, label, action, color }) => (
+          perms.canShare !== false && { icon: Share2, label: 'Compartilhar', action: () => { setActiveView('shares'); setShowShareModal(true); }, color: activeView === 'shares' ? 'var(--color-primary)' : 'var(--color-text-muted)' },
+          { icon: History, label: 'Versões', action: () => setActiveView(v => v === 'history' ? 'detail' : 'history'), color: activeView === 'history' ? 'var(--color-primary)' : 'var(--color-text-muted)' },
+        ].filter(Boolean).map(({ icon: Icon, label, action, color }) => (
           <button key={label} onClick={action}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs hover:bg-white/5 transition-colors whitespace-nowrap"
             style={{ color }}>
@@ -360,7 +362,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
       <div className="flex-1 overflow-y-auto p-5">
         {activeView === 'detail' ? (
           <>
-            <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
+            <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
               <div className="px-5">
                 <Field icon={Key} label="Senha">
                   <div className="flex items-center gap-2">
@@ -387,7 +389,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                   {cred.url ? (
                     <div className="flex items-center gap-2">
                       <a href={safeUrl(cred.url)} target="_blank" rel="noopener noreferrer"
-                        className="text-sm hover:underline flex-1 truncate" style={{ color: settings.primaryColor }}>{cred.url}</a>
+                        className="text-sm hover:underline flex-1 truncate" style={{ color: 'var(--color-primary)' }}>{cred.url}</a>
                       <CopyBtn field="url" value={cred.url} />
                     </div>
                   ) : <span className="text-sm" style={{ color: 'var(--color-muted)' }}>—</span>}
@@ -397,7 +399,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                     <div className="flex gap-1 flex-wrap">
                       {cred.tags.map(t => (
                         <span key={t} className="text-xs px-2 py-0.5 rounded-full"
-                          style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>#{t}</span>
+                          style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>#{t}</span>
                       ))}
                     </div>
                   ) : <span className="text-sm" style={{ color: 'var(--color-muted)' }}>—</span>}
@@ -406,8 +408,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             </div>
 
             {cred.customFields?.length > 0 && (
-              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
-                <div className="px-4 py-2 border-b" style={{ borderColor: '#252525' }}>
+              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                <div className="px-4 py-2 border-b" style={{ borderColor: 'var(--color-surface-hover)' }}>
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Campos Personalizados</span>
                 </div>
                 <div className="px-5">
@@ -426,7 +428,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
                           </>
                         ) : cf.fieldType === 'url' ? (
                           <a href={safeUrl(cf.value)} target="_blank" rel="noopener noreferrer"
-                            className="text-sm hover:underline flex-1 truncate" style={{ color: settings.primaryColor }}>{cf.value}</a>
+                            className="text-sm hover:underline flex-1 truncate" style={{ color: 'var(--color-primary)' }}>{cf.value}</a>
                         ) : (
                           <span className="text-sm flex-1" style={{ color: 'var(--color-text)' }}>{cf.value}</span>
                         )}
@@ -439,7 +441,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
 
             {cred.notes && (
-              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
+              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
                 <div className="flex items-center gap-2 mb-2">
                   <FileText className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />
                   <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Anotações</span>
@@ -449,8 +451,8 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
 
             {cred.attachments?.length > 0 && (
-              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
-                <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: '#252525' }}>
+              <div className="rounded-2xl overflow-hidden mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+                <div className="px-4 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--color-surface-hover)' }}>
                   <Paperclip className="w-3.5 h-3.5" style={{ color: 'var(--color-muted)' }} />
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>
                     Anexos ({cred.attachments.length})
@@ -473,14 +475,14 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             )}
 
             {cred.strength != null && (
-              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid #252525', background: '#161616' }}>
+              <div className="rounded-2xl p-4 mb-4" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>Força da Senha</span>
                   <span className="text-xs font-semibold" style={{ color: getStrengthColor(cred.strength) }}>
                     {getStrengthLabel(cred.strength)} ({cred.strength}%)
                   </span>
                 </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: '#2A2A2A' }}>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--color-border)' }}>
                   <div className="h-full rounded-full transition-all" style={{ width: `${cred.strength}%`, background: getStrengthColor(cred.strength) }} />
                 </div>
               </div>
@@ -507,9 +509,9 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
           <div>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-                <History className="w-4 h-4" style={{ color: settings.primaryColor }} /> Versões Anteriores de Senha
+                <History className="w-4 h-4" style={{ color: 'var(--color-primary)' }} /> Versões Anteriores de Senha
               </h3>
-              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+              <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                 {history.length} versão(ões)
               </span>
             </div>
@@ -525,7 +527,7 @@ function CredentialDetail({ cred, onEdit, onDelete, onToggleFavorite, isFavorite
             ) : (
               <div className="space-y-2">
                 {history.map((entry, idx) => (
-                  <div key={entry.id} className="rounded-xl p-3" style={{ background: '#161616', border: '1px solid #252525' }}>
+                  <div key={entry.id} className="rounded-xl p-3" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium" style={{ color: 'var(--color-text-muted)' }}>
                         Versão {history.length - idx}{entry.changedBy && ` • ${entry.changedBy.firstName} ${entry.changedBy.lastName}`}
@@ -596,25 +598,25 @@ function SharesView({ cred, credId, shares, sharesLoading, refetchShares, settin
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-          <Users className="w-4 h-4" style={{ color: settings.primaryColor }} /> Compartilhado com
+          <Users className="w-4 h-4" style={{ color: 'var(--color-primary)' }} /> Compartilhado com
         </h3>
         <button onClick={() => setShowShareModal(true)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
-          style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+          style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
           <Share2 className="w-3.5 h-3.5" /> Compartilhar
         </button>
       </div>
 
       {showShareModal && (
-        <div className="rounded-xl p-4 mb-4" style={{ background: '#1A1A1A', border: `1px solid ${settings.primaryColor}44` }}>
+        <div className="rounded-xl p-4 mb-4" style={{ background: 'var(--color-surface-2)', border: `1px solid rgba(var(--color-primary-rgb),0.27)` }}>
           <p className="text-xs font-medium mb-3" style={{ color: 'var(--color-text)' }}>Compartilhar com usuário</p>
           <input value={userQuery} onChange={e => { setUserQuery(e.target.value); setSelectedUserId(''); }}
             className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-2"
-            style={{ background: '#111111', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
             placeholder="Buscar por nome ou e-mail (mín. 2 letras)" />
           <select value={selectedUserId} onChange={e => setSelectedUserId(e.target.value)}
             className="w-full px-3 py-2 rounded-lg text-sm outline-none mb-2"
-            style={{ background: '#111111', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
             <option value="">— Selecione um usuário —</option>
             {allUsers.map(u => <option key={u.id} value={u.id}>{u.firstName} {u.lastName} ({u.email})</option>)}
           </select>
@@ -625,10 +627,10 @@ function SharesView({ cred, credId, shares, sharesLoading, refetchShares, settin
           <div className="flex gap-2">
             <button onClick={() => setShowShareModal(false)}
               className="flex-1 py-1.5 rounded-lg text-xs hover:bg-white/5"
-              style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
             <button onClick={() => shareMutation.mutate()} disabled={shareMutation.isPending || !selectedUserId}
               className="flex-1 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-              style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+              style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
               {shareMutation.isPending ? '...' : 'Compartilhar'}
             </button>
           </div>
@@ -648,9 +650,9 @@ function SharesView({ cred, credId, shares, sharesLoading, refetchShares, settin
         <div className="space-y-2">
           {shares.map(s => (
             <div key={s.id} className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-              style={{ background: '#111111', border: '1px solid #252525' }}>
+              style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+                style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
                 {s.sharedWith?.firstName?.[0]}{s.sharedWith?.lastName?.[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -716,9 +718,14 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
     }
   }, [credential?.id]);
 
+  // Só pastas onde a pessoa pode criar/editar (a da senha em edição sempre aparece)
   const flatFolders = flattenFolders(folders?.shared || []).concat(
     flattenFolders(folders?.personal || []).map(f => ({ ...f, name: `🔒 ${f.name}` }))
-  );
+  ).filter(f => f.myPermissions?.canEdit !== false || f.id === credential?.folderId);
+  // Pasta sugerida onde a pessoa não pode criar: deixa escolher outra
+  useEffect(() => {
+    if (form.folderId && flatFolders.length && !flatFolders.some(f => f.id === form.folderId)) setForm(f => ({ ...f, folderId: '' }));
+  }, [flatFolders.length, form.folderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handlePassword = (val) => setForm(f => ({ ...f, password: val, strength: calculateStrength(val) }));
   const handleGenerate = () => { const p = generatePassword({ length: 20, uppercase: true, lowercase: true, numbers: true, symbols: true }); handlePassword(p); setShowPass(true); };
@@ -774,7 +781,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
   const Tab = ({ id, label }) => (
     <button onClick={() => setActiveTab(id)}
       className="px-4 py-2 text-sm font-medium transition-colors rounded-lg"
-      style={{ background: activeTab === id ? `${settings.primaryColor}22` : 'transparent', color: activeTab === id ? settings.primaryColor : 'var(--color-text-muted)' }}>
+      style={{ background: activeTab === id ? 'rgba(var(--color-primary-rgb),0.13)' : 'transparent', color: activeTab === id ? 'var(--color-primary)' : 'var(--color-text-muted)' }}>
       {label}
     </button>
   );
@@ -792,34 +799,34 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
     e.target.value = '';
   };
 
-  const inputStyle = { background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' };
+  const inputStyle = { background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-xl rounded-2xl animate-fadeIn max-h-[90vh] flex flex-col"
-        style={{ background: '#111111', border: '1px solid #252525' }}>
+        style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
 
-        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: '#252525' }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--color-surface-hover)' }}>
           <h2 className="text-lg font-bold">{isEdit ? 'Editar Credencial' : 'Nova Credencial'}</h2>
           <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/5" style={{ color: 'var(--color-muted)' }}><X className="w-4 h-4" /></button>
         </div>
 
         {!isEdit && (
-          <div className="flex items-center gap-2 px-4 py-2 border-b overflow-x-auto flex-shrink-0" style={{ borderColor: '#252525' }}>
+          <div className="flex items-center gap-2 px-4 py-2 border-b overflow-x-auto flex-shrink-0" style={{ borderColor: 'var(--color-surface-hover)' }}>
             <LayoutTemplate className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--color-muted)' }} />
             {CREDENTIAL_TEMPLATES.map(tpl => (
               <button key={tpl.id} onClick={() => { setSelectedTemplate(tpl.id); setCustomFields(tpl.fields.length > 0 ? tpl.fields.map((f, i) => ({ ...f, sortOrder: i })) : []); }}
                 className="px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-colors flex-shrink-0"
-                style={{ background: selectedTemplate === tpl.id ? `${settings.primaryColor}22` : '#1A1A1A', color: selectedTemplate === tpl.id ? settings.primaryColor : 'var(--color-text-muted)', border: `1px solid ${selectedTemplate === tpl.id ? settings.primaryColor + '44' : '#2A2A2A'}` }}>
+                style={{ background: selectedTemplate === tpl.id ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)', color: selectedTemplate === tpl.id ? 'var(--color-primary)' : 'var(--color-text-muted)', border: `1px solid ${selectedTemplate === tpl.id ? 'rgba(var(--color-primary-rgb),0.27)' : 'var(--color-border)'}` }}>
                 {tpl.label}
               </button>
             ))}
           </div>
         )}
 
-        <div className="flex gap-1 px-4 py-2 border-b flex-shrink-0" style={{ borderColor: '#252525' }}>
+        <div className="flex gap-1 px-4 py-2 border-b flex-shrink-0" style={{ borderColor: 'var(--color-surface-hover)' }}>
           <Tab id="basic" label="Básico" />
           <Tab id="custom" label={`Campos (${customFields.length})`} />
           <Tab id="attachments" label={`Anexos (${attachments.filter(a => !deletedAttachmentIds.includes(a.id)).length + newFiles.length})`} />
@@ -861,14 +868,14 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                       <button type="button" onClick={() => setShowPass(!showPass)} className="p-1 rounded" style={{ color: 'var(--color-muted)' }}>
                         {showPass ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                       </button>
-                      <button type="button" onClick={handleGenerate} className="p-1 rounded" style={{ color: settings.primaryColor }}>
+                      <button type="button" onClick={handleGenerate} className="p-1 rounded" style={{ color: 'var(--color-primary)' }}>
                         <Wand2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
                   {form.password && (
                     <div className="flex items-center gap-2 mt-1">
-                      <div className="flex-1 h-1 rounded-full" style={{ background: '#2A2A2A' }}>
+                      <div className="flex-1 h-1 rounded-full" style={{ background: 'var(--color-border)' }}>
                         <div className="h-full rounded-full transition-all" style={{ width: `${form.strength}%`, background: getStrengthColor(form.strength) }} />
                       </div>
                       <span className="text-xs" style={{ color: getStrengthColor(form.strength) }}>{form.strength}%</span>
@@ -908,21 +915,21 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Campos extras como PIN, OTP, etc.</p>
                 <button onClick={() => setCustomFields(prev => [...prev, { name: '', value: '', fieldType: 'text', sortOrder: prev.length }])}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
-                  style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+                  style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                   <PlusCircle className="w-3.5 h-3.5" /> Adicionar
                 </button>
               </div>
               {customFields.length === 0 ? (
-                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed #2A2A2A' }}>
+                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed var(--color-border)' }}>
                   <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Nenhum campo personalizado</p>
                 </div>
               ) : customFields.map((cf, idx) => (
-                <div key={idx} className="rounded-xl p-3 space-y-2" style={{ background: '#1A1A1A', border: '1px solid #2A2A2A' }}>
+                <div key={idx} className="rounded-xl p-3 space-y-2" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
                   <div className="flex gap-2">
                     <input value={cf.name} onChange={e => setCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, name: e.target.value } : f))}
-                      className="flex-1 px-3 py-2 rounded-lg text-sm outline-none" style={{ background: '#0D0D0D', border: '1px solid #2A2A2A', color: 'var(--color-text)' }} placeholder="Nome do campo" />
+                      className="flex-1 px-3 py-2 rounded-lg text-sm outline-none" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} placeholder="Nome do campo" />
                     <select value={cf.fieldType} onChange={e => setCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, fieldType: e.target.value } : f))}
-                      className="px-2 py-2 rounded-lg text-xs outline-none" style={{ background: '#0D0D0D', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
+                      className="px-2 py-2 rounded-lg text-xs outline-none" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                       <option value="text">Texto</option>
                       <option value="password">Senha</option>
                       <option value="url">URL</option>
@@ -934,7 +941,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                   <input value={cf.value} onChange={e => setCustomFields(prev => prev.map((f, i) => i === idx ? { ...f, value: e.target.value } : f))}
                     type={cf.fieldType === 'password' ? 'password' : 'text'}
                     className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono"
-                    style={{ background: '#0D0D0D', border: '1px solid #2A2A2A', color: 'var(--color-text)' }} placeholder="Valor" />
+                    style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} placeholder="Valor" />
                 </div>
               ))}
             </div>
@@ -946,13 +953,13 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Arquivos — máx. 5MB por arquivo.</p>
                 <button onClick={() => fileInputRef.current?.click()}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
-                  style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+                  style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                   <Upload className="w-3.5 h-3.5" /> Enviar
                 </button>
                 <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileSelect} />
               </div>
               {attachments.filter(a => !deletedAttachmentIds.includes(a.id)).map(att => (
-                <div key={att.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: '#1A1A1A', border: '1px solid #2A2A2A' }}>
+                <div key={att.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
                   <Paperclip className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-muted)' }} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate" style={{ color: 'var(--color-text)' }}>{att.fileName}</div>
@@ -965,11 +972,11 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 </div>
               ))}
               {newFiles.map((f, idx) => (
-                <div key={idx} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: `${settings.primaryColor}11`, border: `1px solid ${settings.primaryColor}33` }}>
-                  <Upload className="w-4 h-4 flex-shrink-0" style={{ color: settings.primaryColor }} />
+                <div key={idx} className="flex items-center gap-3 px-3 py-2.5 rounded-xl" style={{ background: 'rgba(var(--color-primary-rgb),0.07)', border: `1px solid rgba(var(--color-primary-rgb),0.2)` }}>
+                  <Upload className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate" style={{ color: 'var(--color-text)' }}>{f.fileName}</div>
-                    <div className="text-xs" style={{ color: settings.primaryColor }}>Novo • {(f.size / 1024).toFixed(1)} KB</div>
+                    <div className="text-xs" style={{ color: 'var(--color-primary)' }}>Novo • {(f.size / 1024).toFixed(1)} KB</div>
                   </div>
                   <button onClick={() => setNewFiles(prev => prev.filter((_, i) => i !== idx))}
                     className="p-1.5 rounded-lg hover:bg-red-500/10 flex-shrink-0" style={{ color: '#ef4444' }}>
@@ -978,7 +985,7 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
                 </div>
               ))}
               {attachments.filter(a => !deletedAttachmentIds.includes(a.id)).length === 0 && newFiles.length === 0 && (
-                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed #2A2A2A' }}>
+                <div className="text-center py-10 rounded-2xl" style={{ border: '2px dashed var(--color-border)' }}>
                   <p className="text-xs" style={{ color: 'var(--color-muted)' }}>Nenhum anexo</p>
                 </div>
               )}
@@ -986,12 +993,12 @@ function CredentialModal({ credential, folders, onClose, defaultFolderId }) {
           )}
         </div>
 
-        <div className="flex gap-3 px-6 py-4 border-t flex-shrink-0" style={{ borderColor: '#252525' }}>
+        <div className="flex gap-3 px-6 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--color-surface-hover)' }}>
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors hover:bg-white/5"
-            style={{ color: 'var(--color-text-muted)', border: '1px solid #2A2A2A' }}>Cancelar</button>
+            style={{ color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.title || !form.folderId}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {mutation.isPending ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
@@ -1023,7 +1030,7 @@ function NewFolderModal({ onClose, isAdmin }) {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['folders'] });
-      const labels = { personal: 'Pasta pessoal criada!', team: 'Pasta de equipe criada!', corporate: 'Pasta corporativa criada!' };
+      const labels = { personal: 'Pasta pessoal criada!', team: 'Pasta do grupo criada!', corporate: 'Pasta corporativa criada!' };
       toast.success(labels[visibility]);
       onClose();
     },
@@ -1035,29 +1042,29 @@ function NewFolderModal({ onClose, isAdmin }) {
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-        style={{ background: '#111111', border: '1px solid #252525' }}>
+        style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
         <h2 className="text-base font-bold mb-4" style={{ color: 'var(--color-text)' }}>Nova Pasta</h2>
 
         <input value={name} onChange={e => setName(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4"
-          style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}
+          style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
           placeholder="Nome da pasta" autoFocus />
 
         <p className="text-xs mb-3 font-medium" style={{ color: 'var(--color-text-muted)' }}>Visibilidade</p>
         <div className="grid grid-cols-3 gap-2 mb-3">
           {[
             { id: 'personal', icon: '🔒', title: 'Somente para mim', desc: 'Só você verá esta pasta' },
-            { id: 'team', icon: '👥', title: 'Equipe', desc: 'Membros da equipe escolhida' },
+            { id: 'team', icon: '👥', title: 'Grupo', desc: 'Membros do grupo escolhido' },
             ...(isAdmin ? [{ id: 'corporate', icon: '🏢', title: 'Toda a corporação', desc: 'Todos os usuários' }] : []),
           ].map(opt => (
             <button key={opt.id} onClick={() => setVisibility(opt.id)}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl text-center transition-all"
               style={{
-                background: visibility === opt.id ? `${settings.primaryColor}22` : '#1A1A1A',
-                border: `1.5px solid ${visibility === opt.id ? settings.primaryColor : '#2A2A2A'}`,
+                background: visibility === opt.id ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)',
+                border: `1.5px solid ${visibility === opt.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
               }}>
               <span className="text-xl">{opt.icon}</span>
-              <span className="text-xs font-semibold" style={{ color: visibility === opt.id ? settings.primaryColor : 'var(--color-text)' }}>{opt.title}</span>
+              <span className="text-xs font-semibold" style={{ color: visibility === opt.id ? 'var(--color-primary)' : 'var(--color-text)' }}>{opt.title}</span>
               <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{opt.desc}</span>
             </button>
           ))}
@@ -1067,24 +1074,24 @@ function NewFolderModal({ onClose, isAdmin }) {
           myTeams.length > 0 ? (
             <select value={teamId} onChange={e => setTeamId(e.target.value)}
               className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-5"
-              style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}>
-              <option value="">— Selecione a equipe —</option>
+              style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+              <option value="">— Selecione o grupo —</option>
               {myTeams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           ) : (
             <p className="text-xs mb-5" style={{ color: '#f59e0b' }}>
-              Você não tem equipes ainda. <a href="/teams" style={{ color: settings.primaryColor, textDecoration: 'underline' }}>Criar equipe</a>
+              Você não tem grupos ainda. <a href="/teams" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>Criar equipe</a>
             </p>
           )
         )}
 
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5 transition-colors"
-            style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()}
             disabled={mutation.isPending || !name.trim() || (visibility === 'team' && !teamId)}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {mutation.isPending ? '...' : 'Criar'}
           </button>
         </div>
@@ -1112,18 +1119,18 @@ function PersonalFolderRenameModal({ onClose, folder }) {
       style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-        style={{ background: '#111111', border: '1px solid #252525' }}>
+        style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
         <h2 className="text-base font-bold mb-4">Renomear Pasta</h2>
         <input value={name} onChange={e => setName(e.target.value)}
           className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4"
-          style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }}
+          style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
           autoFocus />
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-            style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
+            style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()} disabled={mutation.isPending || !name.trim()}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {mutation.isPending ? '...' : 'Salvar'}
           </button>
         </div>
@@ -1140,6 +1147,7 @@ export default function VaultPage() {
   const user = useAuthStore(s => s.user);
   const isAdmin = user?.role === 'ADMINISTRADOR';
   const qc = useQueryClient();
+  const trashDays = useSettingsStore(s => s.settings.trashRetentionDays ?? 30);
 
   const [search, setSearch] = useState('');
   const [selectedFolder, setSelectedFolder] = useState(null);
@@ -1177,7 +1185,7 @@ export default function VaultPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['credentials'] });
       qc.invalidateQueries({ queryKey: ['folders'] });
-      toast.success('Credencial excluída!');
+      toast.success('Senha movida para a lixeira');
       setDeleteTarget(null); setSelectedCred(null);
     },
     onError: () => toast.error('Erro ao excluir'),
@@ -1188,7 +1196,7 @@ export default function VaultPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['folders'] });
       qc.invalidateQueries({ queryKey: ['credentials'] });
-      toast.success('Pasta excluída!');
+      toast.success('Pasta movida para a lixeira');
       setDeleteFolderTarget(null);
       setDeletingPersonalFolder(null);
       setSelectedFolder(prev => prev === deleteFolderTarget?.id ? null : prev);
@@ -1204,11 +1212,13 @@ export default function VaultPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['favorite-ids'] }); qc.invalidateQueries({ queryKey: ['favorites'] }); },
   });
 
+  // Na exclusão em massa só entram as que o usuário pode excluir
+  const deletableIds = credentials.filter(c => selectedIds.has(c.id) && c.myPermissions?.canDelete !== false).map(c => c.id);
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids) => { for (const id of ids) await api.delete(`/credentials/${id}`); },
-    onSuccess: () => {
+    onSuccess: (_, ids) => {
       qc.invalidateQueries({ queryKey: ['credentials'] }); qc.invalidateQueries({ queryKey: ['folders'] });
-      toast.success(`${selectedIds.size} credencial(is) excluída(s)!`);
+      toast.success(`${ids.length} senha(s) movida(s) para a lixeira`);
       setSelectedIds(new Set()); setBulkMode(false); setBulkDeleteConfirm(false); setSelectedCred(null);
     },
     onError: () => toast.error('Erro ao excluir'),
@@ -1243,19 +1253,19 @@ export default function VaultPage() {
             onClick={() => { setSelectedFolder(null); setSelectedCred(null); }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all"
             style={{
-              background: !selectedFolder ? `${GOLD}22` : 'transparent',
-              color: !selectedFolder ? GOLD_TEXT : '#7A7A77',
+              background: !selectedFolder ? 'rgba(var(--color-primary-rgb),0.13)' : 'transparent',
+              color: !selectedFolder ? GOLD_TEXT : 'var(--color-muted)',
             }}>
             <Shield className="w-4 h-4" />
             <span>Todos</span>
-            <span className="ml-auto text-xs" style={{ color: '#4A4A48' }}>{credentials.length}</span>
+            <span className="ml-auto text-xs" style={{ color: 'var(--color-muted)' }}>{credentials.length}</span>
           </button>
         </div>
 
         {/* Shared folders */}
         <div className="flex-1 overflow-y-auto" style={{ padding: '0 8px' }}>
           <div className="flex items-center justify-between px-3 py-2 mt-1 mb-0.5">
-            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#4A4A48' }}>Pastas</span>
+            <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-muted)' }}>Pastas</span>
           </div>
 
           {(folders.shared || []).map(folder => (
@@ -1269,15 +1279,15 @@ export default function VaultPage() {
           <button
             onClick={() => setShowNewFolderModal(true)}
             className="w-full text-left px-3 py-2 text-xs rounded-xl transition-all mt-1"
-            style={{ color: '#3A3A38' }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#6A6A67'; e.currentTarget.style.background = 'rgba(199,140,0,0.05)'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#3A3A38'; e.currentTarget.style.background = 'transparent'; }}>
+            style={{ color: 'var(--color-muted)' }}
+            onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-muted)'; e.currentTarget.style.background = 'rgba(var(--color-primary-rgb),0.05)'; }}
+            onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted)'; e.currentTarget.style.background = 'transparent'; }}>
             + Criar nova pasta
           </button>
 
           {/* Personal folders */}
           <div className="flex items-center justify-between px-3 py-2 mt-3 mb-0.5">
-            <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1" style={{ color: '#4A4A48' }}>
+            <span className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1" style={{ color: 'var(--color-muted)' }}>
               <Lock className="w-3 h-3" />Pessoal
             </span>
           </div>
@@ -1285,9 +1295,9 @@ export default function VaultPage() {
           {(folders.personal || []).length === 0 ? (
             <button onClick={() => setShowNewFolderModal(true)}
               className="w-full text-left px-3 py-2 text-xs rounded-xl transition-all"
-              style={{ color: '#3A3A38' }}
-              onMouseEnter={e => { e.currentTarget.style.color = '#6A6A67'; e.currentTarget.style.background = 'rgba(199,140,0,0.05)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = '#3A3A38'; e.currentTarget.style.background = 'transparent'; }}>
+              style={{ color: 'var(--color-muted)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-muted)'; e.currentTarget.style.background = 'rgba(var(--color-primary-rgb),0.05)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted)'; e.currentTarget.style.background = 'transparent'; }}>
               + Criar pasta pessoal
             </button>
           ) : (folders.personal || []).map(folder => (
@@ -1298,7 +1308,7 @@ export default function VaultPage() {
                 isAdmin={false} />
               <div className="absolute right-2 top-1 hidden group-hover:flex gap-0.5">
                 <button onClick={(e) => { e.stopPropagation(); setRenamingPersonalFolder(folder); }}
-                  className="p-1 rounded hover:bg-white/10" style={{ color: '#636360' }}>
+                  className="p-1 rounded hover:bg-white/10" style={{ color: 'var(--color-muted)' }}>
                   <Edit2 className="w-3 h-3" />
                 </button>
                 <button onClick={(e) => { e.stopPropagation(); setDeletingPersonalFolder(folder); }}
@@ -1313,9 +1323,9 @@ export default function VaultPage() {
           {(folders.personal || []).length > 0 && (
             <button onClick={() => setShowNewFolderModal(true)}
               className="w-full text-left px-3 py-2 text-xs rounded-xl transition-all mt-0.5"
-              style={{ color: '#3A3A38' }}
-              onMouseEnter={e => { e.currentTarget.style.color = '#6A6A67'; e.currentTarget.style.background = 'rgba(199,140,0,0.05)'; }}
-              onMouseLeave={e => { e.currentTarget.style.color = '#3A3A38'; e.currentTarget.style.background = 'transparent'; }}>
+              style={{ color: 'var(--color-muted)' }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--color-muted)'; e.currentTarget.style.background = 'rgba(var(--color-primary-rgb),0.05)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--color-muted)'; e.currentTarget.style.background = 'transparent'; }}>
               + Nova pasta pessoal
             </button>
           )}
@@ -1324,9 +1334,9 @@ export default function VaultPage() {
 
       {/* ── Credentials list ─────────────────────────────────────────────── */}
       <div className={`flex-shrink-0 border-r flex flex-col overflow-hidden ${hasDetail ? 'w-64' : 'flex-1'}`}
-        style={{ borderColor: '#1E1E1E', background: '#111111' }}>
+        style={{ borderColor: 'var(--color-surface-2)', background: 'var(--color-bg-secondary)' }}>
         {/* Search + actions bar */}
-        <div className="flex items-center gap-2 p-3 border-b" style={{ borderColor: '#1E1E1E', background: '#111111' }}>
+        <div className="flex items-center gap-2 p-3 border-b" style={{ borderColor: 'var(--color-surface-2)', background: 'var(--color-bg-secondary)' }}>
           {!bulkMode ? (
             <>
               <div className="flex-1 relative">
@@ -1334,7 +1344,7 @@ export default function VaultPage() {
                 <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Pesquisar..."
                   className="w-full pl-9 pr-4 py-2 rounded-xl text-xs outline-none"
-                  style={{ background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' }} />
+                  style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }} />
                 {search && (
                   <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--color-muted)' }}>
                     <X className="w-3 h-3" />
@@ -1348,7 +1358,7 @@ export default function VaultPage() {
               </button>
               <button onClick={() => { setModalCred(null); setShowModal(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:opacity-90 flex-shrink-0"
-                style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+                style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
                 <Plus className="w-3.5 h-3.5" />
                 {!hasDetail && 'Novo'}
               </button>
@@ -1356,11 +1366,11 @@ export default function VaultPage() {
           ) : (
             <>
               <button onClick={() => { if (selectedIds.size === credentials.length) setSelectedIds(new Set()); else setSelectedIds(new Set(credentials.map(c => c.id))); }}
-                className="p-1.5 rounded flex-shrink-0" style={{ color: settings.primaryColor }}>
+                className="p-1.5 rounded flex-shrink-0" style={{ color: 'var(--color-primary)' }}>
                 {selectedIds.size === credentials.length ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
               </button>
               <span className="flex-1 text-xs" style={{ color: 'var(--color-text-muted)' }}>{selectedIds.size} selecionado(s)</span>
-              {selectedIds.size > 0 && (
+              {deletableIds.length > 0 && (
                 <button onClick={() => setBulkDeleteConfirm(true)}
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium"
                   style={{ background: '#ef444422', color: '#ef4444' }}>
@@ -1375,7 +1385,7 @@ export default function VaultPage() {
           )}
         </div>
 
-        <div className="px-4 py-1.5 text-xs" style={{ color: '#4A4A47', borderBottom: '1px solid #1E1E1E' }}>
+        <div className="px-4 py-1.5 text-xs" style={{ color: 'var(--color-muted)', borderBottom: '1px solid var(--color-border)' }}>
           {credentials.length} ite{credentials.length !== 1 ? 'ns' : 'm'}
           {bulkMode && selectedIds.size > 0 && ` • ${selectedIds.size} selecionado(s)`}
         </div>
@@ -1402,18 +1412,18 @@ export default function VaultPage() {
           )}
         </div>
 
-        {/* [+] Nova senha dentro da pasta */}
-        {selectedFolder && (
+        {/* [+] Nova senha dentro da pasta (só onde a pessoa pode criar) */}
+        {selectedFolder && flattenFolders([...(folders.shared || []), ...(folders.personal || [])]).find(f => f.id === selectedFolder)?.myPermissions?.canEdit !== false && (
           <button
             onClick={() => { setModalCred(null); setShowModal(true); }}
             className="flex items-center justify-center gap-2 mx-3 mb-3 py-2 rounded-xl text-xs transition-all"
             style={{
-              border: `1px dashed ${settings.primaryColor}55`,
-              color: settings.primaryColor,
-              background: `${settings.primaryColor}08`,
+              border: `1px dashed rgba(var(--color-primary-rgb),0.33)`,
+              color: 'var(--color-primary)',
+              background: 'rgba(var(--color-primary-rgb),0.03)',
             }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = settings.primaryColor; e.currentTarget.style.background = `${settings.primaryColor}15`; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = `${settings.primaryColor}55`; e.currentTarget.style.background = `${settings.primaryColor}08`; }}>
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--color-primary)'; e.currentTarget.style.background = 'rgba(var(--color-primary-rgb),0.08)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(var(--color-primary-rgb),0.33)'; e.currentTarget.style.background = 'rgba(var(--color-primary-rgb),0.03)'; }}>
             <Plus className="w-3.5 h-3.5" />
             Nova senha nesta pasta
           </button>
@@ -1452,19 +1462,20 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: '#111111', border: '1px solid #252525' }}>
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="font-semibold">Excluir credencial?</h3>
+                <h3 className="font-semibold">Mover senha para a lixeira?</h3>
                 <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{deleteTarget.title}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--color-muted)' }}>{trashDays > 0 ? `Vai para a Lixeira e pode ser restaurado por ${trashDays} dia(s).` : 'Vai para a Lixeira e pode ser restaurado.'}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => deleteMutation.mutate(deleteTarget.id)} disabled={deleteMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {deleteMutation.isPending ? '...' : 'Excluir'}
@@ -1479,7 +1490,7 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: '#111111', border: '1px solid #252525' }}>
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
@@ -1490,11 +1501,11 @@ export default function VaultPage() {
               </div>
             </div>
             <p className="text-sm mb-5" style={{ color: 'var(--color-text-muted)' }}>
-              Todas as credenciais desta pasta serão excluídas permanentemente.
+              A pasta vai para a Lixeira com as subpastas e senhas que estão nela. {trashDays > 0 ? `Vai para a Lixeira e pode ser restaurado por ${trashDays} dia(s).` : 'Vai para a Lixeira e pode ser restaurado.'}
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteFolderTarget(null)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => deleteFolderMutation.mutate(deleteFolderTarget.id)} disabled={deleteFolderMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {deleteFolderMutation.isPending ? '...' : 'Excluir'}
@@ -1509,19 +1520,20 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: '#111111', border: '1px solid #252525' }}>
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="font-semibold">Excluir pasta pessoal?</h3>
+                <h3 className="font-semibold">Mover pasta pessoal para a lixeira?</h3>
                 <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{deletingPersonalFolder.name}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--color-muted)' }}>{trashDays > 0 ? `Vai para a Lixeira e pode ser restaurado por ${trashDays} dia(s).` : 'Vai para a Lixeira e pode ser restaurado.'}</p>
               </div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setDeletingPersonalFolder(null)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
               <button onClick={() => deleteFolderMutation.mutate(deletingPersonalFolder.id)} disabled={deleteFolderMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {deleteFolderMutation.isPending ? '...' : 'Excluir'}
@@ -1536,20 +1548,23 @@ export default function VaultPage() {
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
           <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn"
-            style={{ background: '#111111', border: '1px solid #252525' }}>
+            style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="font-semibold">Excluir {selectedIds.size} credencial(is)?</h3>
-                <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Esta ação não pode ser desfeita.</p>
+                <h3 className="font-semibold">Mover {deletableIds.length} senha(s) para a lixeira?</h3>
+                <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+                  {trashDays > 0 ? `Vai para a Lixeira e pode ser restaurado por ${trashDays} dia(s).` : 'Vai para a Lixeira e pode ser restaurado.'}
+                  {deletableIds.length < selectedIds.size && ` ${selectedIds.size - deletableIds.length} selecionada(s) ficam de fora: você não tem permissão para excluí-las.`}
+                </p>
               </div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setBulkDeleteConfirm(false)} className="flex-1 py-2.5 rounded-xl text-sm hover:bg-white/5"
-                style={{ border: '1px solid #2A2A2A', color: 'var(--color-text-muted)' }}>Cancelar</button>
-              <button onClick={() => bulkDeleteMutation.mutate([...selectedIds])} disabled={bulkDeleteMutation.isPending}
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+              <button onClick={() => bulkDeleteMutation.mutate(deletableIds)} disabled={bulkDeleteMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
                 {bulkDeleteMutation.isPending ? 'Excluindo...' : 'Excluir tudo'}
               </button>

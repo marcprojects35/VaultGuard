@@ -6,7 +6,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
-import { useAuthStore } from '../stores/authStore.js';
+import { useAuthStore, useCaps } from '../stores/authStore.js';
 
 const cardStyle = { background: 'var(--color-surface)', border: '1px solid var(--color-border)' };
 const inputStyle = { background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
@@ -21,7 +21,7 @@ function CreateTeamModal({ onClose }) {
     mutationFn: () => api.post('/teams', { name, description }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['teams'] });
-      toast.success('Equipe criada!');
+      toast.success('Grupo criado!');
       onClose();
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro'),
@@ -33,7 +33,7 @@ function CreateTeamModal({ onClose }) {
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md rounded-2xl p-6" style={cardStyle}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>Nova Equipe</h2>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--color-text)' }}>Novo grupo</h2>
           <button onClick={onClose} style={{ color: 'var(--color-muted)' }}><X className="w-4 h-4" /></button>
         </div>
         <div className="space-y-3">
@@ -53,7 +53,7 @@ function CreateTeamModal({ onClose }) {
             style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
           <button onClick={() => mutation.mutate()} disabled={!name.trim() || mutation.isPending}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {mutation.isPending ? 'Criando...' : 'Criar'}
           </button>
         </div>
@@ -75,7 +75,8 @@ function InviteUserBox({ teamId }) {
     mutationFn: (userId) => api.post(`/teams/${teamId}/invite`, { userId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['team-members', teamId] });
-      toast.success('Convite enviado!');
+      // O administrador adiciona direto; os demais enviam convite
+      toast.success(useAuthStore.getState().user?.role === 'ADMINISTRADOR' ? 'Adicionado ao grupo' : 'Convite enviado!');
       setQ('');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao convidar'),
@@ -129,7 +130,7 @@ function TeamCard({ team, currentUserId, isAdmin }) {
 
   const deleteMutation = useMutation({
     mutationFn: () => api.delete(`/teams/${team.id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['teams'] }); toast.success('Equipe excluída!'); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['teams'] }); toast.success('Grupo excluído!'); },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro'),
   });
 
@@ -147,7 +148,7 @@ function TeamCard({ team, currentUserId, isAdmin }) {
           </div>
         </div>
         {(isOwner || isAdmin) && (
-          <button onClick={e => { e.stopPropagation(); if (confirm(`Excluir a equipe "${team.name}"?`)) deleteMutation.mutate(); }}
+          <button onClick={e => { e.stopPropagation(); if (confirm(`Excluir o grupo "${team.name}"?`)) deleteMutation.mutate(); }}
             className="p-1.5 rounded hover:bg-red-500/20 flex-shrink-0" style={{ color: '#ef4444' }}>
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -177,7 +178,7 @@ function TeamCard({ team, currentUserId, isAdmin }) {
           </div>
           {(isOwner || isAdmin) && (
             <div>
-              <p className="text-xs mb-1.5 font-medium" style={{ color: 'var(--color-text-muted)' }}>Convidar</p>
+              <p className="text-xs mb-1.5 font-medium" style={{ color: 'var(--color-text-muted)' }}>{isAdmin ? 'Adicionar membro (entra direto)' : 'Convidar'}</p>
               <InviteUserBox teamId={team.id} />
             </div>
           )}
@@ -192,6 +193,7 @@ export default function TeamsPage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const isAdmin = user?.role === 'ADMINISTRADOR';
+  const caps = useCaps();
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: teams = [] } = useQuery({
@@ -218,16 +220,16 @@ export default function TeamsPage() {
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Equipes</h1>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Grupos</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            Crie equipes e convide colegas pra compartilhar pastas
+            Grupos reúnem pessoas para compartilhar pastas. O dono convida e a pessoa aceita; o administrador coloca direto em Configurações › Grupos.
           </p>
         </div>
-        <button onClick={() => setShowCreate(true)}
+        {caps.canCreateTeams && <button onClick={() => setShowCreate(true)}
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-          style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
-          <Plus className="w-4 h-4" /> Nova Equipe
-        </button>
+          style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
+          <Plus className="w-4 h-4" /> Novo grupo
+        </button>}
       </div>
 
       {invites.length > 0 && (
@@ -262,7 +264,7 @@ export default function TeamsPage() {
         {teams.length === 0 ? (
           <div className="py-14 text-center rounded-2xl" style={{ ...cardStyle, borderStyle: 'dashed' }}>
             <Users2 className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--color-muted)', opacity: 0.4 }} />
-            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Você ainda não faz parte de nenhuma equipe.</p>
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Você ainda não faz parte de nenhum grupo.</p>
           </div>
         ) : (
           teams.map(t => <TeamCard key={t.id} team={t} currentUserId={user?.id} isAdmin={isAdmin} />)

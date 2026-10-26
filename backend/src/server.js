@@ -23,6 +23,10 @@ import securityDashboardRoutes from './routes/securityDashboard.js';
 import rolesRoutes from './routes/roles.js';
 import teamsRoutes from './routes/teams.js';
 import keysRoutes from './routes/keys.js';
+import trashRoutes from './routes/trash.js';
+import dataRoutes from './routes/data.js';
+import { purgeExpiredTrash, purgeExpiredAudit } from './services/trash.js';
+import { getLdapConfig, checkAllServers } from './services/ldap.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { ipAllowlist } from './middleware/auth.js';
 import { sendExpiryNotifications } from './services/email.js';
@@ -96,10 +100,25 @@ app.use((req, res, next) => {
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Rate limiting
+// Tentativas de senha/código: por conta (login digitado ou sessão) e IP, para uma
+// empresa inteira atrás de um único IP não se bloquear de manhã; o teto por IP
+// abaixo segura quem testa senhas em muitas contas
+const sessionKey = (req) => (req.headers.cookie || '').match(/vg_session=([^;]+)/)?.[1];
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: { error: 'Too many requests, please try again later.' }
+  keyGenerator: (req) => {
+    const session = sessionKey(req);
+    if (session) return `s:${createHash('sha256').update(session).digest('hex').slice(0, 32)}`;
+    const login = String(req.body?.login || req.body?.email || req.body?.tempToken || '').trim().toLowerCase().slice(0, 200);
+    return `${req.ip}:${createHash('sha256').update(login).digest('hex').slice(0, 16)}`;
+  },
+  message: { error: 'Muitas tentativas. Aguarde alguns minutos e tente de novo.' },
+});
+const authIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { error: 'Muitas tentativas a partir desta rede. Aguarde alguns minutos.' },
 });
 
 // Por sessão/token quando autenticado (empresas atrás de um único IP não
@@ -107,6 +126,7 @@ const authLimiter = rateLimit({
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 300,
+  message: { error: 'Muitas requisições. Aguarde alguns segundos.' },
   keyGenerator: (req) => {
     const auth = req.headers.authorization;
     if (auth) return `t:${createHash('sha256').update(auth).digest('hex').slice(0, 32)}`;
@@ -118,10 +138,10 @@ const apiLimiter = rateLimit({
 
 // Só os endpoints que recebem senha/código; /api/auth/me roda em todo carregamento
 // Teto por IP (folgado), para trocar de token a cada requisição não driblar o limite
-const ipLimiter = rateLimit({ windowMs: 60 * 1000, max: 1500 });
+const ipLimiter = rateLimit({ windowMs: 60 * 1000, max: 1500, message: { error: 'Muitas requisições. Aguarde alguns segundos.' } });
 
 app.use(['/api/auth/login', '/api/auth/2fa/validate', '/api/auth/refresh', '/api/auth/verify-password',
-  '/api/keys/me/private', '/api/keys/me/reset'], authLimiter);
+  '/api/keys/me/private', '/api/keys/me/reset'], authIpLimiter, authLimiter);
 app.use('/api', ipLimiter, apiLimiter);
 app.use('/api', ipAllowlist);
 
@@ -141,6 +161,8 @@ app.use('/api/dashboard', securityDashboardRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/teams', teamsRoutes);
 app.use('/api/keys', keysRoutes);
+app.use('/api/trash', trashRoutes);
+app.use('/api/data', dataRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -165,5 +187,18 @@ app.listen(PORT, '0.0.0.0', () => {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const runExpiryJob = () => sendExpiryNotifications().catch(err => logger.error('Expiry notifications failed', { error: err.message }));
 setTimeout(() => { runExpiryJob(); setInterval(runExpiryJob, DAY_MS).unref(); }, 60 * 1000).unref();
+
+// Retenção: lixeira e auditoria além do prazo configurado são apagadas de vez (a cada hora)
+const runRetentionJob = () => Promise.all([purgeExpiredTrash(), purgeExpiredAudit()])
+  .catch(err => logger.error('Retention job failed', { error: err.message }));
+setTimeout(() => { runRetentionJob(); setInterval(runRetentionJob, 60 * 60 * 1000).unref(); }, 2 * 60 * 1000).unref();
+
+// Active Directory: verifica os servidores a cada 2 minutos. Assim a troca para
+// o reserva (e a volta ao preferido) acontece mesmo sem ninguém fazendo login
+const LDAP_CHECK_MS = parseInt(process.env.LDAP_CHECK_INTERVAL_MS, 10) || 2 * 60 * 1000;
+const runLdapCheck = () => getLdapConfig()
+  .then(cfg => cfg?.servers?.length ? checkAllServers(cfg) : null)
+  .catch(err => logger.error('LDAP health check failed', { error: err.message }));
+setTimeout(() => { runLdapCheck(); setInterval(runLdapCheck, LDAP_CHECK_MS).unref(); }, 30 * 1000).unref();
 
 export default app;

@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { PrismaClient } from '@prisma/client';
-import { canAccessFolder, getAccessibleFolderIds } from '../services/permissions.js';
+import { prisma } from '../db.js';
+import { trashFolder } from '../services/trash.js';
+import { canAccessFolder, getAccessibleFolderIds, getUserPermissionsForFolder } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/folders — tree of folders accessible to user
 router.get('/', authenticate, async (req, res, next) => {
@@ -26,7 +26,7 @@ router.get('/', authenticate, async (req, res, next) => {
         },
         include: {
           permissions: true,
-          _count: { select: { credentials: true } }
+          _count: { select: { credentials: { where: { deletedAt: null } } } }
         },
         orderBy: [{ isPersonal: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
       });
@@ -56,10 +56,15 @@ router.get('/', authenticate, async (req, res, next) => {
             ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
           ]
         },
-        include: { _count: { select: { credentials: true } } },
+        include: { _count: { select: { credentials: { where: { deletedAt: null } } } } },
         orderBy: [{ isPersonal: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
       });
     }
+
+    // O que o usuário pode fazer em cada pasta (a interface esconde o resto)
+    for (const f of folders) f.myPermissions = await getUserPermissionsForFolder(uid, role, f.id);
+    // Negação explícita para a pessoa (marcação dela sem "Ver") esconde a pasta
+    folders = folders.filter(f => f.myPermissions.canView);
 
     // Separate personal folders from shared tree
     const personalFolders = folders.filter(f => f.isPersonal);
@@ -111,12 +116,12 @@ router.get('/writable', authenticate, async (req, res, next) => {
 router.get('/admin-all', authenticate, async (req, res, next) => {
   try {
     if (req.user.role !== 'ADMINISTRADOR') {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
     }
     const allFolders = await prisma.folder.findMany({
       include: {
         permissions: true,
-        _count: { select: { credentials: true } },
+        _count: { select: { credentials: { where: { deletedAt: null } } } },
         owner: { select: { id: true, firstName: true, lastName: true } }
       },
       orderBy: [{ isPersonal: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
@@ -174,7 +179,7 @@ router.post('/', authenticate,
         data.teamId = teamId;
         auditAction = 'folder.create_team';
       } else {
-        if (!isAdmin) return res.status(403).json({ error: 'Only administrators can create corporate folders' });
+        if (!isAdmin) return res.status(403).json({ error: 'Só o administrador cria pastas corporativas' });
         data.visibleToAll = true;
         auditAction = 'folder.create_corporate';
       }
@@ -195,7 +200,7 @@ router.put('/:id', authenticate,
   async (req, res, next) => {
     try {
       const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
-      if (!folder) return res.status(404).json({ error: 'Folder not found' });
+      if (!folder) return res.status(404).json({ error: 'Pasta não encontrada' });
 
       const isAdmin = req.user.role === 'ADMINISTRADOR';
       let isOwner = folder.isPersonal && folder.ownerId === req.user.id;
@@ -205,7 +210,7 @@ router.put('/:id', authenticate,
       }
 
       if (!isAdmin && !isOwner) {
-        return res.status(403).json({ error: 'Forbidden' });
+        return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
       }
 
       const updated = await prisma.folder.update({
@@ -230,7 +235,7 @@ router.put('/:id', authenticate,
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
     const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
-    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    if (!folder) return res.status(404).json({ error: 'Pasta não encontrada' });
 
     const isAdmin = req.user.role === 'ADMINISTRADOR';
     let isOwner = folder.isPersonal && folder.ownerId === req.user.id;
@@ -240,12 +245,13 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     }
 
     if (!isAdmin && !isOwner) {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
     }
 
-    await prisma.folder.delete({ where: { id: req.params.id } });
-    await createAuditLog(req.user.id, 'folder.delete', req.params.id, 'Folder', null, req.ip);
-    res.json({ message: 'Folder deleted' });
+    // Vai para a lixeira com subpastas e senhas
+    const moved = await trashFolder(folder.id, req.user.id);
+    await createAuditLog(req.user.id, 'folder.delete', folder.id, 'Folder', { name: folder.name, subfolders: moved - 1 }, req.ip);
+    res.json({ message: 'Pasta movida para a lixeira' });
   } catch (err) {
     next(err);
   }
@@ -258,7 +264,7 @@ router.put('/:id/permissions', authenticate, requireAdmin, async (req, res, next
     const folderId = req.params.id;
 
     const folder = await prisma.folder.findUnique({ where: { id: folderId } });
-    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    if (!folder) return res.status(404).json({ error: 'Pasta não encontrada' });
     if (folder.isPersonal) return res.status(400).json({ error: 'Pastas pessoais não aceitam permissões' });
 
     await prisma.folderPermission.deleteMany({ where: { folderId } });

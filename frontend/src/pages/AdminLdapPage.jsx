@@ -7,17 +7,13 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
+import LdapServers from '../components/LdapServers.jsx';
 
 const DEFAULT_CONFIG = {
-  host: '',
-  port: 389,
-  useTLS: false,
-  startTLS: false,
-  verifyCert: true,
-  domain: '',
-  baseDn: '',
-  bindDn: '',
-  bindPassword: '',
+  // Servidores (conexão + conta de serviço de cada um); um em uso por vez
+  servers: [],
+  activeServerId: null,
+  autoFailover: true,
   ldapOnly: false,
   syncGroups: true,
   defaultRole: 'AUXILIAR',
@@ -47,7 +43,7 @@ function Input({ value, onChange, type = 'text', placeholder, className = '', ..
     <input
       type={type} value={value} onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00] ${className}`}
+      className={`w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)] ${className}`}
       {...props}
     />
   );
@@ -56,7 +52,7 @@ function Input({ value, onChange, type = 'text', placeholder, className = '', ..
 function Toggle({ checked, onChange, label }) {
   return (
     <button onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-[#C78C00]' : 'bg-[var(--color-surface-hover)]'}`}>
+      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${checked ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-surface-hover)]'}`}>
       <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-4.5' : 'translate-x-0.5'}`}
         style={{ transform: checked ? 'translateX(18px)' : 'translateX(2px)' }} />
     </button>
@@ -64,7 +60,7 @@ function Toggle({ checked, onChange, label }) {
 }
 
 const VG_STATUS_BADGE = {
-  NEW:      { label: 'Novo',      cls: 'bg-[#C78C00]/20 text-[#E7A300]' },
+  NEW:      { label: 'Novo',      cls: 'bg-[rgba(var(--color-primary-rgb),0.2)] text-[var(--color-primary-light)]' },
   ACTIVE:   { label: 'Vinculado', cls: 'bg-green-500/20 text-green-300' },
   INACTIVE: { label: 'Inativo',   cls: 'bg-amber-500/20 text-amber-300' },
   PENDING:  { label: 'Pendente',  cls: 'bg-slate-500/20 text-[var(--color-text-muted)]' },
@@ -83,8 +79,9 @@ export default function AdminLdapPage() {
   const qc = useQueryClient();
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [enabled, setEnabled] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [testResult, setTestResult] = useState(null);
+  const [testResults, setTestResults] = useState({});
+  const [testing, setTesting] = useState(null);
+  const [using, setUsing] = useState(null);
   const [adGroups, setAdGroups] = useState([]);
   const [loadingGroups, setLoadingGroups] = useState(false);
   const [section, setSection] = useState('connection');
@@ -115,6 +112,19 @@ export default function AdminLdapPage() {
     setConfig({ ...DEFAULT_CONFIG, ...(configData.config || {}) });
   }, [configData]);
 
+  // ── Situação dos servidores (em uso, reserva, fora do ar) ───────────────
+  const { data: serverStatus, refetch: refetchStatus } = useQuery({
+    queryKey: ['ldap-status'],
+    queryFn: () => api.get('/ldap/status').then(r => r.data),
+    refetchInterval: 15000,
+  });
+  const savedIds = (configData?.config?.servers || []).map(sv => sv.id);
+  const checkMutation = useMutation({
+    mutationFn: () => api.post('/ldap/status/check'),
+    onSuccess: ({ data }) => { qc.setQueryData(['ldap-status'], data); toast.success('Servidores verificados'); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Erro ao verificar'),
+  });
+
   // ── Sync status ─────────────────────────────────────────────────────────
   const { data: syncStatus } = useQuery({
     queryKey: ['ldap-sync-status'],
@@ -126,17 +136,43 @@ export default function AdminLdapPage() {
 
   // ── Salvar ──────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
-    mutationFn: () => api.put('/ldap/config', { enabled, config }),
-    onSuccess: () => { toast.success('Configuração LDAP salva!'); qc.invalidateQueries({ queryKey: ['ldap-config'] }); },
+    mutationFn: (override) => api.put('/ldap/config', { enabled, config: override || config }),
+    onSuccess: () => {
+      toast.success('Configuração LDAP salva!');
+      qc.invalidateQueries({ queryKey: ['ldap-config'] });
+      qc.invalidateQueries({ queryKey: ['ldap-status'] });
+    },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao salvar'),
   });
 
-  // ── Testar conexão ──────────────────────────────────────────────────────
-  const testMutation = useMutation({
-    mutationFn: () => api.post('/ldap/test', { config }),
-    onSuccess: (res) => { setTestResult(res.data); },
-    onError: (e) => setTestResult({ success: false, message: e.response?.data?.error || 'Erro de conexão' }),
-  });
+  // ── Testar um servidor (com os dados do formulário, mesmo antes de salvar) ─
+  const testServer = async (serverId) => {
+    setTesting(serverId);
+    try {
+      const { data } = await api.post('/ldap/test', { config, serverId });
+      setTestResults(r => ({ ...r, [serverId]: data }));
+    } catch (e) {
+      setTestResults(r => ({ ...r, [serverId]: { success: false, message: e.response?.data?.error || 'Erro de conexão' } }));
+    }
+    setTesting(null);
+  };
+
+  // ── Troca manual: salva (se preciso) e passa a usar o servidor escolhido ─
+  const switchServer = async (serverId) => {
+    setUsing(serverId);
+    try {
+      const next = { ...config, activeServerId: serverId };
+      setConfig(next);
+      await api.put('/ldap/config', { enabled, config: next });
+      const { data } = await api.put('/ldap/active', { serverId });
+      qc.setQueryData(['ldap-status'], data);
+      qc.invalidateQueries({ queryKey: ['ldap-config'] });
+      toast.success(`Agora usando: ${config.servers.find(sv => sv.id === serverId)?.name}`);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Não foi possível trocar o servidor');
+    }
+    setUsing(null);
+  };
 
   // ── Sincronizar usuários ────────────────────────────────────────────────
   const syncMutation = useMutation({
@@ -245,7 +281,7 @@ export default function AdminLdapPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-[var(--color-text)] flex items-center gap-2">
-            <Server size={24} className="text-[#C78C00]" /> Active Directory / LDAP
+            <Server size={24} className="text-[var(--color-primary)]" /> Active Directory / LDAP
           </h1>
           <p className="text-[var(--color-text-muted)] text-sm mt-1">
             Autenticação centralizada via AD. Usuários do AD fazem login com as mesmas credenciais corporativas.
@@ -271,110 +307,37 @@ export default function AdminLdapPage() {
       <div className="flex gap-1 bg-[var(--color-surface-2)] rounded-xl p-1">
         {sections.map(s => (
           <button key={s.id} onClick={() => setSection(s.id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${section === s.id ? 'bg-[#C78C00] text-white' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]'}`}>
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${section === s.id ? 'bg-[var(--color-primary)] text-white' : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface-2)]'}`}>
             <s.icon size={13} /> <span className="hidden sm:inline">{s.label}</span>
           </button>
         ))}
       </div>
 
-      {/* ── SEÇÃO: CONEXÃO ──────────────────────────────────────────────────── */}
+      {/* ── SEÇÃO: CONEXÃO (servidores) ─────────────────────────────────────── */}
       {section === 'connection' && (
-        <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Servidor LDAP / Active Directory</h2>
-
-          <Field label="Servidor (Host)" description="IP ou hostname do controlador de domínio">
-            <Input value={config.host} onChange={v => set('host', v)} placeholder="192.168.0.10 ou dc.empresa.local" />
-          </Field>
-
-          <Field label="Porta" description="389 padrão LDAP · 636 para LDAPS">
-            <div className="flex gap-3">
-              <Input value={config.port} onChange={v => set('port', v)} type="number" className="w-24" />
-              <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
-                <Toggle checked={config.useTLS} onChange={v => set('useTLS', v)} />
-                LDAPS (TLS)
-              </label>
-              {!config.useTLS && (
-                <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
-                  <Toggle checked={!!config.startTLS} onChange={v => set('startTLS', v)} />
-                  StartTLS
-                </label>
-              )}
-              {(config.useTLS || config.startTLS) && (
-                <label className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] cursor-pointer">
-                  <Toggle checked={config.verifyCert} onChange={v => set('verifyCert', v)} />
-                  Verificar certificado
-                </label>
-              )}
-            </div>
-          </Field>
-
-          {!config.useTLS && !config.startTLS && (
-            <div className="mb-4 p-3 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }}>
-              Conexão sem criptografia: as senhas dos usuários e da conta de serviço trafegam em texto puro na rede.
-              Ative LDAPS (porta 636) ou StartTLS.
-            </div>
-          )}
-
-          <Field label="Domínio" description="Ex: empresa.local (opcional, usado para montar UPN)">
-            <Input value={config.domain} onChange={v => set('domain', v)} placeholder="empresa.local" />
-          </Field>
-
-          <Field label="Base DN" description="Raiz de busca no diretório">
-            <Input value={config.baseDn} onChange={v => set('baseDn', v)} placeholder="DC=empresa,DC=local" />
-          </Field>
-
-          {/* Botão testar */}
-          <div className="mt-4 flex items-center gap-3">
-            <button onClick={() => testMutation.mutate()} disabled={testMutation.isPending || !config.host}
-              className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm transition-colors disabled:opacity-40">
-              {testMutation.isPending ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
-              Testar Conexão
-            </button>
-            {testResult && (
-              <div className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg ${testResult.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                {testResult.success ? <CheckCircle size={14} /> : <X size={14} />}
-                {testResult.message}
-              </div>
-            )}
-          </div>
-        </div>
+        <LdapServers config={config} setConfig={setConfig} status={serverStatus} savedIds={savedIds}
+          onTest={testServer} testing={testing} testResults={testResults}
+          onUse={switchServer} using={using}
+          onCheck={() => checkMutation.mutate()} checking={checkMutation.isPending} />
       )}
 
       {/* ── SEÇÃO: AUTENTICAÇÃO ─────────────────────────────────────────────── */}
       {section === 'auth' && (
         <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Conta de Serviço (Service Account)</h2>
+          <h2 className="text-sm font-semibold text-[var(--color-text-muted)] mb-4">Autenticação</h2>
 
           <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 mb-4 flex gap-2">
             <Info size={14} className="text-blue-400 mt-0.5 shrink-0" />
             <p className="text-xs text-blue-300">
-              O VaultGuard usa esta conta para buscar usuários no AD. Crie uma conta de serviço com permissão somente leitura
-              (<code className="bg-[var(--color-bg-secondary)] px-1 rounded">Read Members</code> no AD).
+              A conta de serviço (Bind DN e senha) agora fica em cada servidor, na aba Conexão.
             </p>
           </div>
-
-          <Field label="Bind DN" description="DN da conta de serviço">
-            <Input value={config.bindDn} onChange={v => set('bindDn', v)}
-              placeholder="CN=vaultguard-svc,OU=ServiceAccounts,DC=empresa,DC=local" />
-            <p className="text-xs text-[var(--color-muted)] mt-1">Ou no formato: empresa\vaultguard-svc</p>
-          </Field>
-
-          <Field label="Senha do Bind" description="Senha da conta de serviço">
-            <div className="relative">
-              <Input value={config.bindPassword} onChange={v => set('bindPassword', v)}
-                type={showPassword ? 'text' : 'password'} placeholder="••••••••" />
-              <button onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-text)]">
-                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </Field>
 
           <Field label="Modo de autenticação" description="Comportamento quando o AD está disponível">
             <div className="space-y-2">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="radio" checked={!config.ldapOnly} onChange={() => set('ldapOnly', false)}
-                  className="text-[#AD7B04]" />
+                  className="text-[var(--color-accent)]" />
                 <div>
                   <div className="text-sm text-[var(--color-text)]">LDAP + Fallback Local</div>
                   <div className="text-xs text-[var(--color-muted)]">Se o AD falhar, usuários locais ainda podem entrar</div>
@@ -382,7 +345,7 @@ export default function AdminLdapPage() {
               </label>
               <label className="flex items-center gap-3 cursor-pointer">
                 <input type="radio" checked={config.ldapOnly} onChange={() => set('ldapOnly', true)}
-                  className="text-[#AD7B04]" />
+                  className="text-[var(--color-accent)]" />
                 <div>
                   <div className="text-sm text-[var(--color-text)]">Somente LDAP</div>
                   <div className="text-xs text-[var(--color-muted)]">Toda autenticação passa pelo AD (exceto admin de emergência)</div>
@@ -405,7 +368,7 @@ export default function AdminLdapPage() {
 
             <Field label="Cargo padrão" description="Cargo atribuído a usuários novos sem grupo mapeado">
               <select value={config.defaultRole} onChange={e => set('defaultRole', e.target.value)}
-                className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
+                className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]">
                 {roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
               </select>
             </Field>
@@ -426,7 +389,7 @@ export default function AdminLdapPage() {
               <h2 className="text-sm font-semibold text-[var(--color-text-muted)]">Sincronização Manual</h2>
               <button onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending || syncStatus?.running || !enabled}
-                className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
+                className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors">
                 {syncStatus?.running
                   ? <><Loader size={14} className="animate-spin" /> Sincronizando...</>
                   : <><RefreshCw size={14} /> Sincronizar Agora</>}
@@ -475,7 +438,7 @@ export default function AdminLdapPage() {
                 Carregar grupos do AD
               </button>
               <button onClick={addGroupMapping}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#C78C00]/20 hover:bg-[#C78C00]/30 border border-[#C78C00]/30 text-[#E7A300] rounded-lg text-xs transition-colors">
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[rgba(var(--color-primary-rgb),0.2)] hover:bg-[rgba(var(--color-primary-rgb),0.3)] border border-[rgba(var(--color-primary-rgb),0.3)] text-[var(--color-primary-light)] rounded-lg text-xs transition-colors">
                 <Plus size={12} /> Adicionar
               </button>
             </div>
@@ -499,13 +462,13 @@ export default function AdminLdapPage() {
                   {adGroups.length > 0 ? (
                     <select value={group}
                       onChange={e => updateGroupMapping(group, e.target.value, role)}
-                      className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
+                      className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]">
                       {adGroups.map(g => <option key={g.dn} value={g.cn.toLowerCase()}>{g.cn}</option>)}
                     </select>
                   ) : (
                     <input value={group}
                       onChange={e => updateGroupMapping(group, e.target.value.toLowerCase(), role)}
-                      className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]"
+                      className="flex-1 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
                       placeholder="nome_do_grupo_ad (CN, lowercase)" />
                   )}
 
@@ -513,7 +476,7 @@ export default function AdminLdapPage() {
 
                   <select value={role}
                     onChange={e => updateGroupMapping(group, group, e.target.value)}
-                    className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C78C00]">
+                    className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--color-primary)]">
                     {roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
                   </select>
 
@@ -540,7 +503,7 @@ export default function AdminLdapPage() {
               <div className="mt-2 max-h-40 overflow-y-auto space-y-1">
                 {adGroups.map(g => (
                   <div key={g.dn} className="flex items-center gap-2 text-xs py-1">
-                    <span className="font-mono text-[#E7A300]">{g.cn}</span>
+                    <span className="font-mono text-[var(--color-primary-light)]">{g.cn}</span>
                     {g.description && <span className="text-[var(--color-muted)]">— {g.description}</span>}
                   </div>
                 ))}
@@ -561,13 +524,13 @@ export default function AdminLdapPage() {
                 value={userSearch}
                 onChange={e => setUserSearch(e.target.value)}
                 placeholder="Filtrar por nome, usuário ou e-mail..."
-                className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]"
+                className="w-full pl-9 pr-4 py-2 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
               />
             </div>
             <button
               onClick={loadAdUsers}
               disabled={loadingUsers || !enabled}
-              className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors whitespace-nowrap"
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors whitespace-nowrap"
             >
               {loadingUsers ? <Loader size={14} className="animate-spin" /> : <RefreshCw size={14} />}
               Buscar do AD
@@ -585,7 +548,7 @@ export default function AdminLdapPage() {
           {adUsers.length > 0 && (
             <div className="grid grid-cols-4 gap-3">
               <StatCard label="Total" value={adUsers.length} color="text-[var(--color-text)]" />
-              <StatCard label="Novos" value={newActiveUsers.length} color="text-[#C78C00]" />
+              <StatCard label="Novos" value={newActiveUsers.length} color="text-[var(--color-primary)]" />
               <StatCard label="Vinculados" value={adUsers.filter(u => u.vgStatus === 'ACTIVE').length} color="text-green-400" />
               <StatCard label="Inativos no AD" value={adUsers.filter(u => !u.active).length} color="text-red-400" />
             </div>
@@ -634,7 +597,7 @@ export default function AdminLdapPage() {
                     <button
                       onClick={() => linkUsers([...selectedEmails])}
                       disabled={linking}
-                      className="flex items-center gap-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
+                      className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm font-medium disabled:opacity-40 transition-colors"
                     >
                       {linking ? <Loader size={14} className="animate-spin" /> : <UserPlus size={14} />}
                       Vincular {selectedEmails.size} selecionados
@@ -676,7 +639,7 @@ export default function AdminLdapPage() {
                           <tr
                             key={user.email}
                             onClick={() => selectable && toggleSelectUser(user.email)}
-                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-[var(--color-surface-2)]' : 'opacity-50'} ${selected ? 'bg-[#C78C00]/10' : ''}`}
+                            className={`transition-colors ${selectable ? 'cursor-pointer hover:bg-[var(--color-surface-2)]' : 'opacity-50'} ${selected ? 'bg-[rgba(var(--color-primary-rgb),0.1)]' : ''}`}
                           >
                             <td className="pl-4 py-3">
                               {selectable && (
@@ -691,7 +654,7 @@ export default function AdminLdapPage() {
                             </td>
                             <td className="py-3 px-3">
                               <div className="flex items-center gap-2">
-                                <div className="w-7 h-7 rounded-full bg-[#C78C00]/20 flex items-center justify-center text-xs font-semibold text-[#E7A300] shrink-0">
+                                <div className="w-7 h-7 rounded-full bg-[rgba(var(--color-primary-rgb),0.2)] flex items-center justify-center text-xs font-semibold text-[var(--color-primary-light)] shrink-0">
                                   {(user.firstName?.[0] || user.username?.[0] || '?').toUpperCase()}
                                 </div>
                                 <span className="font-medium text-[var(--color-text)] leading-tight">
@@ -751,7 +714,7 @@ export default function AdminLdapPage() {
 
           <Field label="Escopo de busca" description="sub = toda a árvore; one = apenas um nível abaixo">
             <select value={config.searchScope} onChange={e => set('searchScope', e.target.value)}
-              className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]">
+              className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]">
               <option value="sub">sub (padrão)</option>
               <option value="one">one</option>
               <option value="base">base</option>
@@ -766,15 +729,15 @@ export default function AdminLdapPage() {
 
       {/* ── Botões de ação ──────────────────────────────────────────────────── */}
       <div className="flex gap-3 pt-2">
-        <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}
-          className="flex items-center gap-2 px-6 py-2.5 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+        <button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending} data-testid="save-ldap"
+          className="flex items-center gap-2 px-6 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
           {saveMutation.isPending ? <Loader size={14} className="animate-spin" /> : <Check size={14} />}
           Salvar Configuração
         </button>
-        <button onClick={() => { testMutation.mutate(); setSection('connection'); }}
-          disabled={testMutation.isPending || !config.host}
+        <button onClick={() => { setSection('connection'); if (config.activeServerId) testServer(config.activeServerId); }}
+          disabled={!!testing || !config.activeServerId}
           className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm transition-colors disabled:opacity-40">
-          <Play size={14} /> Testar Agora
+          <Play size={14} /> Testar o preferido
         </button>
       </div>
     </div>

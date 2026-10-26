@@ -2,12 +2,15 @@ import { Router } from 'express';
 import { body } from 'express-validator';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
+import { ROLE_CAPS, invalidateRoleCaps } from '../services/permissions.js';
+
+// Só booleanos conhecidos entram (o resto do corpo é ignorado)
+const pickCaps = (body) => Object.fromEntries(ROLE_CAPS.filter(c => typeof body[c] === 'boolean').map(c => [c, body[c]]));
 
 const router = Router();
-const prisma = new PrismaClient();
 
 function slugifyRoleKey(label) {
   return label
@@ -62,7 +65,7 @@ router.post('/', authenticate, requireAdmin,
 
       const [role] = await prisma.$transaction([
         prisma.role.create({
-          data: { key, label, color: color || '#64748b', priority, isProtected: false },
+          data: { key, label, color: color || '#64748b', priority, isProtected: false, ...pickCaps(req.body) },
         }),
         prisma.role.updateMany({
           where: { isProtected: true, priority: { gte: priority } },
@@ -70,6 +73,7 @@ router.post('/', authenticate, requireAdmin,
         }),
       ]);
 
+      invalidateRoleCaps();
       await createAuditLog(req.user.id, 'role.create', role.key, 'Role', { label }, req.ip);
       res.status(201).json(role);
     } catch (err) {
@@ -78,7 +82,7 @@ router.post('/', authenticate, requireAdmin,
   }
 );
 
-// PUT /api/roles/:key — admin only (label/cor apenas; key é imutável)
+// PUT /api/roles/:key — admin only: nome, cor e permissões (key é imutável)
 router.put('/:key', authenticate, requireAdmin,
   [body('label').optional().trim().notEmpty()],
   validate,
@@ -93,9 +97,11 @@ router.put('/:key', authenticate, requireAdmin,
         data: {
           ...(req.body.label !== undefined && { label: req.body.label }),
           ...(req.body.color !== undefined && { color: req.body.color }),
+          ...pickCaps(req.body),
         },
       });
 
+      invalidateRoleCaps();
       await createAuditLog(req.user.id, 'role.update', role.key, 'Role', req.body, req.ip);
       res.json(updated);
     } catch (err) {
@@ -163,6 +169,7 @@ router.delete('/:key', authenticate, requireAdmin, async (req, res, next) => {
     // Permissões de pasta do cargo excluído deixam de valer
     await prisma.folderPermission.deleteMany({ where: { role: role.key } });
     await prisma.role.delete({ where: { key: role.key } });
+    invalidateRoleCaps();
     // Cargo mudou = pastas visíveis mudaram: tira cópias de chave de quem perdeu acesso
     await pruneFolderKeys();
 

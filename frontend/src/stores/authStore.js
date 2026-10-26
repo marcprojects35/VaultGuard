@@ -44,3 +44,13 @@ export const useCanAccess = (minRole) => {
   const hierarchy = { AUXILIAR: 0, ASSISTENTE: 1, ANALISTA: 2, COORDENACAO: 3, DIRETORIA: 4, ADMINISTRADOR: 5 };
   return (hierarchy[user?.role] ?? -1) >= (hierarchy[minRole] ?? 99);
 };
+
+// O que o cargo permite (Configurações > Cargos e permissões). Admin pode tudo;
+// antes do /auth/me chegar, só esconde o que é desligado por padrão. O
+// servidor confere tudo de novo — isto só evita mostrar botões inúteis.
+const CAP_DEFAULTS = { canEdit: true, canDelete: true, canShare: true, canCreateTeams: true, canExport: false, canImport: false, canUseApiTokens: true };
+export const useCaps = () => {
+  const user = useAuthStore(s => s.user);
+  if (user?.role === 'ADMINISTRADOR') return Object.fromEntries(Object.keys(CAP_DEFAULTS).map(k => [k, true]));
+  return { ...CAP_DEFAULTS, ...(user?.capabilities || {}) };
+};

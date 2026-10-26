@@ -1,7 +1,6 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
 
 async function main() {
   const companyName    = process.env.COMPANY_NAME    || 'VaultGuard';
@@ -30,10 +29,6 @@ async function main() {
       id:             'singleton',
       siteName:       companyName,
       siteSubtitle:   'Cofre de Senhas Corporativo',
-      primaryColor:   '#6366f1',
-      accentColor:    '#8b5cf6',
-      bgColor:        '#0f0f1a',
-      surfaceColor:   '#1a1a2e',
       defaultLanguage:'pt-BR',
     }
   });

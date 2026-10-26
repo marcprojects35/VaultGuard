@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { canAccessFolder, canAccessCredential } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 // Anexos chegam cifrados no cliente (JSON com iv + ciphertext em base64)
@@ -15,10 +14,10 @@ const MAX_PAYLOAD_CHARS = Math.ceil(MAX_SIZE_BYTES * 4 / 3) + 1024;
 router.get('/:credentialId', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.credentialId } });
-    if (!cred) return res.status(404).json({ error: 'Credential not found' });
+    if (!cred) return res.status(404).json({ error: 'Senha não encontrada' });
 
     const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
-    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     const attachments = await prisma.attachment.findMany({
       where: { credentialId: req.params.credentialId },
@@ -36,16 +35,16 @@ router.get('/:credentialId', authenticate, async (req, res, next) => {
 router.post('/:credentialId', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.credentialId } });
-    if (!cred) return res.status(404).json({ error: 'Credential not found' });
+    if (!cred) return res.status(404).json({ error: 'Senha não encontrada' });
 
     const canEdit = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canEdit');
-    if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+    if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para editar aqui' });
 
     const { fileName, mimeType, data, size } = req.body;
     if (!fileName || typeof data !== 'string' || !data) return res.status(400).json({ error: 'fileName and data are required' });
 
     if (data.length > MAX_PAYLOAD_CHARS) {
-      return res.status(413).json({ error: 'File too large (max 5 MB)' });
+      return res.status(413).json({ error: 'Arquivo muito grande (máximo 5 MB)' });
     }
     const sizeBytes = Number.isInteger(size) && size >= 0 ? size : Math.ceil((data.length * 3) / 4);
 
@@ -77,12 +76,12 @@ router.get('/:credentialId/:attachmentId/download', authenticate, async (req, re
       include: { credential: true }
     });
 
-    if (!attachment || attachment.credentialId !== req.params.credentialId) {
-      return res.status(404).json({ error: 'Attachment not found' });
+    if (!attachment || attachment.credentialId !== req.params.credentialId || attachment.credential.deletedAt) {
+      return res.status(404).json({ error: 'Anexo não encontrado' });
     }
 
     const canAccess = await canAccessCredential(req.user.id, req.user.role, attachment.credential);
-    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     await createAuditLog(req.user.id, 'attachment.download', attachment.id, 'Attachment',
       { fileName: attachment.fileName }, req.ip);
@@ -100,15 +99,15 @@ router.put('/:credentialId/:attachmentId', authenticate, async (req, res, next) 
       where: { id: req.params.attachmentId },
       include: { credential: true }
     });
-    if (!attachment || attachment.credentialId !== req.params.credentialId) {
-      return res.status(404).json({ error: 'Attachment not found' });
+    if (!attachment || attachment.credentialId !== req.params.credentialId || attachment.credential.deletedAt) {
+      return res.status(404).json({ error: 'Anexo não encontrado' });
     }
     const canEdit = await canAccessFolder(req.user.id, req.user.role, attachment.credential.folderId, 'canEdit');
-    if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+    if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para editar aqui' });
 
     const { data } = req.body;
     if (typeof data !== 'string' || !data) return res.status(400).json({ error: 'data is required' });
-    if (data.length > MAX_PAYLOAD_CHARS) return res.status(413).json({ error: 'File too large (max 5 MB)' });
+    if (data.length > MAX_PAYLOAD_CHARS) return res.status(413).json({ error: 'Arquivo muito grande (máximo 5 MB)' });
 
     await prisma.attachment.update({ where: { id: attachment.id }, data: { data } });
     res.json({ ok: true });
@@ -125,12 +124,12 @@ router.delete('/:credentialId/:attachmentId', authenticate, async (req, res, nex
       include: { credential: true }
     });
 
-    if (!attachment || attachment.credentialId !== req.params.credentialId) {
-      return res.status(404).json({ error: 'Attachment not found' });
+    if (!attachment || attachment.credentialId !== req.params.credentialId || attachment.credential.deletedAt) {
+      return res.status(404).json({ error: 'Anexo não encontrado' });
     }
 
     const canEdit = await canAccessFolder(req.user.id, req.user.role, attachment.credential.folderId, 'canEdit');
-    if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+    if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para editar aqui' });
 
     await prisma.attachment.delete({ where: { id: req.params.attachmentId } });
     await createAuditLog(req.user.id, 'attachment.delete', attachment.id, 'Attachment',

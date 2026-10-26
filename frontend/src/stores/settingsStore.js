@@ -31,12 +31,28 @@ const LIGHT_VARS = {
   '--color-danger':        '#DC2626',
 };
 
-function hexToRgb(hex) {
-  const clean = hex.replace('#', '');
-  const r = parseInt(clean.slice(0, 2), 16);
-  const g = parseInt(clean.slice(2, 4), 16);
-  const b = parseInt(clean.slice(4, 6), 16);
-  return `${r}, ${g}, ${b}`;
+const DEFAULT_PRIMARY = '#C78C00';
+const DEFAULT_ACCENT = '#AD7B04';
+
+// Aceita #rgb e #rrggbb (com ou sem alfa) e devolve [r, g, b]; cor inválida usa o padrão
+function parseHex(hex, fallback) {
+  let c = String(hex || '').trim().replace(/^#/, '');
+  if (/^[0-9a-f]{3,4}$/i.test(c)) c = c.slice(0, 3).split('').map(x => x + x).join('');
+  if (!/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c)) return fallback ? parseHex(fallback) : [0, 0, 0];
+  return [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16));
+}
+
+const toHex = (rgb) => '#' + rgb.map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+const mix = (rgb, target, amount) => rgb.map((v, i) => v + (target[i] - v) * amount);
+
+// Luminância relativa (WCAG) para escolher texto claro ou escuro sobre a cor da marca
+function luminance(rgb) {
+  const [r, g, b] = rgb.map(v => { const c = v / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export function normalizeHex(hex, fallback) {
+  return toHex(parseHex(hex, fallback));
 }
 
 export const useSettingsStore = create((set, get) => ({
@@ -45,8 +61,11 @@ export const useSettingsStore = create((set, get) => ({
     siteSubtitle: 'Cofre de Senhas Corporativo',
     logoUrl: '/logo.png',
     faviconUrl: '/logo.png',
-    primaryColor: '#C78C00',
-    accentColor: '#AD7B04',
+    primaryColor: DEFAULT_PRIMARY,
+    accentColor: DEFAULT_ACCENT,
+    loginBackgroundUrl: '',
+    loginOverlay: 55,
+    loginMessage: '',
     bgColor: '',
     surfaceColor: '',
     themeMode: 'dark',
@@ -62,8 +81,13 @@ export const useSettingsStore = create((set, get) => ({
         ...data,
         logoUrl: data.logoUrl || '/logo.png',
         faviconUrl: data.faviconUrl || '/logo.png',
-        primaryColor: data.primaryColor || '#C78C00',
-        accentColor: data.accentColor || '#AD7B04',
+        primaryColor: normalizeHex(data.primaryColor, DEFAULT_PRIMARY),
+        accentColor: normalizeHex(data.accentColor, DEFAULT_ACCENT),
+        loginBackgroundUrl: data.loginBackgroundUrl || '',
+        loginOverlay: Number.isFinite(data.loginOverlay) ? data.loginOverlay : 55,
+        loginMessage: data.loginMessage || '',
+        appBackgroundUrl: data.appBackgroundUrl || '',
+        appOverlay: Number.isFinite(data.appOverlay) ? data.appOverlay : 80,
         themeMode: data.themeMode || 'dark',
         bgColor: data.bgColor || '',
         surfaceColor: data.surfaceColor || '',
@@ -85,16 +109,48 @@ export const useSettingsStore = create((set, get) => ({
     const themeVars = mode === 'light' ? LIGHT_VARS : DARK_VARS;
     Object.entries(themeVars).forEach(([k, v]) => root.style.setProperty(k, v));
 
-    const primary = settings.primaryColor || '#C78C00';
-    const accent = settings.accentColor || '#AD7B04';
-    root.style.setProperty('--color-primary', primary);
-    root.style.setProperty('--color-accent', accent);
-    root.style.setProperty('--color-primary-hover', '#FFB400');
-    root.style.setProperty('--color-primary-light', '#E7A300');
-    root.style.setProperty('--color-primary-rgb', hexToRgb(primary));
+    const primary = parseHex(settings.primaryColor, DEFAULT_PRIMARY);
+    const accent = parseHex(settings.accentColor, DEFAULT_ACCENT);
+    const white = [255, 255, 255];
+    const vars = {
+      '--color-primary': toHex(primary),
+      '--color-accent': toHex(accent),
+      '--color-primary-light': toHex(mix(primary, white, 0.18)),
+      '--color-primary-hover': toHex(mix(primary, white, 0.32)),
+      '--color-primary-rgb': primary.join(', '),
+      '--color-accent-rgb': accent.join(', '),
+      // Texto sobre botões/gradientes da marca: escuro em cores claras, branco nas escuras
+      '--color-on-primary': luminance(primary) > 0.45 ? '#111111' : '#FFFFFF',
+    };
+    Object.entries(vars).forEach(([k, v]) => root.style.setProperty(k, v));
 
-    if (settings.bgColor) root.style.setProperty('--color-bg', settings.bgColor);
-    if (settings.surfaceColor) root.style.setProperty('--color-surface', settings.surfaceColor);
+    // Fundo/cartões personalizados: os tons vizinhos (barra lateral, campos, bordas)
+    // saem das cores escolhidas, e o texto acompanha a claridade do fundo
+    if (settings.bgColor || settings.surfaceColor) {
+      const bg = parseHex(settings.bgColor || themeVars['--color-bg']);
+      const lightBg = luminance(bg) > 0.4;
+      const surface = parseHex(settings.surfaceColor || (lightBg ? '#FFFFFF' : toHex(mix(bg, [255, 255, 255], 0.05))));
+      const shade = lightBg ? [0, 0, 0] : [255, 255, 255];
+      const text = lightBg ? LIGHT_VARS : DARK_VARS;
+      const custom = {
+        '--color-bg': toHex(bg),
+        '--color-bg-secondary': toHex(mix(bg, shade, 0.035)),
+        '--color-surface': toHex(surface),
+        '--color-surface-2': toHex(mix(surface, shade, lightBg ? 0.025 : 0.04)),
+        '--color-surface-hover': toHex(mix(surface, shade, lightBg ? 0.05 : 0.08)),
+        '--color-border': toHex(mix(surface, shade, lightBg ? 0.11 : 0.14)),
+        '--color-text': text['--color-text'],
+        '--color-text-muted': text['--color-text-muted'],
+        '--color-muted': text['--color-muted'],
+      };
+      Object.entries(custom).forEach(([k, v]) => root.style.setProperty(k, v));
+      // Regras do tema claro/escuro (index.css) seguem o fundo real
+      root.setAttribute('data-theme', lightBg ? 'light' : 'dark');
+    }
+
+    // Canais do fundo final, para camadas translúcidas sobre a imagem de fundo
+    root.style.setProperty('--app-bg-overlay', String(Math.min(95, Math.max(0, Number(settings.appOverlay ?? 80))) / 100));
+    root.style.setProperty('--color-bg-rgb', parseHex(root.style.getPropertyValue('--color-bg'), '#0c0c0c').join(', '));
 
     const faviconHref = settings.faviconUrl || '/logo.png';
     let link = document.querySelector("link[rel~='icon']");
@@ -103,7 +159,7 @@ export const useSettingsStore = create((set, get) => ({
       document.head.appendChild(link);
     }
     link.rel = 'icon';
-    link.type = 'image/png';
+    link.removeAttribute('type'); // o navegador detecta png/webp/ico pelo conteúdo
     link.href = faviconHref;
 
     if (settings.siteName) document.title = settings.siteName;

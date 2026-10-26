@@ -4,6 +4,11 @@
 #   cd tests/e2e && npm install && npx playwright install chromium
 #   ./run.sh ext.mjs      # extensão
 #   ./run.sh web.mjs      # cofre web
+#   ./run.sh appearance.mjs  # personalização (cores, logo, favicon, fundos)
+#   ./run.sh groups.mjs      # grupos, cargos e permissões
+#   ./run.sh trash.mjs       # lixeira, retenção e limpeza da auditoria
+#   ./run.sh fuzz.mjs        # todas as rotas da API com entradas inválidas (nenhum 500)
+#   ./run.sh ldap.mjs        # 2 servidores de AD: troca automática e manual (sobe 2 OpenLDAP no Docker)
 #
 # Cada execução usa um PostgreSQL descartável (container "vg-e2e-db", porta
 # 55432) e sobe o backend na porta 3901. Nada do ambiente real é tocado.

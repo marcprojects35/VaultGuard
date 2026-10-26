@@ -86,7 +86,7 @@ export default function ApiTokensPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-            <Key className="w-6 h-6" style={{ color: settings.primaryColor }} />
+            <Key className="w-6 h-6" style={{ color: 'var(--color-primary)' }} />
             Tokens de API
           </h1>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
@@ -97,7 +97,7 @@ export default function ApiTokensPage() {
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             <Plus className="w-4 h-4" /> Novo Token
           </button>
         )}
@@ -113,8 +113,8 @@ export default function ApiTokensPage() {
               onClick={() => setActiveTab(tab.id)}
               className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors border-b-2"
               style={{
-                color: activeTab === tab.id ? settings.primaryColor : 'var(--color-text-muted)',
-                borderBottomColor: activeTab === tab.id ? settings.primaryColor : 'transparent',
+                color: activeTab === tab.id ? 'var(--color-primary)' : 'var(--color-text-muted)',
+                borderBottomColor: activeTab === tab.id ? 'var(--color-primary)' : 'transparent',
               }}>
               <Icon className="w-4 h-4" />
               {tab.label}
@@ -228,14 +228,14 @@ export default function ApiTokensPage() {
 
       {/* Instruções */}
       {activeTab === 'personal' && (
-        <div className="rounded-xl p-4" style={{ background: `${settings.primaryColor}08`, border: `1px solid ${settings.primaryColor}30` }}>
-          <h3 className="text-sm font-semibold mb-2" style={{ color: settings.primaryColor }}>
+        <div className="rounded-xl p-4" style={{ background: 'rgba(var(--color-primary-rgb),0.03)', border: `1px solid rgba(var(--color-primary-rgb),0.19)` }}>
+          <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--color-primary)' }}>
             Como usar com a extensão Chrome
           </h3>
           <ol className="text-xs space-y-1 list-decimal list-inside" style={{ color: 'var(--color-text-muted)' }}>
             <li>Instale a extensão VaultGuard no Chrome</li>
             <li>Clique no ícone da extensão e acesse Configurações</li>
-            <li>Informe a URL do servidor: <code className="px-1 rounded" style={{ background: 'var(--color-surface-2)', color: settings.primaryColor }}>http://IP_DO_SERVIDOR</code></li>
+            <li>Informe a URL do servidor: <code className="px-1 rounded" style={{ background: 'var(--color-surface-2)', color: 'var(--color-primary)' }}>http://IP_DO_SERVIDOR</code></li>
             <li>Cole o token de API gerado acima</li>
             <li>Pronto! A extensão buscará credenciais automaticamente ao visitar sites</li>
           </ol>
@@ -304,7 +304,7 @@ export default function ApiTokensPage() {
                 onClick={() => createMutation.mutate(form)}
                 disabled={!form.name || createMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+                style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
                 {createMutation.isPending ? 'Criando...' : 'Criar Token'}
               </button>
             </div>

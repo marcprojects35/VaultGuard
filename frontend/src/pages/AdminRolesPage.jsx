@@ -5,6 +5,17 @@ import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useSettingsStore } from '../stores/settingsStore';
 
+// Permissões do cargo: teto nas pastas compartilhadas e acesso a recursos
+const CAPS = [
+  { key: 'canEdit', label: 'Editar', hint: 'Criar e alterar senhas nas pastas compartilhadas' },
+  { key: 'canDelete', label: 'Excluir', hint: 'Excluir senhas das pastas compartilhadas' },
+  { key: 'canShare', label: 'Compartilhar', hint: 'Compartilhar senhas com outras pessoas' },
+  { key: 'canCreateTeams', label: 'Criar grupos', hint: 'Criar grupos próprios (vira dono do grupo)' },
+  { key: 'canImport', label: 'Importar', hint: 'Importar senhas de arquivos' },
+  { key: 'canExport', label: 'Exportar', hint: 'Exportar as senhas a que tem acesso' },
+  { key: 'canUseApiTokens', label: 'Tokens de API', hint: 'Criar e usar tokens (extensão e integrações)' },
+];
+
 const COLOR_PALETTE = [
   '#64748b', '#0ea5e9', '#6366f1', '#8b5cf6',
   '#f59e0b', '#ef4444', '#10b981', '#ec4899',
@@ -38,9 +49,19 @@ export default function AdminRolesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['roles'] });
       setShowModal(false);
-      toast.success(editing ? 'Classificação atualizada!' : 'Classificação criada!');
+      toast.success(editing ? 'Cargo atualizado!' : 'Cargo criado!');
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro'),
+  });
+
+  const capMutation = useMutation({
+    mutationFn: ({ key, cap, value }) => api.put(`/roles/${key}`, { [cap]: value }),
+    onMutate: async ({ key, cap, value }) => {
+      // Marca na hora; volta se o servidor recusar
+      qc.setQueryData(['roles'], old => old?.map(r => r.key === key ? { ...r, [cap]: value } : r));
+    },
+    onSuccess: () => toast.success('Permissão atualizada'),
+    onError: (e) => { toast.error(e.response?.data?.error || 'Erro'); qc.invalidateQueries({ queryKey: ['roles'] }); },
   });
 
   const priorityMutation = useMutation({
@@ -54,7 +75,7 @@ export default function AdminRolesPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['roles'] });
       qc.invalidateQueries({ queryKey: ['users'] });
-      toast.success('Classificação excluída!');
+      toast.success('Cargo excluído!');
       setDeleteTarget(null);
       setReassignTo('');
     },
@@ -83,15 +104,21 @@ export default function AdminRolesPage() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Classificações</h1>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Cargos e permissões</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-muted)' }}>
-            Crie, edite ou exclua os cargos disponíveis pra atribuir aos usuários
+            Crie os cargos e clique nas permissões para ligar ou desligar. Ex.: Auxiliar edita mas não exclui.
+            Vale para todas as pastas compartilhadas e grupos; a pasta pessoal de cada um não é afetada.
+          </p>
+          <p className="text-xs mt-2 flex flex-wrap items-center gap-2" style={{ color: 'var(--color-muted)' }}>
+            <span className="px-2 py-0.5 rounded-full" style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>Dourado</span> = permitido
+            <span className="px-2 py-0.5 rounded-full" style={{ border: '1px solid var(--color-border)', textDecoration: 'line-through' }}>Riscado</span> = bloqueado.
+            Ver as senhas das pastas a que a pessoa tem acesso é sempre permitido. Passe o mouse numa permissão para ver o que ela faz.
           </p>
         </div>
         <button onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-          style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
-          <Plus className="w-4 h-4" /> Nova Classificação
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white whitespace-nowrap flex-shrink-0"
+          style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
+          <Plus className="w-4 h-4" /> Novo cargo
         </button>
       </div>
 
@@ -111,12 +138,30 @@ export default function AdminRolesPage() {
                   <span className="text-sm font-medium truncate" style={{ color: 'var(--color-text)' }}>{role.label}</span>
                   {role.isProtected && (
                     <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full flex-shrink-0"
-                      style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+                      style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                       <ShieldCheck className="w-3 h-3" /> Protegido
                     </span>
                   )}
                 </div>
                 <span className="text-xs" style={{ color: 'var(--color-muted)' }}>{role.key}</span>
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {role.isProtected ? (
+                    <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Acesso total a tudo</span>
+                  ) : CAPS.map(c => {
+                    const on = role[c.key] !== false;
+                    return (
+                      <button key={c.key} type="button" title={c.hint} data-testid={`cap-${role.key}-${c.key}`}
+                        aria-pressed={on}
+                        onClick={() => capMutation.mutate({ key: role.key, cap: c.key, value: !on })}
+                        className="text-xs px-2 py-0.5 rounded-full border transition-colors"
+                        style={on
+                          ? { background: 'rgba(var(--color-primary-rgb),0.13)', borderColor: 'rgba(var(--color-primary-rgb),0.4)', color: 'var(--color-primary)' }
+                          : { background: 'transparent', borderColor: 'var(--color-border)', color: 'var(--color-muted)', textDecoration: 'line-through' }}>
+                        {c.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="flex items-center gap-1 text-xs flex-shrink-0" style={{ color: 'var(--color-text-muted)' }}>
@@ -164,7 +209,7 @@ export default function AdminRolesPage() {
           <div className="w-full max-w-md rounded-2xl p-6 animate-fadeIn"
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
             <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--color-text)' }}>
-              {editing ? 'Editar Classificação' : 'Nova Classificação'}
+              {editing ? 'Editar cargo' : 'Novo cargo'}
             </h2>
             <div className="space-y-4">
               <div>
@@ -197,7 +242,7 @@ export default function AdminRolesPage() {
               </button>
               <button onClick={() => createMutation.mutate(form)} disabled={!form.label || createMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+                style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
                 <Save className="w-4 h-4" />
                 {createMutation.isPending ? 'Salvando...' : 'Salvar'}
               </button>
@@ -217,7 +262,7 @@ export default function AdminRolesPage() {
                 <Trash2 className="w-5 h-5 text-red-400" />
               </div>
               <div>
-                <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Excluir classificação?</h3>
+                <h3 className="font-semibold" style={{ color: 'var(--color-text)' }}>Excluir cargo?</h3>
                 <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{deleteTarget.label}</p>
               </div>
             </div>
@@ -226,12 +271,12 @@ export default function AdminRolesPage() {
               <>
                 <p className="text-sm mb-3" style={{ color: 'var(--color-text-muted)' }}>
                   {usersInDeleteTarget} usuário{usersInDeleteTarget !== 1 ? 's' : ''} está{usersInDeleteTarget !== 1 ? 'ão' : ''} nesta
-                  classificação. Escolha pra qual classificação eles devem ser movidos antes de excluir:
+                  cargo. Escolha para qual cargo eles devem ser movidos antes de excluir:
                 </p>
                 <select value={reassignTo} onChange={e => setReassignTo(e.target.value)}
                   className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-5"
                   style={inputStyle}>
-                  <option value="">— Selecione uma classificação —</option>
+                  <option value="">— Selecione um cargo —</option>
                   {nonProtectedOptions.map(r => (
                     <option key={r.key} value={r.key}>{r.label}</option>
                   ))}

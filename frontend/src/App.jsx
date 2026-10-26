@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuthStore } from './stores/authStore.js';
+import { useAuthStore, useCaps } from './stores/authStore.js';
 import { useSettingsStore } from './stores/settingsStore.js';
 import LoginPage from './pages/LoginPage.jsx';
 import VaultLayout from './components/layout/VaultLayout.jsx';
@@ -24,6 +24,9 @@ import FavoritesPage from './pages/FavoritesPage.jsx';
 import SecurityDashboardPage from './pages/SecurityDashboardPage.jsx';
 import AccessRequestPage from './pages/AccessRequestPage.jsx';
 import TeamsPage from './pages/TeamsPage.jsx';
+import AdminGroupsPage from './pages/AdminGroupsPage.jsx';
+import TrashPage from './pages/TrashPage.jsx';
+import DataRetentionPage from './pages/DataRetentionPage.jsx';
 
 function PrivateRoute({ children }) {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
@@ -35,6 +38,14 @@ function AdminRoute({ children }) {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== 'ADMINISTRADOR') return <Navigate to="/" replace />;
   return children;
+}
+
+// Página liberada pelo cargo (Configurações > Cargos e permissões)
+function CapRoute({ cap, children }) {
+  const user = useAuthStore(s => s.user);
+  const caps = useCaps();
+  if (!user) return <Navigate to="/login" replace />;
+  return caps[cap] ? children : <Navigate to="/" replace />;
 }
 
 export default function App() {
@@ -58,8 +69,8 @@ export default function App() {
         <Route path="profile" element={<ProfilePage />} />
         <Route path="tokens" element={<ApiTokensPage />} />
         <Route path="search" element={<SearchPage />} />
-        <Route path="import" element={<AdminRoute><ImportPage /></AdminRoute>} />
-        <Route path="export" element={<AdminRoute><ExportPage /></AdminRoute>} />
+        <Route path="import" element={<CapRoute cap="canImport"><ImportPage /></CapRoute>} />
+        <Route path="export" element={<CapRoute cap="canExport"><ExportPage /></CapRoute>} />
         <Route path="favorites" element={<FavoritesPage />} />
         <Route path="security" element={<SecurityDashboardPage />} />
         <Route path="access-requests" element={<AccessRequestPage />} />
@@ -73,6 +84,9 @@ export default function App() {
         <Route path="admin/audit" element={<AdminRoute><AdminAuditPage /></AdminRoute>} />
 
         {/* Settings (under gear icon) */}
+        <Route path="trash" element={<TrashPage />} />
+        <Route path="admin/settings/data" element={<AdminRoute><DataRetentionPage /></AdminRoute>} />
+        <Route path="admin/settings/groups" element={<AdminRoute><AdminGroupsPage /></AdminRoute>} />
         <Route path="admin/settings/appearance" element={<AdminRoute><AppearancePage /></AdminRoute>} />
         <Route path="admin/settings/ldap" element={<AdminRoute><AdminLdapPage /></AdminRoute>} />
         <Route path="admin/settings/general" element={<AdminRoute><SettingsGeneralPage /></AdminRoute>} />

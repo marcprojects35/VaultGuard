@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma, WITH_DELETED } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 import { canAccessFolder, getAccessibleFolderIds } from '../services/permissions.js';
 import { ORG_HOLDER, getFolderAudiences, getHeldFolderIds, wipeUserKeys } from '../services/keys.js';
@@ -12,7 +12,6 @@ import { notifyAdminAlert } from '../services/notifications.js';
 // gravar e quem pode ler cada uma.
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const MAX_KEY_LEN = 8192;
 const isKeyString = (v) => typeof v === 'string' && v.length > 0 && v.length <= MAX_KEY_LEN;
@@ -20,7 +19,7 @@ const isKeyString = (v) => typeof v === 'string' && v.length > 0 && v.length <= 
 // Token de API (extensão) só lê chaves
 router.use(authenticate, (req, res, next) => {
   if (req.isApiToken && req.method !== 'GET') {
-    return res.status(403).json({ error: 'API tokens cannot change keys' });
+    return res.status(403).json({ error: 'Tokens de API não podem alterar chaves' });
   }
   next();
 });
@@ -95,7 +94,7 @@ router.post('/me/reset', async (req, res, next) => {
 // POST /api/keys/org — primeiro admin cria a chave da organização
 router.post('/org', async (req, res, next) => {
   try {
-    if (!isAdmin(req.user)) return res.status(403).json({ error: 'Forbidden' });
+    if (!isAdmin(req.user)) return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
     if (!req.user.publicKey) return res.status(409).json({ error: 'Registre suas chaves antes' });
     const { publicKey, wrappedKey } = req.body;
     if (!isKeyString(publicKey) || !isKeyString(wrappedKey)) return res.status(400).json({ error: 'publicKey e wrappedKey obrigatórios' });
@@ -146,12 +145,12 @@ router.get('/folders', async (req, res, next) => {
 router.post('/folders/:id/init', async (req, res, next) => {
   try {
     const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
-    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    if (!folder) return res.status(404).json({ error: 'Pasta não encontrada' });
     if (!(await canAccessFolder(req.user.id, req.user.role, folder.id, 'canView'))) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({ error: 'Você não tem acesso a este item' });
     }
     // Pasta pessoal: só o dono gera, e a chave não vai para a organização
-    if (folder.isPersonal && folder.ownerId !== req.user.id) return res.status(403).json({ error: 'Access denied' });
+    if (folder.isPersonal && folder.ownerId !== req.user.id) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     const { wrappedKey, orgWrappedKey } = req.body;
     if (!isKeyString(wrappedKey)) return res.status(400).json({ error: 'wrappedKey obrigatório' });
@@ -278,7 +277,8 @@ router.get('/pending', async (req, res, next) => {
       for (const f of folders) {
         if (!(await canAccessFolder(me.id, me.role, f.id, 'canEdit'))) continue;
         const [credentials, audience] = await Promise.all([
-          prisma.credential.findMany({ where: { folderId: f.id, wrappedKey: { not: null } }, select: { id: true, wrappedKey: true } }),
+          // Senhas na lixeira entram na troca de chave: continuam legíveis se restauradas
+          prisma.credential.findMany({ where: { ...WITH_DELETED, folderId: f.id, wrappedKey: { not: null } }, select: { id: true, wrappedKey: true } }),
           getFolderAudiences([f.id]).then(m => m.get(f.id) || new Set()),
         ]);
         rotations.push({
@@ -313,9 +313,9 @@ router.post('/folders/:id/rotate', async (req, res, next) => {
   try {
     const me = req.user;
     const folder = await prisma.folder.findUnique({ where: { id: req.params.id } });
-    if (!folder) return res.status(404).json({ error: 'Folder not found' });
+    if (!folder) return res.status(404).json({ error: 'Pasta não encontrada' });
     if (!folder.needsKeyRotation) return res.status(409).json({ error: 'A pasta não precisa de rotação' });
-    if (!(await getHeldFolderIds(me)).has(folder.id)) return res.status(403).json({ error: 'Access denied' });
+    if (!(await getHeldFolderIds(me)).has(folder.id)) return res.status(403).json({ error: 'Você não tem acesso a este item' });
     // Re-embrulhar as chaves das credenciais pode destruí-las: só quem edita a pasta
     if (!(await canAccessFolder(me.id, me.role, folder.id, 'canEdit'))) {
       return res.status(403).json({ error: 'Só quem edita a pasta pode rotacionar a chave' });
@@ -340,7 +340,7 @@ router.post('/folders/:id/rotate', async (req, res, next) => {
     }
 
     await prisma.$transaction(async (tx) => {
-      const creds = await tx.credential.findMany({ where: { folderId: folder.id, wrappedKey: { not: null } }, select: { id: true } });
+      const creds = await tx.credential.findMany({ where: { ...WITH_DELETED, folderId: folder.id, wrappedKey: { not: null } }, select: { id: true } });
       const sent = new Set(credentialKeys.map(k => k.id));
       if (creds.length !== sent.size || !creds.every(c => sent.has(c.id))) {
         const e = new Error('As credenciais da pasta mudaram durante a rotação; tente de novo'); e.status = 409; throw e;

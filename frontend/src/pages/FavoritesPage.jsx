@@ -43,8 +43,8 @@ function FavoriteCard({ cred, onRemove, settings }) {
       style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
       <div className="flex items-start gap-3">
         <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-          style={{ background: `${settings.primaryColor}22` }}>
-          <Star className="w-4 h-4" style={{ color: settings.primaryColor }} />
+          style={{ background: 'rgba(var(--color-primary-rgb),0.13)' }}>
+          <Star className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
         </div>
 
         <div className="flex-1 min-w-0">
@@ -138,7 +138,7 @@ export default function FavoritesPage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <Star className="w-6 h-6" style={{ color: settings.primaryColor }} />
+        <Star className="w-6 h-6" style={{ color: 'var(--color-primary)' }} />
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Favoritos</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>

@@ -159,9 +159,9 @@ export default function SecurityDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <ShieldCheck className="w-6 h-6" style={{ color: settings.primaryColor }} />
+          <ShieldCheck className="w-6 h-6" style={{ color: 'var(--color-primary)' }} />
           <div>
-            <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Dashboard de Segurança</h1>
+            <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Saúde das senhas</h1>
             <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>Saúde geral do cofre de senhas</p>
           </div>
         </div>
@@ -218,7 +218,7 @@ export default function SecurityDashboardPage() {
       {d.strengthBuckets && (
         <div className="rounded-2xl p-6" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
           <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-4 h-4" style={{ color: settings.primaryColor }} />
+            <TrendingUp className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
             <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Distribuição de Força</h2>
           </div>
           <StrengthBar buckets={d.strengthBuckets} total={d.total ?? 0} />
@@ -235,7 +235,7 @@ export default function SecurityDashboardPage() {
             </div>
             {(d.lists?.expired?.length ?? 0) > 0 && (
               <button onClick={() => navigate('/search?expiry=expired')}
-                className="text-xs flex items-center gap-1 hover:underline" style={{ color: settings.primaryColor }}>
+                className="text-xs flex items-center gap-1 hover:underline" style={{ color: 'var(--color-primary)' }}>
                 Ver todas <ChevronRight className="w-3 h-3" />
               </button>
             )}
@@ -251,7 +251,7 @@ export default function SecurityDashboardPage() {
             </div>
             {(d.lists?.expiringSoon?.length ?? 0) > 0 && (
               <button onClick={() => navigate('/search?expiry=expiring')}
-                className="text-xs flex items-center gap-1 hover:underline" style={{ color: settings.primaryColor }}>
+                className="text-xs flex items-center gap-1 hover:underline" style={{ color: 'var(--color-primary)' }}>
                 Ver todas <ChevronRight className="w-3 h-3" />
               </button>
             )}

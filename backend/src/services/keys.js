@@ -1,6 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma, WITH_DELETED } from '../db.js';
 
-const prisma = new PrismaClient();
 
 export const ORG_HOLDER = 'ORG';
 
@@ -12,8 +11,10 @@ export const ORG_HOLDER = 'ORG';
  */
 export async function getFolderAudiences(folderIds) {
   const [folders, users, perms, memberships] = await Promise.all([
+    // Inclui pastas na lixeira: as chaves delas não podem ser descartadas, senão
+    // as senhas ficariam ilegíveis ao restaurar
     prisma.folder.findMany({
-      where: folderIds ? { id: { in: folderIds } } : {},
+      where: { ...WITH_DELETED, ...(folderIds ? { id: { in: folderIds } } : {}) },
       select: { id: true, isPersonal: true, ownerId: true, teamId: true, visibleToAll: true },
     }),
     prisma.user.findMany({ where: { status: 'ACTIVE' }, select: { id: true, role: true } }),
@@ -108,7 +109,7 @@ export async function pruneFolderKeys(folderIds) {
  */
 export async function markForRotation(folderIds) {
   if (!folderIds.length) return;
-  await prisma.folder.updateMany({ where: { id: { in: folderIds }, keyInitialized: true }, data: { needsKeyRotation: true } });
+  await prisma.folder.updateMany({ where: { ...WITH_DELETED, id: { in: folderIds }, keyInitialized: true }, data: { needsKeyRotation: true } });
 }
 
 export async function wipeUserKeys(userId) {
@@ -118,6 +119,6 @@ export async function wipeUserKeys(userId) {
     prisma.orgKeyGrant.deleteMany({ where: { userId } }),
     prisma.credentialShare.updateMany({ where: { sharedWithId: userId }, data: { wrappedKey: null } }),
     // A pasta pessoal ganha chave nova no próximo login; o conteúdo antigo fica ilegível
-    prisma.folder.updateMany({ where: { isPersonal: true, ownerId: userId }, data: { keyInitialized: false } }),
+    prisma.folder.updateMany({ where: { ...WITH_DELETED, isPersonal: true, ownerId: userId }, data: { keyInitialized: false } }),
   ]);
 }

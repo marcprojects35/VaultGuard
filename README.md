@@ -22,6 +22,7 @@ Sistema completo de gerenciamento de credenciais para empresas, com criptografia
 - [Estrutura do projeto](#-estrutura-do-projeto)
 - [Comandos úteis](#-comandos-úteis)
 - [Solução de problemas](#-solução-de-problemas)
+- [Licença](#licença)
 
 ---
 
@@ -414,6 +415,17 @@ GRP_ADMINS_TI     → ADMINISTRADOR
 
 Usuários em múltiplos grupos recebem o cargo de maior privilégio. Usuários AD são criados automaticamente no banco local no primeiro login — sem necessidade de cadastro prévio.
 
+### Mais de um servidor (troca automática)
+
+Em **Conexão** é possível cadastrar vários servidores — por exemplo, dois controladores de domínio. Cada um tem endereço, porta, TLS, Base DN e conta de serviço próprios.
+
+- Só um servidor é usado por vez: o **preferido** (estrela). O botão **Usar este** troca na hora e fica registrado na auditoria.
+- Com **Troca automática** ligada, se o servidor em uso parar de responder (desligado, sem rede, conta de serviço recusada), o próximo da lista assume no mesmo login. A ordem de reserva é a da lista (setas).
+- Quando o preferido volta a responder, ele reassume sozinho. Os servidores são verificados a cada 2 minutos (`LDAP_CHECK_INTERVAL_MS`) e pelo botão **Verificar todos agora**.
+- Senha errada do usuário não conta como falha do servidor.
+- Com a troca automática desligada, só o preferido é usado; se ele cair, o login pelo AD fica indisponível até a troca manual.
+- Configurações antigas (um servidor só) continuam funcionando e aparecem como o servidor "Principal".
+
 ### Fluxo de autenticação AD
 
 ```
@@ -761,4 +773,14 @@ docker compose restart nginx
 - O sharp converte e redimensiona automaticamente
 
 ---
+
+## Licença
+
+O VaultGuard é software livre, distribuído sob a **GNU Affero General Public License v3.0** ([LICENSE](LICENSE)) com um termo adicional de atribuição ([NOTICE](NOTICE)), permitido pela seção 7(b) da licença.
+
+- Qualquer empresa pode usar, instalar, adaptar e redistribuir.
+- Quem oferecer uma versão modificada para outras pessoas usarem pela rede precisa disponibilizar o código-fonte dessa versão (seção 13).
+- **O aviso "Desenvolvido por Marco", com o link do autor, deve continuar visível no rodapé de todas as telas internas.** Removê-lo, ocultá-lo ou alterá-lo — no código, por configuração, CSS ou qualquer outro meio — viola a licença e encerra o direito de uso (seção 8).
+
+Copyright (C) 2026 Marco Aurélio Prudêncio.
 

@@ -42,3 +42,6 @@ tests/e2e/.out/
 # Certificados e chaves da instalação (nunca versionar)
 ssl/
 ssl-ca/
+
+# Imagens enviadas pela tela de Aparência (volume no Docker)
+backend/uploads/

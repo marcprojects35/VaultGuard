@@ -5,10 +5,11 @@ import {
   Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server, Tag,
   LogOut, Key, ChevronDown, Settings, Globe,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
-  Search, Upload, Download, Star, Inbox, HelpCircle, Send, Users2,
+  Search, Upload, Download, Star, Inbox, HelpCircle, Send, Users2, Trash2, Database,
   PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react';
-import { useAuthStore, useIsAdmin } from '../../stores/authStore.js';
+import { useAuthStore, useIsAdmin, useCaps } from '../../stores/authStore.js';
+import api from '../../utils/api.js';
 import { useVaultStore } from '../../stores/vaultStore.js';
 import UnlockVault from '../UnlockVault.jsx';
 import { useSettingsStore } from '../../stores/settingsStore.js';
@@ -112,6 +113,15 @@ export default function VaultLayout() {
     if (location.pathname.startsWith('/admin/settings')) setSettingsOpen(true);
   }, [location.pathname]);
 
+  // Perfil e permissões do cargo atualizados (o admin pode ter mudado desde o login)
+  const updateUser = useAuthStore(s => s.updateUser);
+  useEffect(() => {
+    api.get('/auth/me').then(({ data }) => updateUser({
+      role: data.role, capabilities: data.capabilities, firstName: data.firstName, lastName: data.lastName,
+    })).catch(() => {});
+  }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  const caps = useCaps();
+
   const handleLogout = () => { logout(); navigate('/login'); };
 
   const handleContactSubmit = (e) => {
@@ -134,8 +144,8 @@ export default function VaultLayout() {
   /* ── Sidebar background  ─────────────────────
      Always dark regardless of app theme so it
      contrasts with the content area.             */
-  const sidebarBg     = '#0D0D0D';
-  const sidebarBorder = '#1F1F1F';
+  const sidebarBg     = 'var(--color-bg-secondary)';
+  const sidebarBorder = 'var(--color-surface-2)';
 
   const iconSize = { width: '16px', height: '16px' };
 
@@ -171,23 +181,23 @@ export default function VaultLayout() {
             style={{
               height: '30px', objectFit: 'contain', flexShrink: 0,
               maxWidth: open ? '120px' : '30px',
-              filter: 'drop-shadow(0 0 6px rgba(199,140,0,0.30))',
+              filter: 'drop-shadow(0 0 6px rgba(var(--color-primary-rgb),0.30))',
             }}
             onError={e => { e.currentTarget.style.display = 'none'; }}
           />
           {open && (
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{
-                fontSize: '0.9rem', fontWeight: 800, color: '#F5F5F3',
+                fontSize: '0.9rem', fontWeight: 800, color: 'var(--color-text)',
                 letterSpacing: '-0.025em', whiteSpace: 'nowrap', overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                background: 'linear-gradient(90deg, #F5F5F3 0%, #C78C00 100%)',
+                background: 'linear-gradient(90deg, var(--color-text) 0%, var(--color-primary) 100%)',
                 WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
               }}>
                 VaultGuard
               </div>
               <div style={{
-                fontSize: '0.65rem', color: '#555552',
+                fontSize: '0.65rem', color: 'var(--color-muted)',
                 whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                 marginTop: '1px', letterSpacing: '0.02em', textTransform: 'uppercase',
               }}>
@@ -204,12 +214,12 @@ export default function VaultLayout() {
               style={{
                 marginLeft: 'auto', flexShrink: 0,
                 background: 'none', border: 'none', cursor: 'pointer',
-                color: '#636360', padding: '4px', borderRadius: '6px',
+                color: 'var(--color-muted)', padding: '4px', borderRadius: '6px',
                 display: 'flex', alignItems: 'center',
                 transition: 'color 150ms ease',
               }}
-              onMouseEnter={e => e.currentTarget.style.color = '#A0A09E'}
-              onMouseLeave={e => e.currentTarget.style.color = '#636360'}
+              onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-muted)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'var(--color-muted)'}
             >
               <PanelLeftClose style={{ width: '15px', height: '15px' }} />
             </button>
@@ -224,14 +234,14 @@ export default function VaultLayout() {
             style={{
               position: 'absolute', top: '14px', right: '-13px',
               width: '26px', height: '26px', borderRadius: '6px',
-              background: '#1E1E1E', border: `1px solid #2A2A2A`,
+              background: 'var(--color-surface-2)', border: `1px solid var(--color-border)`,
               cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#A0A09E', zIndex: 20,
+              color: 'var(--color-text-muted)', zIndex: 20,
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
               transition: 'color 150ms ease',
             }}
-            onMouseEnter={e => e.currentTarget.style.color = '#F0F0EE'}
-            onMouseLeave={e => e.currentTarget.style.color = '#A0A09E'}
+            onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'var(--color-text-muted)'}
           >
             <PanelLeftOpen style={{ width: '13px', height: '13px' }} />
           </button>
@@ -247,19 +257,16 @@ export default function VaultLayout() {
           <NavItem to="/" icon={<Vault style={iconSize} />} label={t('nav.vault')} open={open} exact />
           <NavItem to="/search" icon={<Search style={iconSize} />} label="Pesquisa" open={open} />
           <NavItem to="/favorites" icon={<Star style={iconSize} />} label="Favoritos" open={open} />
-          <NavItem to="/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={open} />
+          <NavItem to="/security" icon={<ShieldCheck style={iconSize} />} label="Saúde das senhas" open={open} />
           <NavItem to="/access-requests" icon={<Inbox style={iconSize} />} label="Acessos" open={open} />
-          <NavItem to="/teams" icon={<Users2 style={iconSize} />} label="Equipes" open={open} />
+          <NavItem to="/teams" icon={<Users2 style={iconSize} />} label="Grupos" open={open} />
 
           {/* ─ Ferramentas ─ */}
           <SectionLabel label="Ferramentas" open={open} />
-          <NavItem to="/tokens" icon={<Key style={iconSize} />} label={t('nav.apiTokens')} open={open} />
-          {isAdmin && (
-            <>
-              <NavItem to="/import" icon={<Upload style={iconSize} />} label="Importar" open={open} />
-              <NavItem to="/export" icon={<Download style={iconSize} />} label="Exportar" open={open} />
-            </>
-          )}
+          {caps.canUseApiTokens && <NavItem to="/tokens" icon={<Key style={iconSize} />} label={t('nav.apiTokens')} open={open} />}
+          {caps.canImport && <NavItem to="/import" icon={<Upload style={iconSize} />} label="Importar" open={open} />}
+          {caps.canExport && <NavItem to="/export" icon={<Download style={iconSize} />} label="Exportar" open={open} />}
+          <NavItem to="/trash" icon={<Trash2 style={iconSize} />} label="Lixeira" open={open} />
 
           {/* ─ Admin ─ */}
           {isAdmin && (
@@ -267,7 +274,7 @@ export default function VaultLayout() {
               <SectionLabel label={t('nav.admin')} open={open} />
               <NavItem to="/admin/users" icon={<Users style={iconSize} />} label={t('nav.users')} open={open} />
               <NavItem to="/admin/folders" icon={<FolderOpen style={iconSize} />} label={t('nav.folders')} open={open} />
-              <NavItem to="/admin/roles" icon={<Tag style={iconSize} />} label={t('nav.roles', 'Classificação')} open={open} />
+              <NavItem to="/admin/roles" icon={<Tag style={iconSize} />} label="Cargos e permissões" open={open} />
               <NavItem to="/admin/audit" icon={<ScrollText style={iconSize} />} label={t('nav.audit')} open={open} />
 
               {/* Settings group */}
@@ -297,8 +304,11 @@ export default function VaultLayout() {
                     }} />
                   </button>
                   {settingsOpen && (
-                    <div style={{ paddingLeft: '14px', borderLeft: `1px solid #2A2A2A`, marginLeft: '18px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                    <div style={{ paddingLeft: '14px', borderLeft: `1px solid var(--color-border)`, marginLeft: '18px', display: 'flex', flexDirection: 'column', gap: '1px' }}>
                       <SettingsItem to="/admin/settings/appearance" icon={<Palette style={iconSize} />} label="Aparência" open={open} />
+                      <SettingsItem to="/admin/settings/groups" icon={<Users2 style={iconSize} />} label="Grupos" open={open} />
+                      <SettingsItem to="/admin/roles" icon={<Tag style={iconSize} />} label="Cargos e permissões" open={open} />
+                      <SettingsItem to="/admin/settings/data" icon={<Database style={iconSize} />} label="Dados e retenção" open={open} />
                       <SettingsItem to="/admin/settings/ldap" icon={<Server style={iconSize} />} label="Active Directory" open={open} />
                       <SettingsItem to="/admin/settings/general" icon={<SlidersHorizontal style={iconSize} />} label="Geral" open={open} />
                       <SettingsItem to="/admin/settings/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={open} />
@@ -310,6 +320,9 @@ export default function VaultLayout() {
                 /* Collapsed: show all settings icons directly */
                 <>
                   <SettingsItem to="/admin/settings/appearance" icon={<Palette style={iconSize} />} label="Aparência" open={false} />
+                  <SettingsItem to="/admin/settings/groups" icon={<Users2 style={iconSize} />} label="Grupos" open={false} />
+                  <SettingsItem to="/admin/roles" icon={<Tag style={iconSize} />} label="Cargos e permissões" open={false} />
+                  <SettingsItem to="/admin/settings/data" icon={<Database style={iconSize} />} label="Dados e retenção" open={false} />
                   <SettingsItem to="/admin/settings/ldap" icon={<Server style={iconSize} />} label="Active Directory" open={false} />
                   <SettingsItem to="/admin/settings/general" icon={<SlidersHorizontal style={iconSize} />} label="Geral" open={false} />
                   <SettingsItem to="/admin/settings/security" icon={<ShieldCheck style={iconSize} />} label="Segurança" open={false} />
@@ -361,7 +374,7 @@ export default function VaultLayout() {
                 style={{
                   position: 'absolute', bottom: 'calc(100% + 4px)',
                   left: 0, width: '220px',
-                  background: '#1A1A1A', border: '1px solid #2A2A2A',
+                  background: 'var(--color-surface-2)', border: '1px solid var(--color-border)',
                   borderRadius: '12px',
                   maxHeight: '260px', overflowY: 'auto',
                   boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
@@ -377,7 +390,7 @@ export default function VaultLayout() {
                       width: '100%', padding: '9px 14px',
                       fontSize: '0.8125rem', fontWeight: 500,
                       background: 'none', border: 'none', cursor: 'pointer',
-                      color: lang.code === i18n.language ? 'var(--color-primary)' : '#A0A09E',
+                      color: lang.code === i18n.language ? 'var(--color-primary)' : 'var(--color-text-muted)',
                       transition: 'color 100ms ease, background 100ms ease',
                       textAlign: 'left',
                     }}
@@ -416,13 +429,13 @@ export default function VaultLayout() {
                 style={{
                   width: '26px', height: '26px', borderRadius: '50%',
                   objectFit: 'cover', flexShrink: 0,
-                  border: '1.5px solid rgba(199,140,0,0.4)',
+                  border: '1.5px solid rgba(var(--color-primary-rgb),0.4)',
                 }}
               />
             ) : (
               <div style={{
                 width: '26px', height: '26px', borderRadius: '50%',
-                background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))`,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: '0.6875rem', fontWeight: 700, color: '#fff', flexShrink: 0,
               }}>
@@ -432,13 +445,13 @@ export default function VaultLayout() {
             {open && (
               <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                 <div style={{
-                  fontSize: '0.8125rem', fontWeight: 600, color: '#F0F0EE',
+                  fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-text)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 }}>
                   {user?.firstName} {user?.lastName}
                 </div>
                 <div style={{
-                  fontSize: '0.6875rem', color: '#636360',
+                  fontSize: '0.6875rem', color: 'var(--color-muted)',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: '1px',
                 }}>
                   {t(`user.roles.${user?.role}`)}
@@ -458,7 +471,7 @@ export default function VaultLayout() {
               justifyContent: open ? 'flex-start' : 'center',
               borderRadius: '9px', width: '100%',
               fontSize: '0.875rem', fontWeight: 500,
-              color: '#636360',
+              color: 'var(--color-muted)',
               background: 'none', border: 'none', cursor: 'pointer',
               transition: 'color 150ms ease, background 150ms ease',
             }}
@@ -493,11 +506,24 @@ export default function VaultLayout() {
       </aside>
 
       {/* ═══════════ Main Content ═══════════ */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+      <div data-app-bg={settings.appBackgroundUrl ? '' : undefined}
+        style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
+        {/* Imagem de fundo (Aparência) coberta pela cor do tema para o conteúdo continuar legível */}
+        {settings.appBackgroundUrl && <>
+          <div data-testid="app-bg" style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            backgroundImage: `url(${JSON.stringify(settings.appBackgroundUrl)})`, backgroundSize: 'cover', backgroundPosition: 'center',
+          }} />
+          <div style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            // --app-bg-overlay vem do applyTheme (a tela de Aparência o muda ao vivo)
+            background: 'rgba(var(--color-bg-rgb), var(--app-bg-overlay, 0.8))',
+          }} />
+        </>}
         <main
           key={location.pathname}
           className="page-enter"
-          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', position: 'relative' }}
         >
           <Outlet />
         </main>
@@ -505,20 +531,21 @@ export default function VaultLayout() {
         {/* Perfil fica acessível bloqueado (ex.: ativar o 2FA obrigatório) */}
         {!vaultUnlocked && location.pathname !== '/profile' && <UnlockVault onLogout={handleLogout} />}
 
-        {/* Footer */}
+        {/* Aviso de autoria — obrigatório pela licença (AGPL-3.0, seção 7(b), arquivo NOTICE).
+            Não pode ser removido, ocultado nem alterado, nem por configuração. */}
         <footer style={{
-          flexShrink: 0, padding: '7px 16px', textAlign: 'center',
-          borderTop: '1px solid #1A1A1A',
-          background: '#030303',
+          flexShrink: 0, padding: '7px 16px', textAlign: 'center', position: 'relative',
+          borderTop: '1px solid var(--color-border)',
+          background: 'var(--color-bg)',
         }}>
-          <span style={{ fontSize: '0.75rem', color: '#C78C00' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--color-primary)' }}>
             Desenvolvido por{' '}
             <a
               href="https://www.linkedin.com/in/marcoaurelioprudencio/"
               target="_blank"
               rel="noopener noreferrer"
               style={{
-                fontWeight: 700, color: '#E7A300',
+                fontWeight: 700, color: 'var(--color-primary-light)',
                 textDecoration: 'none', transition: 'opacity 150ms ease',
               }}
               onMouseEnter={e => e.currentTarget.style.opacity = '0.75'}
@@ -561,7 +588,7 @@ export default function VaultLayout() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{
                   width: '36px', height: '36px', borderRadius: '10px',
-                  background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                  background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))`,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
                   <HelpCircle style={{ width: '18px', height: '18px', color: '#fff' }} />
@@ -696,7 +723,7 @@ export default function VaultLayout() {
                     style={{
                       flex: 1, padding: '10px', borderRadius: '10px',
                       fontSize: '0.875rem', fontWeight: 600, color: '#fff',
-                      background: `linear-gradient(135deg, ${settings.primaryColor || '#C78C00'}, ${settings.accentColor || '#AD7B04'})`,
+                      background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))`,
                       border: 'none', cursor: 'pointer',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                       fontFamily: 'Outfit, sans-serif',
@@ -720,8 +747,8 @@ export default function VaultLayout() {
       {/* Global hover style injected */}
       <style>{`
         .sidebar-hover-item:hover {
-          background: rgba(199,140,0,0.08) !important;
-          color: #F0F0EE !important;
+          background: rgba(var(--color-primary-rgb),0.08) !important;
+          color: var(--color-text) !important;
         }
       `}</style>
     </div>

@@ -189,7 +189,7 @@ export default function ProfilePage() {
       <div className="relative">
         <input type={show ? 'text' : 'password'} value={pwForm[field]}
           onChange={e => setPwForm({ ...pwForm, [field]: e.target.value })}
-          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 pr-10 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]" />
+          className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 pr-10 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]" />
         <button type="button" onClick={onToggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--color-muted)] hover:text-[var(--color-text-muted)]">
           {show ? <EyeOff size={14} /> : <Eye size={14} />}
         </button>
@@ -207,7 +207,7 @@ export default function ProfilePage() {
   return (
     <div className="p-6 space-y-6 max-w-3xl">
       <h1 className="text-2xl font-bold text-[var(--color-text)] flex items-center gap-2">
-        <User size={24} className="text-[#C78C00]" /> Meu Perfil
+        <User size={24} className="text-[var(--color-primary)]" /> Meu Perfil
       </h1>
 
       {/* Header card */}
@@ -215,15 +215,15 @@ export default function ProfilePage() {
         <div className="relative flex-shrink-0">
           {user?.avatar ? (
             <img src={user.avatar} alt="avatar"
-              className="w-16 h-16 rounded-full object-cover ring-2 ring-[#C78C00]/40" />
+              className="w-16 h-16 rounded-full object-cover ring-2 ring-[rgba(var(--color-primary-rgb),0.4)]" />
           ) : (
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#AD7B04] to-[#C78C00] flex items-center justify-center text-2xl font-bold text-white">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[var(--color-accent)] to-[var(--color-primary)] flex items-center justify-center text-2xl font-bold text-white">
               {initials}
             </div>
           )}
           <button
             onClick={() => avatarInputRef.current?.click()}
-            className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#C78C00] flex items-center justify-center hover:bg-[#FFB400] transition-colors"
+            className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[var(--color-primary)] flex items-center justify-center hover:bg-[var(--color-primary-hover)] transition-colors"
             title="Alterar foto">
             <Camera size={11} className="text-white" />
           </button>
@@ -232,7 +232,7 @@ export default function ProfilePage() {
         <div>
           <p className="font-semibold text-[var(--color-text)] text-lg">{fullName || user?.username}</p>
           <p className="text-sm text-[var(--color-text-muted)]">{user?.email}</p>
-          <span className="text-xs px-2 py-0.5 rounded-full bg-[#C78C00]/20 text-[#E7A300] mt-1 inline-block">
+          <span className="text-xs px-2 py-0.5 rounded-full bg-[rgba(var(--color-primary-rgb),0.2)] text-[var(--color-primary-light)] mt-1 inline-block">
             {userRoleLabel}
           </span>
         </div>
@@ -251,7 +251,7 @@ export default function ProfilePage() {
       </div>
 
       {user?.requiresPasswordChange && (
-        <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(199,140,0,0.08)', border: '1px solid rgba(199,140,0,0.3)', color: '#E7A300' }}>
+        <div className="p-3 rounded-xl text-sm" style={{ background: 'rgba(var(--color-primary-rgb),0.08)', border: '1px solid rgba(var(--color-primary-rgb),0.3)', color: 'var(--color-primary-light)' }}>
           Sua senha expirou ou foi definida pelo administrador. Crie uma senha nova na aba Segurança para continuar.
         </div>
       )}
@@ -266,7 +266,7 @@ export default function ProfilePage() {
       <div className="flex gap-1 border-b border-[var(--color-border)] pb-0">
         {TABS.map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${activeTab === tab.id ? 'text-[#C78C00] border-b-2 border-[#C78C00]' : 'text-[var(--color-muted)] hover:text-[var(--color-text-muted)]'}`}>
+            className={`px-4 py-2 text-sm font-medium rounded-t-lg transition-colors ${activeTab === tab.id ? 'text-[var(--color-primary)] border-b-2 border-[var(--color-primary)]' : 'text-[var(--color-muted)] hover:text-[var(--color-text-muted)]'}`}>
             {tab.label}
           </button>
         ))}
@@ -280,12 +280,12 @@ export default function ProfilePage() {
             <div>
               <label className="text-sm text-[var(--color-text-muted)] mb-1 block">Nome</label>
               <input value={profileForm.firstName} onChange={e => setProfileForm({ ...profileForm, firstName: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]" />
+                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]" />
             </div>
             <div>
               <label className="text-sm text-[var(--color-text-muted)] mb-1 block">Sobrenome</label>
               <input value={profileForm.lastName} onChange={e => setProfileForm({ ...profileForm, lastName: e.target.value })}
-                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]" />
+                className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]" />
             </div>
           </div>
           <div>
@@ -300,7 +300,7 @@ export default function ProfilePage() {
               className="w-full bg-[var(--color-surface-hover)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-muted)] text-sm cursor-not-allowed" />
           </div>
           <button onClick={() => updateProfile.mutate(profileForm)} disabled={updateProfile.isPending}
-            className="mt-2 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+            className="mt-2 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
             {updateProfile.isPending ? 'Salvando...' : 'Salvar'}
           </button>
         </div>
@@ -333,7 +333,7 @@ export default function ProfilePage() {
             </div>
             <button onClick={() => changePw.mutate(pwForm)}
               disabled={!pwForm.currentPassword || !pwForm.newPassword || pwForm.newPassword !== pwForm.confirmPassword || changePw.isPending}
-              className="mt-4 px-4 py-2 bg-[#C78C00] hover:bg-[#FFB400] text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
+              className="mt-4 px-4 py-2 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white rounded-lg text-sm font-medium disabled:opacity-50 transition-colors">
               {changePw.isPending ? 'Alterando...' : 'Alterar Senha'}
             </button>
           </div>
@@ -366,12 +366,12 @@ export default function ProfilePage() {
                   <div className="space-y-3">
                     <p className="text-sm text-[var(--color-text-muted)]">Digite o código do app autenticador para gerar códigos novos (os anteriores deixam de valer):</p>
                     <input value={twoFaCode} onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6}
-                      className="w-32 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[#C78C00]"
+                      className="w-32 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[var(--color-primary)]"
                       placeholder="000000" inputMode="numeric" />
                     <div className="flex gap-2">
                       <button onClick={() => { setTwoFaStep(null); setTwoFaCode(''); }} className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] text-sm">Cancelar</button>
                       <button onClick={() => genRecovery.mutate(twoFaCode)} disabled={twoFaCode.length !== 6 || genRecovery.isPending}
-                        className="px-3 py-1.5 rounded-lg text-white text-sm disabled:opacity-50" style={{ background: '#C78C00' }}>
+                        className="px-3 py-1.5 rounded-lg text-white text-sm disabled:opacity-50" style={{ background: 'var(--color-primary)' }}>
                         {genRecovery.isPending ? '...' : 'Gerar códigos'}
                       </button>
                     </div>
@@ -379,7 +379,7 @@ export default function ProfilePage() {
                 ) : (
                   <div className="flex flex-wrap gap-2">
                     <button onClick={() => setTwoFaStep('recovery')} className="px-4 py-2 rounded-lg text-sm transition-colors"
-                      style={{ background: 'rgba(199,140,0,0.12)', border: '1px solid rgba(199,140,0,0.3)', color: '#E7A300' }}>
+                      style={{ background: 'rgba(var(--color-primary-rgb),0.12)', border: '1px solid rgba(var(--color-primary-rgb),0.3)', color: 'var(--color-primary-light)' }}>
                       Gerar códigos de recuperação{user?.recoveryCodesLeft ? ` (restam ${user.recoveryCodesLeft})` : ''}
                     </button>
                     <button onClick={() => setTwoFaStep('disable')} className="px-4 py-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-400 rounded-lg text-sm transition-colors">
@@ -388,8 +388,8 @@ export default function ProfilePage() {
                   </div>
                 )}
                 {recoveryCodes && (
-                  <div className="mt-4 p-4 rounded-xl" style={{ background: 'rgba(199,140,0,0.06)', border: '1px solid rgba(199,140,0,0.25)' }}>
-                    <p className="text-xs mb-2" style={{ color: '#E7A300' }}>Guarde estes códigos em local seguro. Cada um vale uma vez e eles não serão exibidos novamente.</p>
+                  <div className="mt-4 p-4 rounded-xl" style={{ background: 'rgba(var(--color-primary-rgb),0.06)', border: '1px solid rgba(var(--color-primary-rgb),0.25)' }}>
+                    <p className="text-xs mb-2" style={{ color: 'var(--color-primary-light)' }}>Guarde estes códigos em local seguro. Cada um vale uma vez e eles não serão exibidos novamente.</p>
                     <div className="grid grid-cols-2 gap-1 font-mono text-sm text-[var(--color-text)] mb-3">
                       {recoveryCodes.map(c => <span key={c}>{c}</span>)}
                     </div>
@@ -414,12 +414,12 @@ export default function ProfilePage() {
                       <div className="flex-1">
                         <p className="text-sm text-[var(--color-text-muted)] mb-2">1. Escaneie o QR code com seu app</p>
                         <p className="text-sm text-[var(--color-text-muted)] mb-2">2. Ou insira a chave manualmente:</p>
-                        <code className="text-xs bg-[var(--color-bg-secondary)] px-2 py-1 rounded font-mono text-[#E7A300] break-all block">{twoFaData.secret}</code>
+                        <code className="text-xs bg-[var(--color-bg-secondary)] px-2 py-1 rounded font-mono text-[var(--color-primary-light)] break-all block">{twoFaData.secret}</code>
                         <p className="text-sm text-[var(--color-text-muted)] mt-3 mb-2">3. Digite o código de 6 dígitos gerado:</p>
                         <input value={twoFaCode}
                           onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                           maxLength={6}
-                          className="w-32 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[#C78C00]"
+                          className="w-32 bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm text-center font-mono tracking-widest focus:outline-none focus:border-[var(--color-primary)]"
                           placeholder="000000"
                           inputMode="numeric" />
                         <div className="flex gap-2 mt-3">
@@ -461,7 +461,7 @@ export default function ProfilePage() {
                 </button>
               </div>
               <div className="flex items-center gap-2 bg-[var(--color-bg-secondary)] rounded-lg px-3 py-2">
-                <code className="text-xs font-mono text-[#E7A300] flex-1 break-all">{createdToken.token}</code>
+                <code className="text-xs font-mono text-[var(--color-primary-light)] flex-1 break-all">{createdToken.token}</code>
                 <button onClick={() => copyToken(createdToken.token, 'new')}
                   className="flex-shrink-0" style={{ color: copiedId === 'new' ? '#10b981' : 'var(--color-muted)' }}>
                   {copiedId === 'new' ? <Check size={14} /> : <Copy size={14} />}
@@ -478,25 +478,25 @@ export default function ProfilePage() {
               </h2>
               <button onClick={() => setShowCreateToken(!showCreateToken)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-                style={{ background: '#C78C0022', color: '#E7A300', border: '1px solid #C78C0044' }}>
+                style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary-light)', border: '1px solid rgba(var(--color-primary-rgb),0.27)' }}>
                 <Plus size={12} /> Novo Token
               </button>
             </div>
 
             {/* Create form */}
             {showCreateToken && (
-              <div className="mb-4 p-4 rounded-xl" style={{ background: 'rgba(199,140,0,0.06)', border: '1px solid rgba(199,140,0,0.2)' }}>
+              <div className="mb-4 p-4 rounded-xl" style={{ background: 'rgba(var(--color-primary-rgb),0.06)', border: '1px solid rgba(var(--color-primary-rgb),0.2)' }}>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Nome do token *</label>
                     <input value={newTokenName} onChange={e => setNewTokenName(e.target.value)}
-                      className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]"
+                      className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]"
                       placeholder="Ex: Script de backup" />
                   </div>
                   <div>
                     <label className="text-xs text-[var(--color-text-muted)] mb-1 block">Expira em (opcional)</label>
                     <input type="date" value={newTokenExpiry} onChange={e => setNewTokenExpiry(e.target.value)}
-                      className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[#C78C00]" />
+                      className="w-full bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-lg px-3 py-2 text-[var(--color-text)] text-sm focus:outline-none focus:border-[var(--color-primary)]" />
                   </div>
                 </div>
                 <label className="flex items-center gap-2 mb-3 text-xs text-[var(--color-text-muted)] cursor-pointer">
@@ -508,7 +508,7 @@ export default function ProfilePage() {
                     className="px-3 py-1.5 rounded-lg border border-[var(--color-border)] text-[var(--color-text-muted)] text-xs">Cancelar</button>
                   <button onClick={() => createToken.mutate()} disabled={createToken.isPending || !newTokenName.trim()}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
-                    style={{ background: '#C78C00' }}>
+                    style={{ background: 'var(--color-primary)' }}>
                     {createToken.isPending ? 'Criando...' : 'Criar Token'}
                   </button>
                 </div>
@@ -567,7 +567,7 @@ export default function ProfilePage() {
             <div className="space-y-2">
               {auditLogs.map(log => (
                 <div key={log.id} className="flex items-start gap-3 py-2 border-b border-[var(--color-border)]">
-                  <div className="w-2 h-2 rounded-full bg-[#C78C00] mt-1.5 flex-shrink-0" />
+                  <div className="w-2 h-2 rounded-full bg-[var(--color-primary)] mt-1.5 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-[var(--color-text-muted)]">{log.action}</span>

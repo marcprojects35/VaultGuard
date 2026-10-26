@@ -22,6 +22,16 @@ model Role {
   priority    Int      @default(0)
   isProtected Boolean  @default(false)
   color       String?  @default("#64748b")
+  // O que o cargo pode fazer nas pastas compartilhadas (teto: a permissão da
+  // pasta ou do grupo nunca passa disso) e nos recursos do sistema. A pasta
+  // pessoal do usuário não é afetada.
+  canEdit         Boolean @default(true)
+  canDelete       Boolean @default(true)
+  canShare        Boolean @default(true)
+  canCreateTeams  Boolean @default(true)
+  canExport       Boolean @default(false)
+  canImport       Boolean @default(false)
+  canUseApiTokens Boolean @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -88,6 +98,10 @@ model Team {
   description String?
   ownerId     String
   owner       User     @relation("TeamOwner", fields: [ownerId], references: [id])
+  // Permissões padrão dos membros nas pastas do grupo (o dono tem todas)
+  memberCanEdit   Boolean @default(true)
+  memberCanDelete Boolean @default(false)
+  memberCanShare  Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -105,6 +119,10 @@ model TeamMember {
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   status      String    @default("PENDING") // PENDING | ACTIVE | DECLINED
   invitedById String
+  // Ajuste individual; null = segue o padrão do grupo
+  canEdit     Boolean?
+  canDelete   Boolean?
+  canShare    Boolean?
   createdAt   DateTime  @default(now())
   respondedAt DateTime?
 
@@ -133,6 +151,12 @@ model Folder {
   keyInitialized Boolean @default(false)
   // Alguém perdeu acesso: a próxima pessoa com a chave gera uma nova
   needsKeyRotation Boolean @default(false)
+  // Lixeira: preenchido ao excluir; some do sistema e é apagado de vez depois
+  // do prazo de Configurações › Dados e retenção. deletedWithFolder = pasta cuja
+  // exclusão levou este item junto (restaurar a pasta restaura ele também).
+  deletedAt         DateTime?
+  deletedById       String?
+  deletedWithFolder String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -143,6 +167,7 @@ model Folder {
   @@index([parentId])
   @@index([ownerId])
   @@index([teamId])
+  @@index([deletedAt])
 }
 
 model FolderPermission {
@@ -185,6 +210,12 @@ model Credential {
   // Chave AES própria da credencial, cifrada com a chave da pasta.
   // null = credencial legada (v0/v1), ainda não migrada.
   wrappedKey    String?
+  // Lixeira: preenchido ao excluir; some do sistema e é apagado de vez depois
+  // do prazo de Configurações › Dados e retenção. deletedWithFolder = pasta cuja
+  // exclusão levou este item junto (restaurar a pasta restaura ele também).
+  deletedAt         DateTime?
+  deletedById       String?
+  deletedWithFolder String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -193,6 +224,7 @@ model Credential {
 
   @@index([folderId])
   @@index([url])
+  @@index([deletedAt])
 }
 
 model CredentialField {
@@ -226,11 +258,22 @@ model SystemSettings {
   siteSubtitle    String  @default("Cofre de Senhas Corporativo")
   logoUrl         String?
   faviconUrl      String?
-  primaryColor    String  @default("#6366f1")
-  accentColor     String  @default("#8b5cf6")
-  bgColor         String  @default("#0f0f1a")
-  surfaceColor    String  @default("#1a1a2e")
+  primaryColor    String  @default("#c78c00")
+  accentColor     String  @default("#ad7b04")
+  // Vazio = cores do tema escolhido (claro/escuro)
+  bgColor         String  @default("")
+  surfaceColor    String  @default("")
   themeMode       String  @default("dark")
+  // Tela de login: imagem de fundo, escurecimento (0-90%) e mensagem
+  loginBackgroundUrl String?
+  loginOverlay    Int     @default(55)
+  loginMessage    String?
+  // Retenção (dias; 0 = sem limite): lixeira e registros de auditoria
+  trashRetentionDays Int @default(30)
+  auditRetentionDays Int @default(0)
+  // Fundo das telas internas: imagem e quanto a cor do tema a cobre (0-95%)
+  appBackgroundUrl String?
+  appOverlay      Int     @default(80)
   // Contato de suporte exibido no login e no menu (vazio = não exibe)
   supportEmail    String?
   defaultLanguage String  @default("pt-BR")

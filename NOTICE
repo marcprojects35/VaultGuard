@@ -1,0 +1,30 @@
+VaultGuard — Cofre de senhas corporativo
+Copyright (C) 2026 Marco Aurélio Prudêncio
+
+Este programa é software livre: você pode redistribuí-lo e/ou modificá-lo sob
+os termos da GNU Affero General Public License, versão 3 (arquivo LICENSE),
+acrescida do termo adicional abaixo, permitido pela seção 7(b) da licença.
+
+TERMO ADICIONAL — ATRIBUIÇÃO DO AUTOR (seção 7(b) da AGPL-3.0)
+
+1. Toda cópia, versão modificada ou obra derivada deste programa que tenha
+   interface de usuário deve manter visível, em todas as telas internas da
+   aplicação, o aviso de autoria "Desenvolvido por Marco", com o link para
+   https://www.linkedin.com/in/marcoaurelioprudencio/ — da mesma forma que
+   aparece no rodapé da versão original.
+
+2. Não é permitido remover, ocultar, encobrir, alterar o texto, trocar o nome
+   ou o link, nem tornar o aviso ilegível ou inacessível, seja pelo código-fonte,
+   por configuração, por folha de estilo, por script ou por qualquer outro meio.
+
+3. Este aviso é uma atribuição de autoria e um aviso legal no sentido da seção
+   7(b) e faz parte dos "Appropriate Legal Notices" da seção 0 da licença.
+   Descumprir este termo encerra os direitos concedidos pela licença,
+   conforme a seção 8.
+
+Este programa é distribuído na esperança de ser útil, mas SEM NENHUMA GARANTIA;
+nem mesmo a garantia implícita de COMERCIALIZAÇÃO ou de ADEQUAÇÃO A UM
+PROPÓSITO ESPECÍFICO. Veja a GNU Affero General Public License para mais
+detalhes.
+
+Código-fonte: https://github.com/marcprojects35/VaultGuard

@@ -296,7 +296,7 @@ export default function SettingsEmailPage() {
                   onClick={() => setProvider(p.id)}
                   className="flex items-start gap-3 p-4 rounded-xl text-left transition-all"
                   style={{
-                    background: active ? `${getComputedStyle(document.documentElement).getPropertyValue('--color-primary') || '#6366f1'}22` : 'var(--color-surface-2)',
+                    background: active ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)',
                     border: `1.5px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
                   }}
                 >

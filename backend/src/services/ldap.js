@@ -15,11 +15,10 @@
 
 import { Client } from 'ldapts';
 import { pruneFolderKeys } from './keys.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { createAuditLog } from './audit.js';
 import logger from '../utils/logger.js';
 
-const prisma = new PrismaClient();
 
 // ── Mapeamento de role por grupo do AD ───────────────────────────────────────
 const DEFAULT_ROLE_MAP = {
@@ -36,11 +35,136 @@ async function getRolePriorityMap() {
   return Object.fromEntries(roles.map(r => [r.key, r.priority]));
 }
 
+// ── Vários servidores (failover) ─────────────────────────────────────────────
+// A config guarda uma lista de servidores, cada um com conexão e conta de
+// serviço próprias. Só um é usado por vez: o preferido (escolhido pelo admin).
+// Se ele falhar, o próximo da lista assume na hora (autoFailover); quando o
+// preferido volta a responder, ele reassume.
+export const SERVER_FIELDS = ['host', 'port', 'useTLS', 'startTLS', 'verifyCert', 'domain', 'baseDn', 'bindDn', 'bindPassword'];
+
+/** Converte a config antiga (um servidor só, campos no topo) para a lista */
+export function normalizeLdapConfig(raw) {
+  if (!raw) return null;
+  const cfg = { ...raw };
+  if (!Array.isArray(cfg.servers) || !cfg.servers.length) {
+    cfg.servers = cfg.host ? [{ id: 'principal', name: 'Principal', ...Object.fromEntries(SERVER_FIELDS.map(f => [f, raw[f]])) }] : [];
+  }
+  for (const f of SERVER_FIELDS) delete cfg[f];
+  if (!cfg.servers.some(sv => sv.id === cfg.activeServerId)) cfg.activeServerId = cfg.servers[0]?.id || null;
+  cfg.autoFailover = cfg.autoFailover !== false;
+  return cfg;
+}
+
+/** Config usada numa conexão: opções gerais + dados do servidor */
+export function serverConfig(cfg, server) {
+  const { servers, activeServerId, autoFailover, ...shared } = cfg;
+  return { ...shared, ...server };
+}
+
+// Saúde de cada servidor, em memória: { state: 'ok'|'down', lastError, lastCheck, lastOk }
+const health = new Map();
+let inUseServerId = null;
+const DOWN_RETRY_MS = 60 * 1000;
+
+// Erros de conexão em linguagem de gente (o original fica no log)
+export function explainLdapError(err) {
+  const m = `${err?.name || ''} ${String(err?.message || err || '')}`.trim();
+  if (/ECONNREFUSED/.test(m)) return 'O servidor recusou a conexão: está desligado ou a porta está errada.';
+  if (/ETIMEDOUT|timeout|Timed out/i.test(m)) return 'O servidor não respondeu a tempo: pode estar fora do ar ou bloqueado por firewall.';
+  if (/ENOTFOUND|EAI_AGAIN/.test(m)) return 'Nome do servidor não encontrado (DNS). Confira o endereço.';
+  if (/EHOSTUNREACH|ENETUNREACH/.test(m)) return 'Servidor inacessível pela rede.';
+  if (/ECONNRESET|socket hang up|closed/i.test(m)) return 'A conexão caiu no meio. Confira LDAPS/StartTLS e a porta.';
+  if (/InvalidCredentialsError|invalid credentials/i.test(m)) return 'A conta de serviço ou a senha foram recusadas pelo AD.';
+  if (/certificate|self.signed|CERT_|UNABLE_TO_VERIFY/i.test(m)) return 'O certificado do servidor não é confiável. Instale a CA ou desligue "Verificar certificado".';
+  if (/NoSuchObjectError/.test(m)) return 'Base DN não encontrado no diretório.';
+  return String(err?.message || err || '');
+}
+
+function markOk(server) {
+  health.set(server.id, { ...(health.get(server.id) || {}), state: 'ok', lastError: null, lastCheck: new Date(), lastOk: new Date() });
+}
+function markDown(server, err) {
+  health.set(server.id, { ...(health.get(server.id) || {}), state: 'down', lastError: explainLdapError(err), lastCheck: new Date() });
+}
+
+// Ordem de tentativa: preferido primeiro; servidores que caíram há pouco vão para o fim
+function tryOrder(cfg) {
+  const preferred = cfg.servers.find(sv => sv.id === cfg.activeServerId);
+  const rest = cfg.servers.filter(sv => sv !== preferred);
+  const order = [preferred, ...(cfg.autoFailover ? rest : [])].filter(Boolean);
+  const recentlyDown = (sv) => health.get(sv.id)?.state === 'down' && Date.now() - health.get(sv.id).lastCheck < DOWN_RETRY_MS;
+  return [...order.filter(sv => !recentlyDown(sv)), ...order.filter(recentlyDown)];
+}
+
+async function noteInUse(cfg, server) {
+  if (inUseServerId === server.id) return;
+  const previous = cfg.servers.find(sv => sv.id === inUseServerId);
+  inUseServerId = server.id;
+  if (!previous) return;
+  const action = server.id === cfg.activeServerId ? 'ldap.failback' : 'ldap.failover';
+  logger.warn(`LDAP: ${action} ${previous.name} -> ${server.name}`);
+  await createAuditLog(null, action, server.id, 'Settings', { from: previous.name, to: server.name, reason: health.get(previous.id)?.lastError || null }, null);
+}
+
+/**
+ * Executa fn(configDoServidor) no servidor em uso, passando para o próximo se
+ * a conexão ou a conta de serviço falhar. Erros do próprio usuário (senha
+ * errada) não chegam aqui: fn os devolve como resultado, não como exceção.
+ */
+export async function withLdapServer(cfg, fn) {
+  if (!cfg?.servers?.length) throw new Error('Nenhum servidor do Active Directory configurado');
+  let lastErr;
+  for (const server of tryOrder(cfg)) {
+    try {
+      const result = await fn(serverConfig(cfg, server), server);
+      markOk(server);
+      await noteInUse(cfg, server);
+      return result;
+    } catch (err) {
+      lastErr = err;
+      markDown(server, err);
+      logger.error('LDAP server failed', { server: server.name, host: server.host, error: err.message });
+    }
+  }
+  throw lastErr;
+}
+
+/** Situação de cada servidor para a tela do admin */
+export function getLdapStatus(cfg) {
+  const servers = (cfg?.servers || []).map(sv => ({
+    id: sv.id, name: sv.name, host: sv.host, port: sv.port,
+    preferred: sv.id === cfg.activeServerId,
+    inUse: sv.id === (inUseServerId && cfg.servers.some(x => x.id === inUseServerId) ? inUseServerId : cfg.activeServerId),
+    ...(health.get(sv.id) || { state: 'unknown' }),
+  }));
+  return { servers, autoFailover: cfg?.autoFailover !== false, activeServerId: cfg?.activeServerId || null };
+}
+
+/** Testa todos os servidores (rotina periódica e botão "Verificar agora") */
+export async function checkAllServers(cfg) {
+  if (!cfg?.servers?.length) return getLdapStatus(cfg);
+  for (const server of cfg.servers) {
+    const r = await testConnection(serverConfig(cfg, server));
+    if (r.success) markOk(server); else markDown(server, new Error(r.message));
+  }
+  // Em uso = o primeiro que responde na ordem de preferência
+  const order = [cfg.servers.find(sv => sv.id === cfg.activeServerId), ...cfg.servers.filter(sv => sv.id !== cfg.activeServerId)].filter(Boolean);
+  const candidates = cfg.autoFailover ? order : order.slice(0, 1);
+  const up = candidates.find(sv => health.get(sv.id)?.state === 'ok');
+  if (up) await noteInUse(cfg, up);
+  return getLdapStatus(cfg);
+}
+
+/** Troca manual: o escolhido passa a ser o preferido e o em uso */
+export function setInUse(serverId) {
+  inUseServerId = serverId;
+}
+
 // ── Ler config do banco ───────────────────────────────────────────────────────
 export async function getLdapConfig() {
   const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
   if (!settings?.ldapEnabled || !settings?.ldapConfig) return null;
-  return settings.ldapConfig;
+  return normalizeLdapConfig(settings.ldapConfig);
 }
 
 // ── Extrair valor escalar de atributo LDAP ────────────────────────────────────
@@ -103,7 +227,7 @@ export async function testConnection(cfg) {
     return { success: true, message: `Conectado. BaseDN acessível.` };
   } catch (err) {
     logger.error('LDAP test connection error', { error: err.message });
-    return { success: false, message: err.message };
+    return { success: false, message: explainLdapError(err) };
   } finally {
     try { await client.unbind(); } catch { /* ignore */ }
   }
@@ -175,38 +299,45 @@ function isAdUserActive(entry) {
 
 // ── Autenticar via AD ─────────────────────────────────────────────────────────
 export async function authenticateWithAD(login, password, ip, ua) {
-  const cfg = await getLdapConfig();
-  if (!cfg) throw new Error('LDAP não configurado ou desabilitado');
+  const base = await getLdapConfig();
+  if (!base) throw new Error('LDAP não configurado ou desabilitado');
 
-  const client = createClient(cfg);
+  // Conexão, conta de serviço e busca rodam no servidor em uso (com troca
+  // automática); a senha do usuário é validada no mesmo servidor
+  const found = await withLdapServer(base, async (cfg) => {
+    const client = createClient(cfg);
+    try {
+      await maybeStartTLS(client, cfg);
+      await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
+      const entry = await searchUser(client, cfg, login);
+      if (!entry) return { cfg, entry: null };
+      if (!isAdUserActive(entry)) return { cfg, entry, disabled: true };
+      try {
+        await client.bind(entry.dn, password);
+        return { cfg, entry, passwordOk: true };
+      } catch {
+        return { cfg, entry, passwordOk: false };
+      }
+    } finally {
+      try { await client.unbind(); } catch { /* ignore */ }
+    }
+  });
+  const cfg = found.cfg;
+  const entry = found.entry;
 
   try {
-    // 1. Bind com service account
-    await maybeStartTLS(client, cfg);
-    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
-
-    // 2. Buscar o usuário
-    const entry = await searchUser(client, cfg, login);
     if (!entry) {
       logger.warn('LDAP: usuário não encontrado', { login });
       return null;
     }
-
-    // 3. Verificar se está ativo no AD
-    if (!isAdUserActive(entry)) {
+    if (found.disabled) {
       logger.warn('LDAP: conta desabilitada no AD', { login, dn: entry.dn });
       return { error: 'Conta desabilitada no Active Directory' };
     }
-
-    // 4. Re-bind com credenciais do usuário (valida a senha)
-    try {
-      await client.bind(entry.dn, password);
-    } catch (bindErr) {
+    if (!found.passwordOk) {
       logger.warn('LDAP: senha inválida', { login, dn: entry.dn });
       return null; // senha errada
     }
-
-    await client.unbind();
 
     // 5. Extrair atributos
     const email = (ldapStr(entry.mail) || ldapStr(entry.userPrincipalName) || `${login}@${cfg.domain || 'local'}`).toLowerCase();
@@ -233,8 +364,6 @@ export async function authenticateWithAD(login, password, ip, ua) {
   } catch (err) {
     logger.error('LDAP authentication error', { error: err.message, login });
     throw err;
-  } finally {
-    try { await client.unbind(); } catch { /* ignore */ }
   }
 }
 
@@ -299,7 +428,7 @@ async function upsertLdapUser({ email, username, firstName, lastName, ldapDn, ld
 }
 
 // ── Sincronizar todos os usuários do AD (importação em lote) ──────────────────
-export async function syncAllUsersFromAD(cfg) {
+async function syncAllUsersFromADOnServer(cfg) {
   const client = createClient(cfg);
   const results = { created: 0, updated: 0, disabled: 0, errors: [] };
 
@@ -378,7 +507,7 @@ export async function syncAllUsersFromAD(cfg) {
 }
 
 // ── Preview de usuários do AD (sem salvar no banco) ──────────────────────────
-export async function fetchUsersForPreview(cfg) {
+async function fetchUsersForPreviewOnServer(cfg) {
   const client = createClient(cfg);
   try {
     await maybeStartTLS(client, cfg);
@@ -470,7 +599,7 @@ export async function linkUsersFromAD(cfg, emails) {
 }
 
 // ── Buscar grupos do AD (para mapear a roles) ─────────────────────────────────
-export async function fetchADGroups(cfg) {
+async function fetchADGroupsOnServer(cfg) {
   const client = createClient(cfg);
   try {
     await maybeStartTLS(client, cfg);
@@ -493,4 +622,16 @@ export async function fetchADGroups(cfg) {
   } finally {
     try { await client.unbind(); } catch { /* ignore */ }
   }
+}
+
+export async function syncAllUsersFromAD(cfg) {
+  return withLdapServer(normalizeLdapConfig(cfg), (serverCfg) => syncAllUsersFromADOnServer(serverCfg));
+}
+
+export async function fetchUsersForPreview(cfg) {
+  return withLdapServer(normalizeLdapConfig(cfg), (serverCfg) => fetchUsersForPreviewOnServer(serverCfg));
+}
+
+export async function fetchADGroups(cfg) {
+  return withLdapServer(normalizeLdapConfig(cfg), (serverCfg) => fetchADGroupsOnServer(serverCfg));
 }

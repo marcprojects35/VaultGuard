@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { canAccessCredential } from '../services/permissions.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/favorites — list user's favorites with credential data
 router.get('/', authenticate, async (req, res, next) => {
@@ -42,10 +41,10 @@ router.get('/', authenticate, async (req, res, next) => {
 router.post('/:credentialId', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.credentialId } });
-    if (!cred) return res.status(404).json({ error: 'Credential not found' });
+    if (!cred) return res.status(404).json({ error: 'Senha não encontrada' });
 
     const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
-    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     const fav = await prisma.favorite.upsert({
       where: { userId_credentialId: { userId: req.user.id, credentialId: req.params.credentialId } },

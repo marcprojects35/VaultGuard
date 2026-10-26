@@ -1,14 +1,14 @@
 import { Router } from 'express';
 import { body } from 'express-validator';
 import { authenticate } from '../middleware/auth.js';
+import { requireCap } from '../services/permissions.js';
 import { validate } from '../middleware/validate.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import crypto from 'crypto';
 import { hashToken } from '../utils/tokens.js';
 import { createAuditLog } from '../services/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const VALID_SCOPES = ['read', 'write'];
 const TOKEN_SELECT = { id: true, name: true, tokenPrefix: true, lastUsed: true, expiresAt: true, scopes: true, createdAt: true };
@@ -28,7 +28,7 @@ router.get('/', authenticate, async (req, res, next) => {
 router.get('/all', authenticate, async (req, res, next) => {
   try {
     if (req.user.role !== 'ADMINISTRADOR') {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
     }
     const tokens = await prisma.apiToken.findMany({
       select: {
@@ -42,7 +42,7 @@ router.get('/all', authenticate, async (req, res, next) => {
 });
 
 // POST /api/tokens
-router.post('/', authenticate,
+router.post('/', authenticate, requireCap('canUseApiTokens', 'Seu cargo não pode usar tokens de API'),
   [body('name').notEmpty().trim()],
   validate,
   async (req, res, next) => {
@@ -74,9 +74,9 @@ router.post('/', authenticate,
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
     const token = await prisma.apiToken.findUnique({ where: { id: req.params.id } });
-    if (!token) return res.status(404).json({ error: 'Token not found' });
+    if (!token) return res.status(404).json({ error: 'Token não encontrado' });
     if (token.userId !== req.user.id && req.user.role !== 'ADMINISTRADOR') {
-      return res.status(403).json({ error: 'Forbidden' });
+      return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
     }
     await prisma.apiToken.delete({ where: { id: req.params.id } });
     await createAuditLog(req.user.id, 'api_token.delete', token.id, 'ApiToken', { name: token.name }, req.ip);

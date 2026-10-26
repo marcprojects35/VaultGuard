@@ -25,6 +25,11 @@ export default function LoginPage() {
   const codeReady = useRecovery ? form.totp.trim().length >= 10 : form.totp.length === 6;
 
   const logoSrc = settings.logoUrl || '/logo.png';
+  // Fundo personalizado (Aparência): imagem da empresa com uma camada escura por cima para manter a leitura
+  const bgImage = settings.loginBackgroundUrl;
+  const overlay = Math.min(90, Math.max(0, Number(settings.loginOverlay ?? 55))) / 100;
+  const headerText = bgImage ? '#FFFFFF' : 'var(--color-text)';
+  const headerMuted = bgImage ? 'rgba(255,255,255,0.8)' : 'var(--color-muted)';
 
   const finishLogin = async (data) => {
     setAuth({ ...data.user, requires2FASetup: !!data.requires2FASetup, requiresPasswordChange: !!data.requiresPasswordChange });
@@ -79,7 +84,7 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: '#080808',
+      background: 'var(--color-bg)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
@@ -89,31 +94,39 @@ export default function LoginPage() {
       overflow: 'hidden',
       fontFamily: 'Outfit, system-ui, sans-serif',
     }}>
+      {bgImage && <>
+        <div data-testid="login-bg" style={{
+          position: 'absolute', inset: 0, pointerEvents: 'none',
+          backgroundImage: `url(${JSON.stringify(bgImage)})`, backgroundSize: 'cover', backgroundPosition: 'center',
+        }} />
+        <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', background: `rgba(0,0,0,${overlay})` }} />
+      </>}
+
       {/* Ambient glow top */}
-      <div style={{
+      {!bgImage && <div style={{
         position: 'absolute', top: '-120px', left: '50%', transform: 'translateX(-50%)',
         width: '700px', height: '400px', borderRadius: '50%', pointerEvents: 'none',
-        background: 'radial-gradient(ellipse at center, rgba(199,140,0,0.12) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse at center, rgba(var(--color-primary-rgb),0.12) 0%, transparent 70%)',
         filter: 'blur(40px)',
-      }} />
+      }} />}
 
       {/* Ambient glow bottom-left */}
-      <div style={{
+      {!bgImage && <div style={{
         position: 'absolute', bottom: '-80px', left: '-100px', pointerEvents: 'none',
         width: '400px', height: '300px', borderRadius: '50%',
-        background: 'radial-gradient(ellipse at center, rgba(199,140,0,0.06) 0%, transparent 70%)',
+        background: 'radial-gradient(ellipse at center, rgba(var(--color-primary-rgb),0.06) 0%, transparent 70%)',
         filter: 'blur(40px)',
-      }} />
+      }} />}
 
       {/* Fine grid overlay */}
-      <div style={{
+      {!bgImage && <div style={{
         position: 'absolute', inset: 0, pointerEvents: 'none',
         backgroundImage: [
-          'linear-gradient(rgba(199,140,0,0.03) 1px, transparent 1px)',
-          'linear-gradient(90deg, rgba(199,140,0,0.03) 1px, transparent 1px)',
+          'linear-gradient(rgba(var(--color-primary-rgb),0.03) 1px, transparent 1px)',
+          'linear-gradient(90deg, rgba(var(--color-primary-rgb),0.03) 1px, transparent 1px)',
         ].join(','),
         backgroundSize: '48px 48px',
-      }} />
+      }} />}
 
       {/* ── Brand header ── */}
       <div className="animate-slideUp" style={{
@@ -122,39 +135,46 @@ export default function LoginPage() {
       }}>
         <div style={{
           width: '64px', height: '64px', borderRadius: '18px',
-          background: 'linear-gradient(135deg, #1A1A1A 0%, #0D0D0D 100%)',
-          border: '1px solid rgba(199,140,0,0.25)',
+          background: 'linear-gradient(135deg, var(--color-surface-2) 0%, var(--color-bg-secondary) 100%)',
+          border: '1px solid rgba(var(--color-primary-rgb),0.25)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 0 24px rgba(199,140,0,0.15), 0 4px 20px rgba(0,0,0,0.5)',
+          boxShadow: '0 0 24px rgba(var(--color-primary-rgb),0.15), 0 4px 20px rgba(0,0,0,0.5)',
           overflow: 'hidden',
         }}>
           <img
             src={logoSrc}
-            alt="VaultGuard"
+            alt={settings.siteName || 'VaultGuard'}
             style={{ width: '40px', height: '40px', objectFit: 'contain' }}
             onError={e => {
               e.currentTarget.style.display = 'none';
               e.currentTarget.nextSibling.style.display = 'flex';
             }}
           />
-          <ShieldCheck style={{ display: 'none', width: '28px', height: '28px', color: '#C78C00' }} />
+          <ShieldCheck style={{ display: 'none', width: '28px', height: '28px', color: 'var(--color-primary)' }} />
         </div>
 
         <div style={{ textAlign: 'center' }}>
           <div style={{
             fontSize: '1.5rem', fontWeight: 800, letterSpacing: '-0.035em',
-            background: 'linear-gradient(135deg, #FFFFFF 0%, #C78C00 60%, #E7A300 100%)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            // backgroundImage (não o atalho background): o atalho com var() desfaz o clip no texto
+            backgroundImage: `linear-gradient(135deg, ${headerText} 0%, var(--color-primary) 60%, var(--color-primary-light) 100%)`,
+            WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent',
             lineHeight: 1.1,
           }}>
-            VaultGuard
+            {settings.siteName || 'VaultGuard'}
           </div>
           <div style={{
-            fontSize: '0.75rem', color: '#4A4A47', marginTop: '4px',
+            fontSize: '0.75rem', color: headerMuted, marginTop: '4px',
             letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 500,
           }}>
             {settings.siteSubtitle || 'Cofre de Senhas Corporativo'}
           </div>
+          {settings.loginMessage && <div data-testid="login-message" style={{
+            fontSize: '0.85rem', color: headerText, marginTop: '10px', maxWidth: '380px',
+            whiteSpace: 'pre-line', opacity: 0.9,
+          }}>
+            {settings.loginMessage}
+          </div>}
         </div>
       </div>
 
@@ -163,30 +183,30 @@ export default function LoginPage() {
         className="animate-fadeInScale"
         style={{
           position: 'relative', width: '100%', maxWidth: '400px',
-          background: 'rgba(14,14,14,0.95)',
+          background: 'var(--color-surface)',
           backdropFilter: 'blur(24px)',
           borderRadius: '20px', padding: '2rem',
-          border: '1px solid rgba(199,140,0,0.12)',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(199,140,0,0.06)',
+          border: '1px solid rgba(var(--color-primary-rgb),0.12)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.6), 0 0 0 1px rgba(var(--color-primary-rgb),0.06)',
         }}
       >
         {/* Top gold accent line */}
         <div style={{
           position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
           width: '60%', height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(199,140,0,0.5), transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(var(--color-primary-rgb),0.5), transparent)',
         }} />
 
         {step === 'credentials' ? (
           <>
             <h1 style={{
-              fontSize: '1.25rem', fontWeight: 700, color: '#F0F0EE',
+              fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text)',
               letterSpacing: '-0.025em', marginBottom: '4px',
               lineHeight: 1.2,
             }}>
               {t('auth.welcomeBack')}
             </h1>
-            <p style={{ fontSize: '0.8125rem', color: '#555552', marginBottom: '1.5rem', lineHeight: 1.55 }}>
+            <p style={{ fontSize: '0.8125rem', color: 'var(--color-muted)', marginBottom: '1.5rem', lineHeight: 1.55 }}>
               {t('auth.loginSubtitle')}
             </p>
 
@@ -195,14 +215,14 @@ export default function LoginPage() {
               <div>
                 <label style={{
                   display: 'block', fontSize: '0.75rem', fontWeight: 600,
-                  color: '#6B6B68', marginBottom: '6px', letterSpacing: '0.03em', textTransform: 'uppercase',
+                  color: 'var(--color-muted)', marginBottom: '6px', letterSpacing: '0.03em', textTransform: 'uppercase',
                 }}>
                   {t('auth.username')}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Mail style={{
                     position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
-                    width: '14px', height: '14px', color: '#4A4A47', pointerEvents: 'none',
+                    width: '14px', height: '14px', color: 'var(--color-muted)', pointerEvents: 'none',
                   }} />
                   <input
                     type="text"
@@ -216,19 +236,19 @@ export default function LoginPage() {
                       padding: '0.7rem 1rem 0.7rem 2.5rem',
                       borderRadius: '10px',
                       fontSize: '0.875rem',
-                      background: '#111111',
-                      border: '1px solid #222222',
-                      color: '#F0F0EE',
+                      background: 'var(--color-bg-secondary)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text)',
                       outline: 'none',
                       fontFamily: 'Outfit, system-ui, sans-serif',
                       transition: 'border-color 150ms ease, box-shadow 150ms ease',
                     }}
                     onFocus={e => {
-                      e.target.style.borderColor = 'rgba(199,140,0,0.5)';
-                      e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.08)';
+                      e.target.style.borderColor = 'rgba(var(--color-primary-rgb),0.5)';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(var(--color-primary-rgb),0.08)';
                     }}
                     onBlur={e => {
-                      e.target.style.borderColor = '#222222';
+                      e.target.style.borderColor = 'var(--color-surface-hover)';
                       e.target.style.boxShadow = 'none';
                     }}
                   />
@@ -239,14 +259,14 @@ export default function LoginPage() {
               <div>
                 <label style={{
                   display: 'block', fontSize: '0.75rem', fontWeight: 600,
-                  color: '#6B6B68', marginBottom: '6px', letterSpacing: '0.03em', textTransform: 'uppercase',
+                  color: 'var(--color-muted)', marginBottom: '6px', letterSpacing: '0.03em', textTransform: 'uppercase',
                 }}>
                   {t('auth.password')}
                 </label>
                 <div style={{ position: 'relative' }}>
                   <Lock style={{
                     position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)',
-                    width: '14px', height: '14px', color: '#4A4A47', pointerEvents: 'none',
+                    width: '14px', height: '14px', color: 'var(--color-muted)', pointerEvents: 'none',
                   }} />
                   <input
                     type={showPass ? 'text' : 'password'}
@@ -259,19 +279,19 @@ export default function LoginPage() {
                       padding: '0.7rem 3rem 0.7rem 2.5rem',
                       borderRadius: '10px',
                       fontSize: '0.875rem',
-                      background: '#111111',
-                      border: '1px solid #222222',
-                      color: '#F0F0EE',
+                      background: 'var(--color-bg-secondary)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text)',
                       outline: 'none',
                       fontFamily: showPass ? 'Outfit, system-ui, sans-serif' : 'monospace',
                       transition: 'border-color 150ms ease, box-shadow 150ms ease',
                     }}
                     onFocus={e => {
-                      e.target.style.borderColor = 'rgba(199,140,0,0.5)';
-                      e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.08)';
+                      e.target.style.borderColor = 'rgba(var(--color-primary-rgb),0.5)';
+                      e.target.style.boxShadow = '0 0 0 3px rgba(var(--color-primary-rgb),0.08)';
                     }}
                     onBlur={e => {
-                      e.target.style.borderColor = '#222222';
+                      e.target.style.borderColor = 'var(--color-surface-hover)';
                       e.target.style.boxShadow = 'none';
                     }}
                   />
@@ -281,11 +301,11 @@ export default function LoginPage() {
                     style={{
                       position: 'absolute', right: '11px', top: '50%', transform: 'translateY(-50%)',
                       background: 'none', border: 'none', cursor: 'pointer',
-                      color: '#4A4A47', padding: '4px', display: 'flex', alignItems: 'center',
+                      color: 'var(--color-muted)', padding: '4px', display: 'flex', alignItems: 'center',
                       transition: 'color 150ms ease',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.color = '#C78C00'}
-                    onMouseLeave={e => e.currentTarget.style.color = '#4A4A47'}
+                    onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
+                    onMouseLeave={e => e.currentTarget.style.color = 'var(--color-muted)'}
                   >
                     {showPass
                       ? <EyeOff style={{ width: '14px', height: '14px' }} />
@@ -301,12 +321,12 @@ export default function LoginPage() {
                 style={{
                   marginTop: '0.25rem', width: '100%', padding: '0.85rem',
                   borderRadius: '12px', fontWeight: 700, fontSize: '0.9rem',
-                  color: '#0D0D0D',
+                  color: 'var(--color-on-primary)',
                   background: loading
-                    ? 'rgba(199,140,0,0.4)'
-                    : 'linear-gradient(135deg, #E7A300 0%, #C78C00 50%, #AD7B04 100%)',
+                    ? 'rgba(var(--color-primary-rgb),0.4)'
+                    : 'linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 50%, var(--color-accent) 100%)',
                   border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
-                  boxShadow: loading ? 'none' : '0 4px 20px rgba(199,140,0,0.35)',
+                  boxShadow: loading ? 'none' : '0 4px 20px rgba(var(--color-primary-rgb),0.35)',
                   fontFamily: 'Outfit, sans-serif', letterSpacing: '0.01em',
                   transition: 'transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -314,19 +334,19 @@ export default function LoginPage() {
                 onMouseEnter={e => {
                   if (!loading) {
                     e.currentTarget.style.transform = 'translateY(-1px)';
-                    e.currentTarget.style.boxShadow = '0 6px 28px rgba(199,140,0,0.50)';
+                    e.currentTarget.style.boxShadow = '0 6px 28px rgba(var(--color-primary-rgb),0.50)';
                   }
                 }}
                 onMouseLeave={e => {
                   e.currentTarget.style.transform = 'translateY(0)';
-                  e.currentTarget.style.boxShadow = loading ? 'none' : '0 4px 20px rgba(199,140,0,0.35)';
+                  e.currentTarget.style.boxShadow = loading ? 'none' : '0 4px 20px rgba(var(--color-primary-rgb),0.35)';
                 }}
               >
                 {loading && (
                   <span style={{
                     width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
                     border: '2px solid rgba(0,0,0,0.20)',
-                    borderTop: '2px solid #0D0D0D',
+                    borderTop: '2px solid var(--color-bg-secondary)',
                     animation: 'spin 0.8s linear infinite',
                   }} />
                 )}
@@ -340,21 +360,21 @@ export default function LoginPage() {
             <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
               <div style={{
                 width: '52px', height: '52px', borderRadius: '14px',
-                background: 'rgba(199,140,0,0.08)',
-                border: '1px solid rgba(199,140,0,0.18)',
+                background: 'rgba(var(--color-primary-rgb),0.08)',
+                border: '1px solid rgba(var(--color-primary-rgb),0.18)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 margin: '0 auto 14px',
               }}>
-                <ShieldCheck style={{ width: '24px', height: '24px', color: '#C78C00' }} />
+                <ShieldCheck style={{ width: '24px', height: '24px', color: 'var(--color-primary)' }} />
               </div>
               <h1 style={{
-                fontSize: '1.25rem', fontWeight: 700, color: '#F0F0EE',
+                fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text)',
                 letterSpacing: '-0.025em', marginBottom: '4px',
                 lineHeight: 1.2,
               }}>
                 {t('auth.twoFactor')}
               </h1>
-              <p style={{ fontSize: '0.8125rem', color: '#555552', lineHeight: 1.55 }}>
+              <p style={{ fontSize: '0.8125rem', color: 'var(--color-muted)', lineHeight: 1.55 }}>
                 {t('auth.twoFactorCode')}
               </p>
             </div>
@@ -380,18 +400,18 @@ export default function LoginPage() {
                   letterSpacing: useRecovery ? '0.15em' : '0.45em',
                   fontFamily: 'JetBrains Mono, monospace',
                   fontWeight: 500,
-                  background: '#111111',
-                  border: '1px solid #222222',
-                  color: '#F0F0EE',
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                  color: 'var(--color-text)',
                   outline: 'none',
                   transition: 'border-color 150ms ease, box-shadow 150ms ease',
                 }}
                 onFocus={e => {
-                  e.target.style.borderColor = 'rgba(199,140,0,0.5)';
-                  e.target.style.boxShadow = '0 0 0 3px rgba(199,140,0,0.08)';
+                  e.target.style.borderColor = 'rgba(var(--color-primary-rgb),0.5)';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(var(--color-primary-rgb),0.08)';
                 }}
                 onBlur={e => {
-                  e.target.style.borderColor = '#222222';
+                  e.target.style.borderColor = 'var(--color-surface-hover)';
                   e.target.style.boxShadow = 'none';
                 }}
               />
@@ -401,13 +421,13 @@ export default function LoginPage() {
                 disabled={loading || !codeReady}
                 style={{
                   width: '100%', padding: '0.85rem', borderRadius: '12px',
-                  fontWeight: 700, fontSize: '0.9rem', color: '#0D0D0D',
+                  fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-on-primary)',
                   background: (loading || !codeReady)
-                    ? 'rgba(199,140,0,0.3)'
-                    : 'linear-gradient(135deg, #E7A300 0%, #C78C00 50%, #AD7B04 100%)',
+                    ? 'rgba(var(--color-primary-rgb),0.3)'
+                    : 'linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 50%, var(--color-accent) 100%)',
                   border: 'none',
                   cursor: (loading || !codeReady) ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 4px 20px rgba(199,140,0,0.25)',
+                  boxShadow: '0 4px 20px rgba(var(--color-primary-rgb),0.25)',
                   fontFamily: 'Outfit, sans-serif',
                   transition: 'opacity 150ms ease, box-shadow 150ms ease',
                 }}
@@ -420,7 +440,7 @@ export default function LoginPage() {
                 onClick={() => { setUseRecovery(r => !r); setForm(f => ({ ...f, totp: '' })); }}
                 style={{
                   width: '100%', padding: '0.4rem', background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '0.8125rem', color: '#C78C00', fontFamily: 'Outfit, sans-serif',
+                  fontSize: '0.8125rem', color: 'var(--color-primary)', fontFamily: 'Outfit, sans-serif',
                 }}
               >
                 {useRecovery ? 'Usar o código do app autenticador' : 'Sem acesso ao app? Usar código de recuperação'}
@@ -432,12 +452,12 @@ export default function LoginPage() {
                 style={{
                   width: '100%', padding: '0.625rem',
                   background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: '0.8125rem', color: '#555552',
+                  fontSize: '0.8125rem', color: 'var(--color-muted)',
                   fontFamily: 'Outfit, sans-serif',
                   transition: 'color 150ms ease',
                 }}
-                onMouseEnter={e => e.currentTarget.style.color = '#A0A09E'}
-                onMouseLeave={e => e.currentTarget.style.color = '#555552'}
+                onMouseEnter={e => e.currentTarget.style.color = 'var(--color-text-muted)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'var(--color-muted)'}
               >
                 ← {t('common.back')}
               </button>
@@ -449,15 +469,15 @@ export default function LoginPage() {
       {/* Footer: contato de suporte configurado em Configurações → Geral */}
       {settings.supportEmail && <p className="animate-slideUp delay-300" style={{
         position: 'relative', marginTop: '1.5rem',
-        fontSize: '0.75rem', color: '#333330', fontFamily: 'Outfit, sans-serif',
+        fontSize: '0.75rem', color: headerMuted, fontFamily: 'Outfit, sans-serif',
         textAlign: 'center',
       }}>
         Suporte:{' '}
         <a
           href={`mailto:${settings.supportEmail}`}
-          style={{ color: '#4A4A47', textDecoration: 'underline', textUnderlineOffset: '3px', transition: 'color 150ms ease' }}
-          onMouseEnter={e => e.currentTarget.style.color = '#C78C00'}
-          onMouseLeave={e => e.currentTarget.style.color = '#4A4A47'}
+          style={{ color: headerMuted, textDecoration: 'underline', textUnderlineOffset: '3px', transition: 'color 150ms ease' }}
+          onMouseEnter={e => e.currentTarget.style.color = 'var(--color-primary)'}
+          onMouseLeave={e => e.currentTarget.style.color = headerMuted}
         >
           {settings.supportEmail}
         </a>

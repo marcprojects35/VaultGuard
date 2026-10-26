@@ -98,7 +98,7 @@ function NewRequestModal({ onClose, settings }) {
           <button onClick={() => mutation.mutate()}
             disabled={mutation.isPending || !folderId}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {mutation.isPending ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             Enviar
           </button>
@@ -142,7 +142,7 @@ function ReviewModal({ request, onClose, settings }) {
               <span className="ml-1 text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>({request.user?.email})</span>
             </p>
             <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
-              solicita acesso à pasta <strong style={{ color: settings.primaryColor }}>{request.folder?.name}</strong>
+              solicita acesso à pasta <strong style={{ color: 'var(--color-primary)' }}>{request.folder?.name}</strong>
             </p>
             {request.message && (
               <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--color-border)' }}>
@@ -212,7 +212,7 @@ export default function AccessRequestPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <Inbox className="w-6 h-6" style={{ color: settings.primaryColor }} />
+          <Inbox className="w-6 h-6" style={{ color: 'var(--color-primary)' }} />
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>
               {isAdmin ? 'Solicitações de Acesso' : 'Minhas Solicitações'}
@@ -227,7 +227,7 @@ export default function AccessRequestPage() {
         {!isAdmin && (
           <button onClick={() => setShowNewModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             <Send className="w-4 h-4" /> Nova Solicitação
           </button>
         )}
@@ -239,9 +239,9 @@ export default function AccessRequestPage() {
           <button key={s} onClick={() => setStatusFilter(s)}
             className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
             style={{
-              background: statusFilter === s ? `${settings.primaryColor}22` : 'var(--color-surface)',
-              color: statusFilter === s ? settings.primaryColor : 'var(--color-text-muted)',
-              border: `1px solid ${statusFilter === s ? settings.primaryColor + '44' : 'var(--color-border)'}`,
+              background: statusFilter === s ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface)',
+              color: statusFilter === s ? 'var(--color-primary)' : 'var(--color-text-muted)',
+              border: `1px solid ${statusFilter === s ? 'rgba(var(--color-primary-rgb),0.27)' : 'var(--color-border)'}`,
             }}>
             {s === '' ? 'Todos' : s === 'PENDING' ? 'Pendentes' : s === 'APPROVED' ? 'Aprovados' : 'Rejeitados'}
           </button>
@@ -259,7 +259,7 @@ export default function AccessRequestPage() {
           <p className="text-base">Nenhuma solicitação encontrada</p>
           {!isAdmin && (
             <button onClick={() => setShowNewModal(true)}
-              className="mt-4 text-sm hover:underline" style={{ color: settings.primaryColor }}>
+              className="mt-4 text-sm hover:underline" style={{ color: 'var(--color-primary)' }}>
               Criar primeira solicitação
             </button>
           )}
@@ -271,8 +271,8 @@ export default function AccessRequestPage() {
               className="flex items-start gap-4 px-5 py-4 transition-colors hover:bg-[var(--color-surface-hover)]"
               style={{ borderBottom: i < requests.length - 1 ? '1px solid var(--color-border)' : 'none' }}>
               <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                style={{ background: `${settings.primaryColor}22` }}>
-                <FolderOpen className="w-4 h-4" style={{ color: settings.primaryColor }} />
+                style={{ background: 'rgba(var(--color-primary-rgb),0.13)' }}>
+                <FolderOpen className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
               </div>
 
               <div className="flex-1 min-w-0">
@@ -287,7 +287,7 @@ export default function AccessRequestPage() {
                       </p>
                     )}
                     <p className="text-sm" style={{ color: isAdmin ? 'var(--color-text-muted)' : 'var(--color-text)' }}>
-                      Pasta: <strong style={{ color: settings.primaryColor }}>{r.folder?.name || r.folderId}</strong>
+                      Pasta: <strong style={{ color: 'var(--color-primary)' }}>{r.folder?.name || r.folderId}</strong>
                     </p>
                     {r.message && (
                       <p className="text-xs mt-1 italic" style={{ color: 'var(--color-muted)' }}>"{r.message}"</p>
@@ -305,7 +305,7 @@ export default function AccessRequestPage() {
                 {isAdmin && r.status === 'PENDING' && (
                   <button onClick={() => setReviewTarget(r)}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-                    style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+                    style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                     Revisar
                   </button>
                 )}

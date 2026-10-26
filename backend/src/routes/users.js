@@ -4,14 +4,14 @@ import { randomBytes } from 'crypto';
 import { body } from 'express-validator';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma, WITH_DELETED } from '../db.js';
+import { purgeFolderNow } from '../services/trash.js';
 import { createAuditLog } from '../services/audit.js';
 import { checkPasswordPolicy } from '../services/securitySettings.js';
 import { pruneFolderKeys, wipeUserKeys, markForRotation } from '../services/keys.js';
 import { notifyNewUser, notifyPasswordChanged, notifyAdminAlert } from '../services/notifications.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 function generateSalt() {
   return randomBytes(32).toString('hex');
@@ -110,7 +110,7 @@ router.post('/', authenticate, requireAdmin,
       const existing = await prisma.user.findFirst({
         where: { OR: [{ email }, { username }] }
       });
-      if (existing) return res.status(409).json({ error: 'Email or username already exists' });
+      if (existing) return res.status(409).json({ error: 'Já existe um usuário com este e-mail ou login' });
 
       const passwordHash = await bcrypt.hash(password, 12);
       const encryptionSalt = generateSalt();
@@ -148,7 +148,7 @@ router.put('/:id', authenticate, async (req, res, next) => {
   try {
     const isSelf = req.user.id === req.params.id;
     const isAdmin = req.user.role === 'ADMINISTRADOR';
-    if (!isSelf && !isAdmin) return res.status(403).json({ error: 'Forbidden' });
+    if (!isSelf && !isAdmin) return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
 
     const updateData = {};
     if (req.body.firstName) updateData.firstName = req.body.firstName;
@@ -211,14 +211,36 @@ router.put('/:id', authenticate, async (req, res, next) => {
 // DELETE /api/users/:id
 router.delete('/:id', authenticate, requireAdmin, async (req, res, next) => {
   try {
-    if (req.params.id === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
+    if (req.params.id === req.user.id) return res.status(400).json({ error: 'Você não pode excluir a própria conta' });
+    const target = await prisma.user.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    if (!target) return res.status(404).json({ error: 'Usuário não encontrado' });
     const heldKeys = await prisma.folderKey.findMany({ where: { holder: req.params.id }, select: { folderId: true } });
+
+    // Grupos de que a pessoa era dona passam para o admin que está excluindo
+    // (o banco não deixa um grupo sem dono)
+    const owned = await prisma.team.findMany({ where: { ownerId: target.id }, select: { id: true, name: true } });
+    for (const t of owned) {
+      await prisma.teamMember.upsert({
+        where: { teamId_userId: { teamId: t.id, userId: req.user.id } },
+        update: { status: 'ACTIVE', respondedAt: new Date() },
+        create: { teamId: t.id, userId: req.user.id, status: 'ACTIVE', invitedById: req.user.id, respondedAt: new Date() },
+      });
+      await prisma.team.update({ where: { id: t.id }, data: { ownerId: req.user.id } });
+    }
+
+    // Pasta pessoal: só a pessoa conseguia ler (nem o admin), então sai junto com a conta
+    const personal = await prisma.folder.findMany({ where: { ...WITH_DELETED, isPersonal: true, ownerId: target.id }, select: { id: true } });
+    for (const f of personal) await purgeFolderNow(f.id);
+
     await prisma.user.delete({ where: { id: req.params.id } });
     await prisma.folderKey.deleteMany({ where: { holder: req.params.id } });
     await markForRotation(heldKeys.map(k => k.folderId));
     await prisma.orgKeyGrant.deleteMany({ where: { userId: req.params.id } });
     await createAuditLog(req.user.id, 'user.delete', req.params.id, 'User', null, req.ip);
-    res.json({ message: 'User deleted' });
+    res.json({
+      message: 'Usuário excluído',
+      transferredGroups: owned.map(t => t.name),
+    });
   } catch (err) {
     next(err);
   }

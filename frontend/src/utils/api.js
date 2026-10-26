@@ -34,6 +34,11 @@ api.interceptors.response.use(
       }
     } else if (error.response?.status === 403) {
       toast.error('Acesso negado');
+    } else if (error.response?.status === 429) {
+      // Mensagem própria para a tela não mostrar "erro no servidor"
+      if (typeof error.response.data !== 'object' || !error.response.data?.error) {
+        error.response.data = { error: 'Muitas requisições. Aguarde alguns segundos e tente de novo.' };
+      }
     } else if (error.response?.status >= 500) {
       toast.error('Erro no servidor. Tente novamente.');
     }

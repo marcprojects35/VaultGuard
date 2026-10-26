@@ -3,19 +3,16 @@ import multer from 'multer';
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs/promises';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { invalidateSecuritySettings, isIpAllowed } from '../services/securitySettings.js';
 import { sendEmail, getGraphToken } from '../services/email.js';
 import { createAuditLog } from '../services/audit.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const storage = multer.memoryStorage();
-const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
 // Mesmo diretório servido em /uploads pelo server.js (e montado como volume)
 const uploadDir = path.join(__dirname, '../../uploads');
@@ -31,7 +28,14 @@ function publicSettings(settings) {
   return safe;
 }
 
-const HEX_COLOR = /^#[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i;
+// Aceita #rgb ou #rrggbb e grava sempre #rrggbb minúsculo: o frontend monta
+// variações da cor a partir desse formato
+function normalizeColor(value) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(value).trim());
+  if (!m) return null;
+  const hex = m[1].length === 3 ? m[1].split('').map(c => c + c).join('') : m[1];
+  return '#' + hex.toLowerCase();
+}
 
 // GET /api/settings — public (for branding)
 router.get('/', async (req, res, next) => {
@@ -54,15 +58,34 @@ router.put('/', authenticate, requireAdmin, async (req, res, next) => {
     const data = {};
     for (const key of ['primaryColor', 'accentColor', 'bgColor', 'surfaceColor']) {
       if (req.body[key] === undefined) continue;
-      if (req.body[key] !== '' && !HEX_COLOR.test(String(req.body[key]))) return res.status(400).json({ error: `Cor inválida: ${key}` });
-      data[key] = String(req.body[key]);
+      if (req.body[key] === '' || req.body[key] === null) {
+        // Fundo e superfície vazios = cores do tema; as cores da marca são obrigatórias
+        if (key === 'primaryColor' || key === 'accentColor') return res.status(400).json({ error: `Informe a cor: ${key}` });
+        data[key] = '';
+        continue;
+      }
+      const color = normalizeColor(req.body[key]);
+      if (!color) return res.status(400).json({ error: `Cor inválida em ${key}. Use o formato #RRGGBB.` });
+      data[key] = color;
     }
     if (req.body.themeMode !== undefined) {
       if (!['dark', 'light'].includes(req.body.themeMode)) return res.status(400).json({ error: 'Tema inválido' });
       data.themeMode = req.body.themeMode;
     }
     for (const key of ['siteName', 'siteSubtitle']) {
-      if (req.body[key] !== undefined) data[key] = String(req.body[key]).slice(0, 100);
+      if (req.body[key] !== undefined) data[key] = String(req.body[key] ?? '').trim().slice(0, 100);
+    }
+    if (data.siteName === '') return res.status(400).json({ error: 'Informe o nome do sistema' });
+    if (req.body.loginMessage !== undefined) data.loginMessage = String(req.body.loginMessage ?? '').trim().slice(0, 300) || null;
+    if (req.body.loginOverlay !== undefined) {
+      const n = Number(req.body.loginOverlay);
+      if (!Number.isFinite(n) || n < 0 || n > 90) return res.status(400).json({ error: 'Escurecimento do fundo deve ficar entre 0 e 90%' });
+      data.loginOverlay = Math.round(n);
+    }
+    if (req.body.appOverlay !== undefined) {
+      const n = Number(req.body.appOverlay);
+      if (!Number.isFinite(n) || n < 0 || n > 95) return res.status(400).json({ error: 'Cobertura do fundo da aplicação deve ficar entre 0 e 95%' });
+      data.appOverlay = Math.round(n);
     }
 
     const settings = await prisma.systemSettings.upsert({
@@ -302,58 +325,111 @@ router.delete('/email/office365/revoke', authenticate, requireAdmin, async (req,
   res.json({ success: true });
 });
 
-// POST /api/settings/logo — upload logo
-router.post('/logo', authenticate, requireAdmin, upload.single('logo'), async (req, res, next) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+// ── Imagens da marca (logo, favicon e fundo da tela de login) ──
+// Toda imagem é reprocessada pelo sharp (nunca servimos o arquivo enviado como
+// veio), o que também descarta SVG com script e metadados como GPS de fotos.
+const MAX_UPLOAD_MB = 10;
+const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
 
-    await fs.mkdir(uploadDir, { recursive: true });
-    const filename = `logo-${Date.now()}.webp`;
-    const filepath = path.join(uploadDir, filename);
+const IMAGE_KINDS = {
+  logo: {
+    field: 'logoUrl',
+    process: (img) => img.resize(512, 512, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 90 }),
+    ext: 'webp',
+  },
+  favicon: {
+    field: 'faviconUrl',
+    process: (img) => img.resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png(),
+    ext: 'png',
+    allowIco: true,
+  },
+  'login-background': {
+    field: 'loginBackgroundUrl',
+    process: (img) => img.rotate().resize(2560, 1600, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }),
+    ext: 'webp',
+  },
+  'app-background': {
+    field: 'appBackgroundUrl',
+    process: (img) => img.rotate().resize(2560, 1600, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 82 }),
+    ext: 'webp',
+  },
+};
 
-    await sharp(req.file.buffer)
-      .resize(400, 120, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 90 })
-      .toFile(filepath);
+// Arquivo .ico (o sharp não lê esse formato): cabeçalho 00 00 01 00 + quantidade de imagens
+const isIco = (buf) => buf.length > 6 && buf.readUInt16LE(0) === 0 && buf.readUInt16LE(2) === 1 && buf.readUInt16LE(4) > 0;
 
-    const logoUrl = `/uploads/${filename}`;
-    await prisma.systemSettings.upsert({
-      where: { id: 'singleton' },
-      update: { logoUrl },
-      create: { id: 'singleton', logoUrl }
-    });
+// Apaga o arquivo anterior — só nomes gerados aqui, nunca um caminho arbitrário vindo do banco
+async function removeUpload(url) {
+  const m = /^\/uploads\/((?:logo|favicon|login-background|app-background)-[\w-]+\.(?:webp|png|ico))$/.exec(url || '');
+  if (m) await fs.unlink(path.join(uploadDir, m[1])).catch(() => {});
+}
 
-    res.json({ logoUrl });
-  } catch (err) {
+function receiveImage(fieldName) {
+  return (req, res, next) => imageUpload.single(fieldName)(req, res, (err) => {
+    if (!err) return next();
+    if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: `Arquivo muito grande. O limite é ${MAX_UPLOAD_MB} MB.` });
+    if (err instanceof multer.MulterError) return res.status(400).json({ error: `Envie um único arquivo no campo "${fieldName}"` });
     next(err);
-  }
-});
+  });
+}
 
-// POST /api/settings/favicon
-router.post('/favicon', authenticate, requireAdmin, upload.single('favicon'), async (req, res, next) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+for (const [kind, cfg] of Object.entries(IMAGE_KINDS)) {
+  // Campo do formulário: 'logo', 'favicon' ou 'image' (aceito em todos)
+  const fieldName = kind.endsWith('-background') ? 'image' : kind;
 
-    await fs.mkdir(uploadDir, { recursive: true });
-    const filename = `favicon-${Date.now()}.webp`;
-    const filepath = path.join(uploadDir, filename);
+  router.post(`/${kind}`, authenticate, requireAdmin, receiveImage(fieldName), async (req, res, next) => {
+    try {
+      if (!req.file?.buffer?.length) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
 
-    await sharp(req.file.buffer)
-      .resize(64, 64, { fit: 'cover' })
-      .webp({ quality: 90 })
-      .toFile(filepath);
+      let output, ext = cfg.ext;
+      if (cfg.allowIco && isIco(req.file.buffer)) {
+        if (req.file.buffer.length > 1024 * 1024) return res.status(413).json({ error: 'Arquivo .ico muito grande (máximo 1 MB)' });
+        output = req.file.buffer;
+        ext = 'ico';
+      } else {
+        try {
+          output = await cfg.process(sharp(req.file.buffer, { animated: false })).toBuffer();
+        } catch {
+          return res.status(400).json({ error: 'Imagem inválida ou formato não suportado. Use PNG, JPG, WEBP, GIF ou SVG.' });
+        }
+      }
 
-    const faviconUrl = `/uploads/${filename}`;
-    await prisma.systemSettings.upsert({
-      where: { id: 'singleton' },
-      update: { faviconUrl },
-      create: { id: 'singleton', faviconUrl }
-    });
+      await fs.mkdir(uploadDir, { recursive: true });
+      const filename = `${kind}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      await fs.writeFile(path.join(uploadDir, filename), output);
 
-    res.json({ faviconUrl });
-  } catch (err) {
-    next(err);
-  }
-});
+      const url = `/uploads/${filename}`;
+      const previous = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+      await prisma.systemSettings.upsert({
+        where: { id: 'singleton' },
+        update: { [cfg.field]: url },
+        create: { id: 'singleton', [cfg.field]: url },
+      });
+      await removeUpload(previous?.[cfg.field]);
+      await createAuditLog(req.user.id, 'settings.branding_updated', null, null, { image: kind }, req.ip);
+
+      res.json({ [cfg.field]: url });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Volta à imagem padrão
+  router.delete(`/${kind}`, authenticate, requireAdmin, async (req, res, next) => {
+    try {
+      const previous = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+      await prisma.systemSettings.upsert({
+        where: { id: 'singleton' },
+        update: { [cfg.field]: null },
+        create: { id: 'singleton' },
+      });
+      await removeUpload(previous?.[cfg.field]);
+      await createAuditLog(req.user.id, 'settings.branding_updated', null, null, { image: kind, removed: true }, req.ip);
+      res.json({ [cfg.field]: null });
+    } catch (err) {
+      next(err);
+    }
+  });
+}
 
 export default router;

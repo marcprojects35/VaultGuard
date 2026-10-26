@@ -1,10 +1,9 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { getAccessibleFolderIds } from '../services/permissions.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // GET /api/dashboard/security
 router.get('/security', authenticate, async (req, res, next) => {

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { sendEmail, esc } from './email.js';
 import { getSecuritySettings } from './securitySettings.js';
 import { createAuditLog } from './audit.js';
@@ -7,7 +7,6 @@ import { createAuditLog } from './audit.js';
 // Notificações de segurança. Todas são "fire and forget": falha de e-mail
 // nunca derruba a operação principal.
 
-const prisma = new PrismaClient();
 const appUrl = () => (process.env.FRONTEND_URL || '').split(',')[0].trim();
 
 const fireAndForget = (p) => { p.catch(() => {}); };

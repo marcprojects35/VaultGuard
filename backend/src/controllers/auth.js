@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { getRoleCaps } from '../services/permissions.js';
 import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
 
@@ -6,7 +7,7 @@ import { authenticator } from 'otplib';
 authenticator.options = { window: 1 };
 import QRCode from 'qrcode';
 import { randomBytes } from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../db.js';
 import { createAuditLog } from '../services/audit.js';
 import { getLdapConfig, authenticateWithAD } from '../services/ldap.js';
 import { verifyUserPassword } from '../services/passwordCheck.js';
@@ -15,7 +16,6 @@ import { getSecuritySettings, checkPasswordPolicy, passwordChangeRequired } from
 import { notifyLockout, trackLoginDevice, notifyPasswordChanged, notifyAdminAlert } from '../services/notifications.js';
 import { readCookie, setSessionCookie, clearSessionCookie, SESSION_COOKIE } from '../utils/tokens.js';
 
-const prisma = new PrismaClient();
 
 function generateSalt() {
   return randomBytes(32).toString('hex');
@@ -156,13 +156,13 @@ export const login = async (req, res, next) => {
             // Continua para auth local abaixo
           } else {
             await logLoginFailure(null, { reason: 'ldap_invalid_credentials', login: normalizedLogin }, ip, ua);
-            return res.status(401).json({ error: 'Invalid credentials' });
+            return res.status(401).json({ error: 'Usuário ou senha incorretos' });
           }
         } else if (ldapUser?.error) {
           return res.status(403).json({ error: ldapUser.error });
         } else if (ldapUser) {
           if (ldapUser.status !== 'ACTIVE') {
-            return res.status(403).json({ error: 'Account not active. Contact administrator.' });
+            return res.status(403).json({ error: 'Conta inativa. Fale com o administrador.' });
           }
           // Garante salt e pasta pessoal para usuários LDAP
           const encryptionSalt = await ensureUserHasSalt(ldapUser.id);
@@ -188,7 +188,7 @@ export const login = async (req, res, next) => {
         if (!ldapCfg.ldapOnly) {
           logger.warn('LDAP error, falling back to local auth', { error: ldapErr.message });
         } else {
-          return res.status(503).json({ error: 'LDAP server unavailable. Contact administrator.' });
+          return res.status(503).json({ error: 'Servidor do Active Directory indisponível. Fale com o administrador.' });
         }
       }
     }
@@ -207,11 +207,11 @@ export const login = async (req, res, next) => {
     if (!user || !user.passwordHash) {
       await bcrypt.compare(password, DUMMY_HASH);
       await logLoginFailure(null, { reason: 'user_not_found', login: normalizedLogin }, ip, ua);
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Usuário ou senha incorretos' });
     }
 
     if (user.status !== 'ACTIVE') {
-      return res.status(403).json({ error: 'Account not active. Contact administrator.' });
+      return res.status(403).json({ error: 'Conta inativa. Fale com o administrador.' });
     }
 
     if (isLocked(user)) {
@@ -223,7 +223,7 @@ export const login = async (req, res, next) => {
     if (!valid) {
       await registerFailedAttempt(user, ip);
       await logLoginFailure(user.id, { reason: 'wrong_password' }, ip, ua);
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ error: 'Usuário ou senha incorretos' });
     }
 
     // Garante salt e pasta pessoal
@@ -261,13 +261,13 @@ export const validate2FA = async (req, res, next) => {
     try {
       decoded = jwt.verify(tempToken, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     } catch {
-      return res.status(401).json({ error: 'Invalid or expired temp token' });
+      return res.status(401).json({ error: 'A verificação expirou. Entre de novo.' });
     }
 
-    if (!decoded.temp) return res.status(401).json({ error: 'Invalid token type' });
+    if (!decoded.temp) return res.status(401).json({ error: 'Sessão inválida. Entre de novo.' });
 
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
-    if (!user || !user.totpSecret || user.status !== 'ACTIVE') return res.status(401).json({ error: 'User not found' });
+    if (!user || !user.totpSecret || user.status !== 'ACTIVE') return res.status(401).json({ error: 'Usuário não encontrado' });
     if (isLocked(user)) return res.status(423).json({ error: LOCKED_MSG });
 
     let step = null;
@@ -331,18 +331,18 @@ export const logout = async (req, res) => {
 export const refresh = async (req, res) => {
   try {
     const token = readCookie(req, SESSION_COOKIE) || req.body?.token;
-    if (!token) return res.status(401).json({ error: 'No token provided' });
+    if (!token) return res.status(401).json({ error: 'Entre novamente para continuar' });
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-    if (decoded.temp) return res.status(401).json({ error: 'Invalid token type' });
+    if (decoded.temp) return res.status(401).json({ error: 'Sessão inválida. Entre de novo.' });
 
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
     if (!user || user.status !== 'ACTIVE' || (decoded.tv ?? 0) !== user.tokenVersion) {
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ error: 'Sessão inválida. Entre de novo.' });
     }
     const session = await startSession(req, res, user);
     res.json(session);
   } catch {
-    res.status(401).json({ error: 'Invalid token' });
+    res.status(401).json({ error: 'Sessão inválida. Entre de novo.' });
   }
 };
 
@@ -354,6 +354,8 @@ export const me = async (req, res) => {
     encryptionSalt,
     requires2FASetup: require2FA && !req.user.totpEnabled,
     requiresPasswordChange: await passwordChangeRequired(req.user),
+    // O que o cargo permite (a interface esconde o resto; o servidor sempre confere)
+    capabilities: await getRoleCaps(req.user.role),
   });
 };
 
@@ -378,9 +380,9 @@ export const verify2FA = async (req, res, next) => {
   try {
     const { token } = req.body;
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-    if (!user.totpPendingSecret) return res.status(400).json({ error: 'No 2FA setup in progress' });
+    if (!user.totpPendingSecret) return res.status(400).json({ error: 'Nenhuma configuração de 2FA em andamento' });
     const step = checkTotp({ ...user, totpLastStep: null }, token, user.totpPendingSecret);
-    if (step === null) return res.status(400).json({ error: 'Invalid code' });
+    if (step === null) return res.status(400).json({ error: 'Código inválido' });
     await prisma.user.update({
       where: { id: req.user.id },
       data: { totpEnabled: true, totpSecret: user.totpPendingSecret, totpPendingSecret: null, totpLastStep: step },
@@ -399,8 +401,8 @@ export const disable2FA = async (req, res, next) => {
     if (user.totpEnabled) {
       const { require2FA } = await getSecuritySettings();
       if (require2FA) return res.status(403).json({ error: 'O 2FA é obrigatório nesta organização e não pode ser desativado.' });
-      if (!token) return res.status(400).json({ error: 'Token required' });
-      if (checkTotp(user, token) === null) return res.status(400).json({ error: 'Invalid 2FA code' });
+      if (!token) return res.status(400).json({ error: 'Entre novamente para continuar' });
+      if (checkTotp(user, token) === null) return res.status(400).json({ error: 'Código 2FA inválido' });
     }
     await prisma.user.update({ where: { id: req.user.id }, data: { totpEnabled: false, totpSecret: null, totpPendingSecret: null, totpLastStep: null, totpRecoveryCodes: [] } });
     await createAuditLog(req.user.id, 'user.2fa_disabled', null, null, null, req.ip);
@@ -420,7 +422,7 @@ export const changePassword = async (req, res, next) => {
     }
 
     const valid = await bcrypt.compare(currentPassword, user.passwordHash);
-    if (!valid) return res.status(400).json({ error: 'Current password incorrect' });
+    if (!valid) return res.status(400).json({ error: 'Senha atual incorreta' });
 
     const policyError = await checkPasswordPolicy(newPassword);
     if (policyError) return res.status(400).json({ error: policyError });
@@ -487,7 +489,7 @@ export const generateRecoveryCodes = async (req, res, next) => {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user.totpEnabled) return res.status(400).json({ error: 'Ative o 2FA antes' });
     const step = checkTotp(user, req.body.token);
-    if (step === null) return res.status(400).json({ error: 'Invalid 2FA code' });
+    if (step === null) return res.status(400).json({ error: 'Código 2FA inválido' });
 
     const codes = Array.from({ length: 10 }, () => {
       const hex = randomBytes(5).toString('hex');

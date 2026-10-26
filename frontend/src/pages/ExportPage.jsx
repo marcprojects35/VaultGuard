@@ -75,8 +75,8 @@ function VaultExportSection({ settings }) {
     <div className="rounded-2xl p-6" style={{ border: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{ background: `${settings.primaryColor}22` }}>
-          <Lock className="w-5 h-5" style={{ color: settings.primaryColor }} />
+          style={{ background: 'rgba(var(--color-primary-rgb),0.13)' }}>
+          <Lock className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
         </div>
         <div>
           <h2 className="font-semibold">Exportar Cofre Criptografado</h2>
@@ -129,8 +129,8 @@ function VaultExportSection({ settings }) {
       </div>
 
       <div className="rounded-xl p-3 mb-5 flex items-start gap-2"
-        style={{ background: `${settings.primaryColor}11`, border: `1px solid ${settings.primaryColor}33` }}>
-        <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: settings.primaryColor }} />
+        style={{ background: 'rgba(var(--color-primary-rgb),0.07)', border: `1px solid rgba(var(--color-primary-rgb),0.2)` }}>
+        <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: 'var(--color-primary)' }} />
         <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
           As senhas são descriptografadas localmente no seu navegador e o arquivo é criptografado com
           AES-256-GCM + PBKDF2. O servidor não vê as senhas em texto claro.
@@ -144,7 +144,7 @@ function VaultExportSection({ settings }) {
         onClick={handleExport}
         disabled={loading || !passphrase || passphrase !== confirmPass}
         className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
-        style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+        style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
         {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
         {loading ? 'Exportando...' : 'Exportar Cofre'}
       </button>

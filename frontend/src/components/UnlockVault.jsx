@@ -4,8 +4,8 @@ import api from '../utils/api.js';
 import { useVaultStore } from '../stores/vaultStore.js';
 import { useAuthStore } from '../stores/authStore.js';
 
-const GOLD = '#C78C00';
-const inputStyle = { background: '#1A1A1A', border: '1px solid #2A2A2A', color: 'var(--color-text)' };
+const GOLD = 'var(--color-primary)';
+const inputStyle = { background: 'var(--color-surface-2)', border: '1px solid var(--color-border)', color: 'var(--color-text)' };
 
 /**
  * Bloqueio do cofre. As chaves vivem só em memória, então a cada carregamento
@@ -64,9 +64,9 @@ export default function UnlockVault({ onLogout }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(6px)' }}>
-      <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn" style={{ background: '#111111', border: '1px solid #252525' }}>
+      <div className="w-full max-w-sm rounded-2xl p-6 animate-fadeIn" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${GOLD}22` }}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(var(--color-primary-rgb),0.13)' }}>
             {step === 'password' ? <Lock className="w-5 h-5" style={{ color: GOLD }} /> : <KeyRound className="w-5 h-5" style={{ color: GOLD }} />}
           </div>
           <div>
@@ -87,7 +87,7 @@ export default function UnlockVault({ onLogout }) {
             {error && <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>}
             <button type="submit" disabled={busy || !password}
               className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: `linear-gradient(135deg, ${GOLD}, #AD7B04)` }}>
+              style={{ background: `linear-gradient(135deg, ${GOLD}, var(--color-accent))` }}>
               {busy ? 'Abrindo...' : 'Desbloquear'}
             </button>
           </form>
@@ -104,7 +104,7 @@ export default function UnlockVault({ onLogout }) {
             {error && <p className="text-xs" style={{ color: '#f87171' }}>{error}</p>}
             <button type="submit" disabled={busy || !oldPassword}
               className="w-full py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-              style={{ background: `linear-gradient(135deg, ${GOLD}, #AD7B04)` }}>
+              style={{ background: `linear-gradient(135deg, ${GOLD}, var(--color-accent))` }}>
               {busy ? 'Transferindo...' : 'Transferir chaves'}
             </button>
             <button type="button" onClick={() => { setStep('reset'); setError(''); }}

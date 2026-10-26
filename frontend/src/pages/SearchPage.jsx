@@ -98,7 +98,7 @@ export default function SearchPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center gap-3 mb-6">
-        <Search className="w-6 h-6" style={{ color: settings.primaryColor }} />
+        <Search className="w-6 h-6" style={{ color: 'var(--color-primary)' }} />
         <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text)' }}>Pesquisa Avançada</h1>
       </div>
 
@@ -114,7 +114,7 @@ export default function SearchPage() {
           className="w-full pl-12 pr-28 py-3.5 rounded-2xl text-sm outline-none"
           style={{
             background: 'var(--color-surface)',
-            border: `1px solid ${search ? settings.primaryColor + '66' : 'var(--color-border)'}`,
+            border: `1px solid ${search ? 'rgba(var(--color-primary-rgb),0.4)' : 'var(--color-border)'}`,
             color: 'var(--color-text)',
             fontSize: '15px',
           }}
@@ -124,8 +124,8 @@ export default function SearchPage() {
           <button onClick={() => setShowFilters(!showFilters)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
             style={{
-              background: showFilters || tag || expiry ? `${settings.primaryColor}22` : 'var(--color-surface-2)',
-              color: showFilters || tag || expiry ? settings.primaryColor : 'var(--color-text-muted)',
+              background: showFilters || tag || expiry ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)',
+              color: showFilters || tag || expiry ? 'var(--color-primary)' : 'var(--color-text-muted)',
             }}>
             <Filter className="w-3.5 h-3.5" />
             Filtros
@@ -147,8 +147,8 @@ export default function SearchPage() {
               <button onClick={() => setTag('')}
                 className="px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
                 style={{
-                  background: !tag ? `${settings.primaryColor}22` : 'var(--color-surface-2)',
-                  color: !tag ? settings.primaryColor : 'var(--color-text-muted)',
+                  background: !tag ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)',
+                  color: !tag ? 'var(--color-primary)' : 'var(--color-text-muted)',
                 }}>
                 Todas
               </button>
@@ -156,8 +156,8 @@ export default function SearchPage() {
                 <button key={t} onClick={() => setTag(tag === t ? '' : t)}
                   className="px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
                   style={{
-                    background: tag === t ? `${settings.primaryColor}22` : 'var(--color-surface-2)',
-                    color: tag === t ? settings.primaryColor : 'var(--color-text-muted)',
+                    background: tag === t ? 'rgba(var(--color-primary-rgb),0.13)' : 'var(--color-surface-2)',
+                    color: tag === t ? 'var(--color-primary)' : 'var(--color-text-muted)',
                   }}>
                   #{t}
                 </button>
@@ -199,7 +199,7 @@ export default function SearchPage() {
           <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Filtros ativos:</span>
           {tag && (
             <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-              style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+              style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
               #{tag}
               <button onClick={() => setTag('')}><X className="w-3 h-3" /></button>
             </span>
@@ -254,7 +254,7 @@ export default function SearchPage() {
 
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Key className="w-4 h-4 flex-shrink-0" style={{ color: settings.primaryColor }} />
+                        <Key className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
                         <span className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{cred.title}</span>
                       </div>
                     </td>
@@ -277,7 +277,7 @@ export default function SearchPage() {
                           ? cred.tags.map(t => (
                             <button key={t} onClick={() => { setTag(t); setShowFilters(true); }}
                               className="text-xs px-1.5 py-0.5 rounded hover:opacity-80 transition-opacity"
-                              style={{ background: `${settings.primaryColor}22`, color: settings.primaryColor }}>
+                              style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>
                               #{t}
                             </button>
                           ))
@@ -289,7 +289,7 @@ export default function SearchPage() {
                       {cred.url ? (
                         <a href={safeUrl(cred.url)} target="_blank" rel="noopener noreferrer"
                           className="text-sm truncate block hover:underline"
-                          style={{ color: settings.primaryColor }}>
+                          style={{ color: 'var(--color-primary)' }}>
                           {cred.url.replace(/^https?:\/\//, '')}
                         </a>
                       ) : <span className="text-[var(--color-muted)]">—</span>}
@@ -351,7 +351,7 @@ export default function SearchPage() {
           <Search className="w-12 h-12 mb-4 opacity-20" />
           <p className="text-base">Nenhum resultado encontrado</p>
           <p className="text-sm mt-1 opacity-70">Tente termos diferentes ou ajuste os filtros.</p>
-          <button onClick={clearAll} className="mt-4 text-sm hover:underline" style={{ color: settings.primaryColor }}>
+          <button onClick={clearAll} className="mt-4 text-sm hover:underline" style={{ color: 'var(--color-primary)' }}>
             Limpar filtros
           </button>
         </div>

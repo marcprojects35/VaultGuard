@@ -47,8 +47,8 @@ function FolderNode({ node, depth = 0, onEdit, onDelete, onPermissions, isPerson
           <Lock className="w-4 h-4 flex-shrink-0" style={{ color: '#8b5cf6' }} />
         ) : (
           open && hasChildren
-            ? <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: settings.primaryColor }} />
-            : <Folder className="w-4 h-4 flex-shrink-0" style={{ color: `${settings.primaryColor}90` }} />
+            ? <FolderOpen className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--color-primary)' }} />
+            : <Folder className="w-4 h-4 flex-shrink-0" style={{ color: 'rgba(var(--color-primary-rgb),0.56)' }} />
         )}
         <span className="flex-1 text-sm" style={{ color: 'var(--color-text)' }}>{node.name}</span>
         {node.description && (
@@ -65,7 +65,7 @@ function FolderNode({ node, depth = 0, onEdit, onDelete, onPermissions, isPerson
           {!isPersonal && (
             <button onClick={() => onPermissions(node)}
               className="p-1 rounded hover:bg-[var(--color-surface-hover)]" title="Permissões"
-              style={{ color: settings.primaryColor }}>
+              style={{ color: 'var(--color-primary)' }}>
               <Shield className="w-3.5 h-3.5" />
             </button>
           )}
@@ -156,7 +156,7 @@ export default function AdminFoldersPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['folders-admin'] });
       qc.invalidateQueries({ queryKey: ['folders'] });
-      toast.success('Pasta excluída!');
+      toast.success('Pasta movida para a lixeira');
       setDeleteTarget(null);
     },
     onError: (e) => toast.error(e.response?.data?.error || 'Erro ao excluir'),
@@ -248,7 +248,7 @@ export default function AdminFoldersPage() {
         {activeTab === 'shared' && (
           <button onClick={openCreate}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             <Plus className="w-4 h-4" /> Nova Pasta
           </button>
         )}
@@ -260,8 +260,8 @@ export default function AdminFoldersPage() {
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className="px-4 py-2.5 text-sm font-medium transition-colors border-b-2"
             style={{
-              color: activeTab === tab.id ? settings.primaryColor : 'var(--color-text-muted)',
-              borderBottomColor: activeTab === tab.id ? settings.primaryColor : 'transparent',
+              color: activeTab === tab.id ? 'var(--color-primary)' : 'var(--color-text-muted)',
+              borderBottomColor: activeTab === tab.id ? 'var(--color-primary)' : 'transparent',
             }}>
             {tab.label}
             <span className="ml-2 text-xs px-1.5 py-0.5 rounded-full"
@@ -334,7 +334,7 @@ export default function AdminFoldersPage() {
               </button>
               <button onClick={() => createMutation.mutate(form)} disabled={!form.name || createMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+                style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
                 {createMutation.isPending ? 'Salvando...' : 'Salvar'}
               </button>
             </div>
@@ -358,7 +358,7 @@ export default function AdminFoldersPage() {
               </div>
             </div>
             <p className="text-sm mb-5" style={{ color: 'var(--color-text-muted)' }}>
-              Esta ação excluirá a pasta e todas as credenciais dentro dela permanentemente.
+              A pasta vai para a Lixeira com as subpastas e senhas dela, e pode ser restaurada em Lixeira dentro do prazo definido em Configurações › Dados e retenção.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteTarget(null)}
@@ -384,12 +384,18 @@ export default function AdminFoldersPage() {
             style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
-                <Shield className="w-5 h-5" style={{ color: settings.primaryColor }} />
+                <Shield className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
                 Permissões: {permFolder.name}
               </h2>
               <button onClick={() => setShowPermModal(false)} style={{ color: 'var(--color-muted)' }}>
                 <X className="w-5 h-5" />
               </button>
+            </div>
+
+            <div className="text-xs mb-4 p-3 rounded-xl space-y-1" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)' }}>
+              <p>Marque o que cada cargo ou pessoa pode fazer nesta pasta. A marcação da pessoa vale no lugar da do cargo dela.</p>
+              {permFolder.visibleToAll && <p>Pasta corporativa: todos já podem ver. Marque Editar, Excluir ou Compartilhar para liberar mais.</p>}
+              <p>O cargo continua sendo o limite: se em Cargos e permissões o cargo não pode excluir, marcar Excluir aqui não libera.</p>
             </div>
 
             <table className="w-full">
@@ -432,7 +438,7 @@ export default function AdminFoldersPage() {
               </button>
               <button onClick={savePerms} disabled={savePermMutation.isPending}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50"
-                style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+                style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
                 <Save className="w-4 h-4" />
                 {savePermMutation.isPending ? 'Salvando...' : 'Salvar Permissões'}
               </button>

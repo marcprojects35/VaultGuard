@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { body, query } from 'express-validator';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
-import { PrismaClient } from '@prisma/client';
-import { canAccessFolder, canAccessCredential, getAccessibleFolderIds } from '../services/permissions.js';
+import { prisma } from '../db.js';
+import { trashCredential } from '../services/trash.js';
+import { canAccessFolder, canAccessCredential, getAccessibleFolderIds, requireCap, attachCredentialPermissions } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
 import { notifyAdminAlert, notifyCredentialView } from '../services/notifications.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 const CREDENTIAL_INCLUDE = {
   folder: { select: { id: true, name: true, color: true } },
@@ -34,7 +34,7 @@ router.get('/', authenticate, async (req, res, next) => {
 
     // folderId vem do cliente: só filtra dentro das pastas que o usuário pode ver
     if (folderId && !accessibleFolders.includes(folderId)) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({ error: 'Você não tem acesso a este item' });
     }
 
     // Also get individually shared credential IDs
@@ -88,20 +88,19 @@ router.get('/', authenticate, async (req, res, next) => {
     });
 
     const safe = credentials.map(({ encryptedPass, ...c }) => c);
-    res.json(safe);
+    res.json(await attachCredentialPermissions(req.user, safe));
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/credentials/export — export credentials as CSV (no passwords) — ADMIN only
-router.get('/export', authenticate, async (req, res, next) => {
-  if (req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Acesso restrito a administradores' });
+// GET /api/credentials/export — CSV sem senhas das pastas que o usuário acessa (cargo com "exportar")
+router.get('/export', authenticate, requireCap('canExport', 'Seu cargo não pode exportar'), async (req, res, next) => {
   try {
     const { folderId, search } = req.query;
     const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
     if (folderId && !accessibleFolders.includes(folderId)) {
-      return res.status(403).json({ error: 'Access denied' });
+      return res.status(403).json({ error: 'Você não tem acesso a este item' });
     }
 
     const where = {
@@ -148,9 +147,8 @@ router.get('/export', authenticate, async (req, res, next) => {
   }
 });
 
-// GET /api/credentials/vault-export — export ALL credentials including encryptedPass — ADMIN only
-router.get('/vault-export', authenticate, async (req, res, next) => {
-  if (req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Acesso restrito a administradores' });
+// GET /api/credentials/vault-export — credenciais (cifradas) das pastas que o usuário acessa (cargo com "exportar")
+router.get('/vault-export', authenticate, requireCap('canExport', 'Seu cargo não pode exportar'), async (req, res, next) => {
   try {
     const accessibleFolders = await getAccessibleFolderIds(req.user.id, req.user.role);
 
@@ -222,10 +220,10 @@ router.get('/:id', authenticate, async (req, res, next) => {
       }
     });
 
-    if (!cred) return res.status(404).json({ error: 'Credential not found' });
+    if (!cred) return res.status(404).json({ error: 'Senha não encontrada' });
 
     const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
-    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     // Quem recebeu a credencial por compartilhamento abre com a chave do share
     const share = await prisma.credentialShare.findUnique({
@@ -243,7 +241,8 @@ router.get('/:id', authenticate, async (req, res, next) => {
       notifyCredentialView(req.user, cred);
     }
 
-    res.json({ ...cred, shareKey: share?.wrappedKey || null });
+    const [withPerms] = await attachCredentialPermissions(req.user, [cred]);
+    res.json({ ...withPerms, shareKey: share?.wrappedKey || null });
   } catch (err) {
     next(err);
   }
@@ -262,7 +261,7 @@ router.post('/', authenticate,
     try {
       const { folderId, customFields } = req.body;
       const canEdit = await canAccessFolder(req.user.id, req.user.role, folderId, 'canEdit');
-      if (!canEdit) return res.status(403).json({ error: 'No edit permission on this folder' });
+      if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para criar ou editar senhas nesta pasta' });
 
       const cred = await prisma.credential.create({
         data: {
@@ -307,11 +306,11 @@ router.put('/:id', authenticate,
   async (req, res, next) => {
     try {
       const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-      if (!cred) return res.status(404).json({ error: 'Not found' });
+      if (!cred) return res.status(404).json({ error: 'Não encontrado' });
 
       // Check permission: own folder or shared with edit
       const canEdit = await canAccessCredential(req.user.id, req.user.role, cred, 'canEdit');
-      if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+      if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para editar aqui' });
 
       const { customFields } = req.body;
 
@@ -387,9 +386,9 @@ router.put('/:id', authenticate,
 router.get('/:id/history', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-    if (!cred) return res.status(404).json({ error: 'Not found' });
+    if (!cred) return res.status(404).json({ error: 'Não encontrado' });
     const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
-    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     const history = await prisma.credentialHistory.findMany({
       where: { credentialId: req.params.id },
@@ -421,12 +420,12 @@ router.get('/:id/history', authenticate, async (req, res, next) => {
 router.put('/:id/history/:historyId', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-    if (!cred) return res.status(404).json({ error: 'Not found' });
+    if (!cred) return res.status(404).json({ error: 'Não encontrado' });
     const canEdit = await canAccessCredential(req.user.id, req.user.role, cred, 'canEdit');
-    if (!canEdit) return res.status(403).json({ error: 'No edit permission' });
+    if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para editar aqui' });
 
     const entry = await prisma.credentialHistory.findUnique({ where: { id: req.params.historyId } });
-    if (!entry || entry.credentialId !== cred.id) return res.status(404).json({ error: 'Not found' });
+    if (!entry || entry.credentialId !== cred.id) return res.status(404).json({ error: 'Não encontrado' });
     let version;
     try { version = JSON.parse(entry.encryptedPass).v; } catch { version = undefined; }
     if (version === 2) return res.status(409).json({ error: 'Versão já migrada' });
@@ -445,9 +444,9 @@ router.put('/:id/history/:historyId', authenticate, async (req, res, next) => {
 router.get('/:id/shares', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-    if (!cred) return res.status(404).json({ error: 'Not found' });
+    if (!cred) return res.status(404).json({ error: 'Não encontrado' });
     const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
-    if (!canAccess) return res.status(403).json({ error: 'Access denied' });
+    if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
     const shares = await prisma.credentialShare.findMany({
       where: { credentialId: req.params.id }
@@ -476,15 +475,15 @@ router.get('/:id/shares', authenticate, async (req, res, next) => {
 router.post('/:id/shares', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-    if (!cred) return res.status(404).json({ error: 'Not found' });
+    if (!cred) return res.status(404).json({ error: 'Não encontrado' });
     const canShare = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
-    if (!canShare) return res.status(403).json({ error: 'No share permission' });
+    if (!canShare) return res.status(403).json({ error: 'Você não tem permissão para compartilhar aqui' });
 
     const { sharedWithId, canEdit, expiresAt, wrappedKey } = req.body;
     if (!sharedWithId) return res.status(400).json({ error: 'sharedWithId required' });
 
     const targetUser = await prisma.user.findUnique({ where: { id: sharedWithId } });
-    if (!targetUser) return res.status(404).json({ error: 'Target user not found' });
+    if (!targetUser) return res.status(404).json({ error: 'Usuário de destino não encontrado' });
     if (!cred.wrappedKey) return res.status(409).json({ error: 'Credencial legada: abra-a no cofre para migrar antes de compartilhar' });
     if (!targetUser.publicKey) return res.status(409).json({ error: 'O usuário ainda não ativou as chaves (precisa entrar no cofre uma vez)' });
     if (typeof wrappedKey !== 'string' || !wrappedKey) return res.status(400).json({ error: 'wrappedKey required' });
@@ -514,12 +513,12 @@ router.post('/:id/shares', authenticate, async (req, res, next) => {
 router.delete('/:id/shares/:shareId', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-    if (!cred) return res.status(404).json({ error: 'Not found' });
+    if (!cred) return res.status(404).json({ error: 'Não encontrado' });
     const canShare = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
-    if (!canShare) return res.status(403).json({ error: 'No share permission' });
+    if (!canShare) return res.status(403).json({ error: 'Você não tem permissão para compartilhar aqui' });
 
     const share = await prisma.credentialShare.findUnique({ where: { id: req.params.shareId } });
-    if (!share || share.credentialId !== cred.id) return res.status(404).json({ error: 'Share not found' });
+    if (!share || share.credentialId !== cred.id) return res.status(404).json({ error: 'Compartilhamento não encontrado' });
 
     await prisma.credentialShare.delete({ where: { id: share.id } });
     await createAuditLog(req.user.id, 'credential.unshare', cred.id, 'Credential',
@@ -534,30 +533,30 @@ router.delete('/:id/shares/:shareId', authenticate, async (req, res, next) => {
 router.delete('/:id', authenticate, async (req, res, next) => {
   try {
     const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
-    if (!cred) return res.status(404).json({ error: 'Not found' });
+    if (!cred) return res.status(404).json({ error: 'Não encontrado' });
 
     const canDel = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canDelete');
-    if (!canDel) return res.status(403).json({ error: 'No delete permission' });
+    if (!canDel) return res.status(403).json({ error: 'Você não tem permissão para excluir aqui' });
 
-    await prisma.credential.delete({ where: { id: req.params.id } });
+    // Vai para a lixeira (Configurações › Dados e retenção define o prazo)
+    await trashCredential(cred, req.user.id);
     await createAuditLog(req.user.id, 'credential.delete', cred.id, 'Credential', { title: cred.title }, req.ip);
-    res.json({ message: 'Deleted successfully' });
+    res.json({ message: 'Senha movida para a lixeira' });
   } catch (err) {
     next(err);
   }
 });
 
 // POST /api/credentials/import — bulk import from CSV — ADMIN only
-router.post('/import', authenticate, async (req, res, next) => {
-  if (req.user.role !== 'ADMINISTRADOR') return res.status(403).json({ error: 'Acesso restrito a administradores' });
+router.post('/import', authenticate, requireCap('canImport', 'Seu cargo não pode importar'), async (req, res, next) => {
   try {
     const { rows, folderId } = req.body;
     if (!rows || !Array.isArray(rows) || rows.length === 0) {
-      return res.status(400).json({ error: 'No rows to import' });
+      return res.status(400).json({ error: 'Nenhuma linha para importar' });
     }
 
     const canEdit = await canAccessFolder(req.user.id, req.user.role, folderId, 'canEdit');
-    if (!canEdit) return res.status(403).json({ error: 'No edit permission on this folder' });
+    if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para criar ou editar senhas nesta pasta' });
 
     const created = [];
     const errors = [];

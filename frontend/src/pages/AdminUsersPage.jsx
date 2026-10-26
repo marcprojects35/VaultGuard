@@ -109,7 +109,7 @@ function UserModal({ user: editUser, roles, onClose }) {
           <button onClick={() => mutation.mutate()}
             disabled={mutation.isPending}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             {mutation.isPending ? t('common.loading') : t('common.save')}
           </button>
         </div>
@@ -141,7 +141,13 @@ export default function AdminUsersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: id => api.delete(`/users/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Usuário excluído!'); setDeleteTarget(null); },
+    onSuccess: ({ data }) => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      toast.success(data.transferredGroups?.length
+        ? `Usuário excluído. Você virou dono dos grupos: ${data.transferredGroups.join(', ')}`
+        : 'Usuário excluído', { duration: 6000 });
+      setDeleteTarget(null);
+    },
     onError: err => toast.error(err.response?.data?.error || 'Erro'),
   });
 
@@ -188,7 +194,7 @@ export default function AdminUsersPage() {
         <div>
           <h1 className="text-2xl font-bold">{t('user.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
-            {users.length} usuários cadastrados
+            {users.length} usuário(s). Crie contas, troque o cargo (lápis), redefina a senha (chave) ou desative. O cargo define as permissões em Cargos e permissões.
           </p>
         </div>
         <div className="flex gap-2">
@@ -206,7 +212,7 @@ export default function AdminUsersPage() {
           </button>
           <button onClick={() => { setEditUser(null); setShowModal(true); }}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: `linear-gradient(135deg, ${settings.primaryColor}, ${settings.accentColor})` }}>
+            style={{ background: `linear-gradient(135deg, var(--color-primary), var(--color-accent))` }}>
             <Plus className="w-4 h-4" />
             {t('user.newUser')}
           </button>
@@ -225,7 +231,7 @@ export default function AdminUsersPage() {
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
           className="px-3 py-2.5 rounded-xl text-sm outline-none"
           style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
-          <option value="">Todas as categorias</option>
+          <option value="">Todos os cargos</option>
           {roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
         </select>
       </div>
@@ -235,7 +241,7 @@ export default function AdminUsersPage() {
         <table className="w-full">
           <thead>
             <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)' }}>
-              {['Usuário', 'Categoria', 'Status', 'Último Acesso', 'Ações'].map(h => (
+              {['Usuário', 'Cargo', 'Status', 'Último Acesso', 'Ações'].map(h => (
                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider"
                   style={{ color: 'var(--color-text-muted)' }}>{h}</th>
               ))}
@@ -318,6 +324,10 @@ export default function AdminUsersPage() {
               <div>
                 <h3 className="font-semibold">{t('user.deleteUser')}</h3>
                 <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{deleteTarget.firstName} {deleteTarget.lastName}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--color-muted)' }}>
+                  A pasta pessoal dessa pessoa é apagada junto (só ela conseguia ler). Grupos de que ela era dona passam para você.
+                  Para só bloquear o acesso, desative a conta em vez de excluir.
+                </p>
               </div>
             </div>
             <div className="flex gap-3">

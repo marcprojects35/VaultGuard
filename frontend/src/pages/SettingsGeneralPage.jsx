@@ -14,7 +14,13 @@ const LANGUAGES = [
   { value: 'it', label: 'Italiano' },
 ];
 
+// Espera as configurações do servidor: com os valores padrão, salvar sobrescreveria as atuais
 export default function SettingsGeneralPage() {
+  const loaded = useSettingsStore(s => s.loaded);
+  return loaded ? <GeneralForm /> : null;
+}
+
+function GeneralForm() {
   const updateSettings = useSettingsStore(s => s.updateSettings);
   const currentSettings = useSettingsStore(s => s.settings);
 

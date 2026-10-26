@@ -1,9 +1,9 @@
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { getRoleCaps } from '../services/permissions.js';
+import { prisma } from '../db.js';
 import { getSecuritySettings, passwordChangeRequired, isIpAllowed } from '../services/securitySettings.js';
 import { hashToken, readCookie, SESSION_COOKIE } from '../utils/tokens.js';
 
-const prisma = new PrismaClient();
 
 // Rotas que um token de API (extensão / integrações) pode usar
 const API_TOKEN_ALLOWED = [/^\/api\/credentials(\/|$)/, /^\/api\/folders(\/|$)/, /^\/api\/favorites(\/|$)/, /^\/api\/attachments(\/|$)/, /^\/api\/keys(\/|$)/, /^\/api\/auth\/me$/];
@@ -34,13 +34,13 @@ export const authenticate = async (req, res, next) => {
       fromCookie = !!token;
     }
     if (!token) {
-      return res.status(401).json({ error: 'No authorization header' });
+      return res.status(401).json({ error: 'Entre novamente para continuar' });
     }
 
     // Sessão por cookie: exige header customizado em requests que alteram estado
     // (defesa extra contra CSRF além do SameSite=Strict)
     if (fromCookie && !SAFE_METHODS.includes(req.method) && req.headers['x-requested-with'] !== 'XMLHttpRequest') {
-      return res.status(403).json({ error: 'CSRF check failed' });
+      return res.status(403).json({ error: 'Requisição recusada por segurança. Recarregue a página.' });
     }
 
     const security = await getSecuritySettings();
@@ -54,24 +54,27 @@ export const authenticate = async (req, res, next) => {
       });
 
       if (!apiToken) {
-        return res.status(401).json({ error: 'Invalid API token' });
+        return res.status(401).json({ error: 'Token de API inválido' });
       }
 
       if (apiToken.expiresAt && apiToken.expiresAt < new Date()) {
-        return res.status(401).json({ error: 'API token expired' });
+        return res.status(401).json({ error: 'Token de API expirado' });
       }
 
+      if (!(await getRoleCaps(apiToken.user.role)).canUseApiTokens) {
+        return res.status(403).json({ error: 'O cargo deste usuário não pode usar tokens de API', code: 'ROLE_FORBIDDEN' });
+      }
       if (apiToken.user.status !== 'ACTIVE') {
-        return res.status(403).json({ error: 'Account inactive' });
+        return res.status(403).json({ error: 'Conta inativa. Fale com o administrador.' });
       }
 
       if (API_TOKEN_DENIED.some(r => r.test(path)) || !API_TOKEN_ALLOWED.some(r => r.test(path))) {
-        return res.status(403).json({ error: 'API tokens cannot access this endpoint' });
+        return res.status(403).json({ error: 'Tokens de API não têm acesso a esta função' });
       }
 
       const needed = SAFE_METHODS.includes(req.method) ? 'read' : 'write';
       if (!apiToken.scopes.includes(needed)) {
-        return res.status(403).json({ error: `API token missing "${needed}" scope` });
+        return res.status(403).json({ error: `O token de API não tem a permissão "${needed}"` });
       }
 
       if (security.require2FA && !apiToken.user.totpEnabled) {
@@ -95,18 +98,18 @@ export const authenticate = async (req, res, next) => {
 
     // Token temporário (senha ok, 2FA pendente) não vale como sessão
     if (decoded.temp) {
-      return res.status(401).json({ error: 'Invalid token type' });
+      return res.status(401).json({ error: 'Sessão inválida. Entre de novo.' });
     }
 
     const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
 
     if (!user || user.status !== 'ACTIVE') {
-      return res.status(401).json({ error: 'Invalid or inactive user' });
+      return res.status(401).json({ error: 'Usuário inválido ou inativo' });
     }
 
     // Sessão revogada (logout, troca/reset de senha, mudança de status)
     if ((decoded.tv ?? 0) !== user.tokenVersion) {
-      return res.status(401).json({ error: 'Session revoked' });
+      return res.status(401).json({ error: 'Sessão encerrada. Entre de novo.' });
     }
 
     const pendingAllowed = PENDING_ALLOWED.some(r => r.test(path));
@@ -121,17 +124,17 @@ export const authenticate = async (req, res, next) => {
     next();
   } catch (err) {
     if (err.name === 'JsonWebTokenError') {
-      return res.status(401).json({ error: 'Invalid token' });
+      return res.status(401).json({ error: 'Sessão inválida. Entre de novo.' });
     }
     if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' });
+      return res.status(401).json({ error: 'Sessão expirada. Entre de novo.' });
     }
     next(err);
   }
 };
 
 export const requireRole = (...roles) => (req, res, next) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+  if (!req.user) return res.status(401).json({ error: 'Entre novamente para continuar' });
 
   const roleHierarchy = {
     AUXILIAR: 0,
@@ -146,7 +149,7 @@ export const requireRole = (...roles) => (req, res, next) => {
   const requiredLevel = Math.min(...roles.map(r => roleHierarchy[r] ?? 99));
 
   if (userLevel < requiredLevel) {
-    return res.status(403).json({ error: 'Insufficient permissions' });
+    return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
   }
   next();
 };
