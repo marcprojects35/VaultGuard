@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users2, Plus, X, Trash2, ChevronDown, ChevronRight, Crown, UserPlus, Search } from 'lucide-react';
+import { Users2, Plus, X, Trash2, ChevronDown, ChevronRight, Crown, UserPlus, Search, Server, RefreshCw, KeyRound, Smartphone, Loader } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
 
@@ -136,7 +136,132 @@ function CreateGroupModal({ users, onClose }) {
   );
 }
 
-function GroupRow({ team, users, roles }) {
+// Política das senhas guardadas nas pastas do grupo (tamanho, complexidade, validade)
+const POLICY_DEFAULT = { enabled: true, minLength: 12, requireUppercase: true, requireNumbers: true, requireSymbols: false, expireDays: 0, folderIds: [] };
+
+function PolicyEditor({ team, folders, onSave, saving }) {
+  const [p, setP] = useState(() => ({ ...POLICY_DEFAULT, ...(team.passwordPolicy || {}), enabled: !!team.passwordPolicy?.enabled }));
+  const set = (k, v) => setP(x => ({ ...x, [k]: v }));
+  const toggleFolder = (id) => set('folderIds', p.folderIds.includes(id) ? p.folderIds.filter(x => x !== id) : [...p.folderIds, id]);
+  return (
+    <div className="rounded-xl p-3 space-y-3" style={{ border: '1px solid var(--color-border)' }} data-testid="policy-editor">
+      <label className="flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)' }}>
+        <input type="checkbox" checked={p.enabled} onChange={e => set('enabled', e.target.checked)} data-testid="policy-enabled" className="w-4 h-4" />
+        <KeyRound className="w-4 h-4" style={{ color: 'var(--color-primary)' }} /> Política para as senhas guardadas nas pastas deste grupo
+      </label>
+      {p.enabled && (
+        <>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Tamanho mínimo (caracteres)
+              <input type="number" min="4" max="128" value={p.minLength} onChange={e => set('minLength', Number(e.target.value))}
+                className="w-full mt-1 px-3 py-2 rounded-xl text-sm outline-none" style={inputStyle} data-testid="policy-min" />
+            </label>
+            <label className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Trocar a cada (dias, 0 = não vence)
+              <input type="number" min="0" max="3650" value={p.expireDays} onChange={e => set('expireDays', Number(e.target.value))}
+                className="w-full mt-1 px-3 py-2 rounded-xl text-sm outline-none" style={inputStyle} data-testid="policy-expire" />
+            </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[['requireUppercase', 'Letra maiúscula'], ['requireNumbers', 'Número'], ['requireSymbols', 'Símbolo']].map(([k, label]) => (
+              <Toggle key={k} on={p[k]} label={`Exigir ${label.toLowerCase()}`} onClick={() => set(k, !p[k])} />
+            ))}
+          </div>
+          <div>
+            <div className="text-xs mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Vale para quais pastas do grupo</div>
+            {folders.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--color-muted)' }}>O grupo ainda não tem pastas. A política vale para todas as que forem criadas.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Toggle on={p.folderIds.length === 0} label="Todas" onClick={() => set('folderIds', [])} />
+                {folders.map(f => <Toggle key={f.id} on={p.folderIds.includes(f.id)} label={f.name} testId={`policy-folder-${f.name}`} onClick={() => toggleFolder(f.id)} />)}
+              </div>
+            )}
+          </div>
+          <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+            O cofre não deixa salvar senha fora da regra e o gerador já cria no tamanho certo. Com prazo, a senha vence e aparece um aviso para gerar outra.
+          </p>
+        </>
+      )}
+      <button type="button" disabled={saving} data-testid="policy-save"
+        onClick={() => onSave(p.enabled ? { ...p, enabled: true } : null)}
+        className="px-4 py-1.5 rounded-lg text-sm font-semibold disabled:opacity-50" style={{ background: 'var(--color-primary)', color: 'var(--color-on-primary)' }}>
+        Salvar política
+      </button>
+    </div>
+  );
+}
+
+// Importar grupos do Active Directory (vira grupo com o mesmo nome e as pessoas de dentro)
+function ImportAdModal({ onClose }) {
+  const qc = useQueryClient();
+  const [selected, setSelected] = useState(new Set());
+  const [results, setResults] = useState(null);
+  const { data: groups = [], isLoading, error } = useQuery({
+    queryKey: ['ad-groups'],
+    queryFn: () => api.post('/ldap/groups', {}).then(r => r.data),
+    retry: false,
+  });
+  const importMut = useMutation({
+    mutationFn: () => api.post('/ldap/groups/import', { dns: [...selected] }),
+    onSuccess: ({ data }) => { setResults(data.results); qc.invalidateQueries({ queryKey: ['admin-groups'] }); qc.invalidateQueries({ queryKey: ['ad-groups'] }); qc.invalidateQueries({ queryKey: ['users'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Não foi possível importar'),
+  });
+  const toggle = (dn) => setSelected(s => { const n = new Set(s); n.has(dn) ? n.delete(dn) : n.add(dn); return n; });
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+      <div className="w-full max-w-2xl rounded-2xl p-6 max-h-[90vh] overflow-y-auto" style={cardStyle}>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--color-text)' }}><Server className="w-5 h-5" style={{ color: 'var(--color-primary)' }} /> Importar grupos do AD</h2>
+          <button onClick={onClose} style={{ color: 'var(--color-muted)' }}><X className="w-4 h-4" /></button>
+        </div>
+        <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>
+          Cada grupo escolhido vira um grupo aqui com o mesmo nome e as pessoas que estão nele no AD. Quem ainda não tem conta é cadastrado como usuário do AD.
+          Ao sincronizar, quem entrar ou sair do grupo no AD entra ou sai daqui; quem você adicionar à mão continua. Defina o que cada cargo faz no grupo em Cargos e permissões.
+        </p>
+        {isLoading && <div className="text-sm py-6 text-center" style={{ color: 'var(--color-muted)' }}><Loader className="w-4 h-4 inline animate-spin" /> Buscando grupos no AD...</div>}
+        {error && <div className="text-sm p-3 rounded-lg" style={{ background: 'rgba(239,68,68,0.1)', color: '#f87171' }}>{error.response?.data?.error || 'Não foi possível ler os grupos do AD'}</div>}
+        {results ? (
+          <div className="space-y-2" data-testid="ad-import-results">
+            {results.map(r => (
+              <div key={r.dn} className="text-sm p-3 rounded-lg" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text)' }}>
+                <b>{r.name || r.dn}</b>{' — '}
+                {r.error ? <span style={{ color: '#f87171' }}>{r.error}</span>
+                  : `${r.created ? 'criado' : 'atualizado'}: ${r.members} pessoa(s)${r.added ? `, ${r.added} entraram` : ''}${r.removed ? `, ${r.removed} saíram` : ''}${r.skipped?.length ? `, ${r.skipped.length} ignorado(s) (grupos dentro do grupo ou sem e-mail)` : ''}`}
+              </div>
+            ))}
+            <button onClick={onClose} className="mt-2 px-4 py-2 rounded-xl text-sm font-semibold" style={{ background: 'var(--color-primary)', color: 'var(--color-on-primary)' }}>Fechar</button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1">
+              {groups.map(g => (
+                <label key={g.dn} className="flex items-center gap-3 p-2 rounded-lg cursor-pointer hover:bg-[var(--color-surface-hover)]" data-testid={`ad-group-${g.cn}`}>
+                  <input type="checkbox" checked={selected.has(g.dn)} onChange={() => toggle(g.dn)} className="w-4 h-4" />
+                  <span className="flex-1 min-w-0">
+                    <span className="text-sm block truncate" style={{ color: 'var(--color-text)' }}>{g.cn}</span>
+                    <span className="text-[11px] block truncate" style={{ color: 'var(--color-muted)' }}>{g.description || g.dn}</span>
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>{g.memberCount} membro(s)</span>
+                  {g.importedTeamId && <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>já importado</span>}
+                </label>
+              ))}
+              {!isLoading && !error && groups.length === 0 && <div className="text-sm py-4 text-center" style={{ color: 'var(--color-muted)' }}>Nenhum grupo encontrado no AD</div>}
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-sm" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-muted)' }}>Cancelar</button>
+              <button onClick={() => importMut.mutate()} disabled={!selected.size || importMut.isPending} data-testid="ad-import"
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50" style={primaryBtn}>
+                {importMut.isPending ? 'Importando...' : `Importar ${selected.size || ''}`}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GroupRow({ team, users, roles, folders }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState([]);
@@ -177,7 +302,12 @@ function GroupRow({ team, users, roles }) {
         {open ? <ChevronDown className="w-4 h-4" style={{ color: 'var(--color-muted)' }} /> : <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-muted)' }} />}
         <Users2 className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>{team.name}</div>
+          <div className="text-sm font-semibold truncate flex items-center gap-1.5" style={{ color: 'var(--color-text)' }}>
+            {team.name}
+            {team.adGroupDn && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" title={team.adGroupDn} style={{ background: 'rgba(var(--color-primary-rgb),0.13)', color: 'var(--color-primary)' }}>AD</span>}
+            {team.require2FA && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: 'rgba(245,158,11,0.15)', color: '#f59e0b' }}>2FA</span>}
+            {team.passwordPolicy?.enabled && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: 'var(--color-surface-2)', color: 'var(--color-text-muted)' }}>política {team.passwordPolicy.minLength}+</span>}
+          </div>
           <div className="text-xs truncate" style={{ color: 'var(--color-muted)' }}>
             Dono: {fullName(team.owner)} · {team.memberCount} membro(s)
             {' · Membros: '}{PERMS.filter(p => team[p.team]).map(p => p.label.toLowerCase()).join(', ') || 'só visualizar'}
@@ -213,6 +343,18 @@ function GroupRow({ team, users, roles }) {
             </p>
           </div>
 
+          <div className="flex items-start gap-3">
+            <Toggle on={!!team.require2FA} testId="group-require-2fa" label={team.require2FA ? '2FA obrigatório' : '2FA opcional'}
+              onClick={() => update.mutate({ require2FA: !team.require2FA })} />
+            <p className="text-xs" style={{ color: 'var(--color-muted)' }}>
+              <Smartphone className="w-3.5 h-3.5 inline mr-1" />
+              Obrigatório: todos os membros precisam usar app autenticador. O prazo e as instruções ficam em Configurações › Segurança.
+            </p>
+          </div>
+
+          <PolicyEditor key={JSON.stringify(team.passwordPolicy || null)} team={team} folders={folders.filter(f => f.teamId === team.id)}
+            saving={update.isPending} onSave={(passwordPolicy) => update.mutate({ passwordPolicy })} />
+
           <div>
             <div className="text-xs mb-1.5" style={{ color: 'var(--color-text-muted)' }}>Membros — clique numa permissão para ajustar só aquela pessoa</div>
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--color-border)' }}>
@@ -226,6 +368,8 @@ function GroupRow({ team, users, roles }) {
                     </div>
                     <div className="text-xs" style={{ color: 'var(--color-muted)' }}>
                       {m.user?.email}{roles.find(r => r.key === m.user?.role) ? ` · ${roles.find(r => r.key === m.user?.role).label}` : ''}
+                      {m.invitedById === 'ad-sync' && ' · veio do AD'}
+                      {m.roleScope && ` · regra do cargo neste grupo${m.roleScope.folderIds.length ? ` (${m.roleScope.folderIds.length} pasta(s))` : ''}`}
                     </div>
                   </div>
                   {m.isOwner ? (
@@ -286,6 +430,21 @@ export default function AdminGroupsPage() {
     queryKey: ['admin-groups'],
     queryFn: () => api.get('/teams', { params: { all: 'true' } }).then(r => r.data),
   });
+  const [showImport, setShowImport] = useState(false);
+  const qcPage = useQueryClient();
+  const { data: folders = [] } = useQuery({
+    queryKey: ['admin-all-folders'],
+    // Árvore → lista (subpastas incluídas); só as compartilhadas interessam aqui
+    queryFn: () => api.get('/folders/admin-all').then(r => {
+      const flat = (list) => list.flatMap(f => [f, ...flat(f.children || [])]);
+      return flat(r.data.shared || []);
+    }),
+  });
+  const resync = useMutation({
+    mutationFn: () => api.post('/ldap/groups/resync'),
+    onSuccess: ({ data }) => { toast.success(`${data.results.length} grupo(s) do AD sincronizado(s)`); qcPage.invalidateQueries({ queryKey: ['admin-groups'] }); },
+    onError: (e) => toast.error(e.response?.data?.error || 'Não foi possível sincronizar'),
+  });
   const { data: roles = [] } = useQuery({
     queryKey: ['roles'],
     queryFn: () => api.get('/roles').then(r => r.data),
@@ -306,10 +465,22 @@ export default function AdminGroupsPage() {
             Crie grupos, coloque as pessoas direto (sem convite) e defina o que cada um pode fazer nas pastas do grupo.
           </p>
         </div>
+        <div className="flex gap-2 flex-shrink-0">
+        {teams.some(t => t.adGroupDn) && (
+          <button onClick={() => resync.mutate()} disabled={resync.isPending} title="Atualiza os membros dos grupos que vieram do AD"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm border border-[var(--color-border)] text-[var(--color-text-muted)]">
+            <RefreshCw className={`w-4 h-4 ${resync.isPending ? 'animate-spin' : ''}`} /> Sincronizar AD
+          </button>
+        )}
+        <button onClick={() => setShowImport(true)} data-testid="import-ad-groups"
+          className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm border border-[var(--color-border)] text-[var(--color-text-muted)]">
+          <Server className="w-4 h-4" /> Importar do AD
+        </button>
         <button onClick={() => setShowCreate(true)} data-testid="new-group"
           className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white flex-shrink-0" style={primaryBtn}>
           <Plus className="w-4 h-4" /> Novo grupo
         </button>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -317,10 +488,11 @@ export default function AdminGroupsPage() {
         {!isLoading && teams.length === 0 && (
           <div className="text-center py-12 rounded-2xl text-sm" style={{ ...cardStyle, color: 'var(--color-text-muted)' }}>Nenhum grupo ainda</div>
         )}
-        {teams.map(t => <GroupRow key={t.id} team={t} users={users} roles={roles} />)}
+        {teams.map(t => <GroupRow key={t.id} team={t} users={users} roles={roles} folders={folders} />)}
       </div>
 
       {showCreate && <CreateGroupModal users={users} onClose={() => setShowCreate(false)} />}
+      {showImport && <ImportAdModal onClose={() => setShowImport(false)} />}
     </div>
   );
 }

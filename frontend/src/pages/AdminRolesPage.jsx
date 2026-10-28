@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Tag, Plus, Edit2, Trash2, X, Save, ArrowUp, ArrowDown, ShieldCheck, Users } from 'lucide-react';
+import { Tag, Plus, Edit2, Trash2, X, Save, ArrowUp, ArrowDown, ShieldCheck, Users, Network } from 'lucide-react';
+import RoleScopesModal from '../components/RoleScopesModal.jsx';
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -29,6 +30,7 @@ export default function AdminRolesPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ label: '', color: COLOR_PALETTE[0] });
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [scopeRole, setScopeRole] = useState(null);
   const [reassignTo, setReassignTo] = useState('');
 
   const { data: roles = [], isLoading } = useQuery({
@@ -188,6 +190,12 @@ export default function AdminRolesPage() {
                       style={{ color: '#60a5fa' }}>
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
+                    <button onClick={() => setScopeRole(role)} data-testid={`scopes-${role.key}`}
+                      className="flex items-center gap-1 p-1.5 rounded hover:bg-[var(--color-surface-hover)]" title="Onde vale este cargo (grupos e pastas)"
+                      style={{ color: 'var(--color-primary)' }}>
+                      <Network className="w-3.5 h-3.5" />
+                      {role._count?.groupScopes > 0 && <span className="text-[10px] font-semibold">{role._count.groupScopes}</span>}
+                    </button>
                     <button onClick={() => openDelete(role)}
                       className="p-1.5 rounded hover:bg-red-500/20" title="Excluir"
                       style={{ color: '#ef4444' }}>
@@ -252,6 +260,8 @@ export default function AdminRolesPage() {
       )}
 
       {/* Confirm delete */}
+      {scopeRole && <RoleScopesModal role={scopeRole} onClose={() => setScopeRole(null)} />}
+
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>

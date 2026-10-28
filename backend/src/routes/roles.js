@@ -5,7 +5,7 @@ import { validate } from '../middleware/validate.js';
 import { prisma } from '../db.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
-import { ROLE_CAPS, invalidateRoleCaps } from '../services/permissions.js';
+import { ROLE_CAPS, invalidateRoleCaps, invalidateRoleScopes } from '../services/permissions.js';
 
 // Só booleanos conhecidos entram (o resto do corpo é ignorado)
 const pickCaps = (body) => Object.fromEntries(ROLE_CAPS.filter(c => typeof body[c] === 'boolean').map(c => [c, body[c]]));
@@ -37,7 +37,7 @@ router.get('/', authenticate, async (req, res, next) => {
   try {
     const roles = await prisma.role.findMany({
       orderBy: { priority: 'desc' },
-      include: { _count: { select: { users: true } } },
+      include: { _count: { select: { users: true, groupScopes: true } } },
     });
     res.json(roles);
   } catch (err) {
@@ -110,6 +110,54 @@ router.put('/:key', authenticate, requireAdmin,
   }
 );
 
+// GET /api/roles/:key/scopes — onde o cargo vale (grupos, pastas e permissões)
+router.get('/:key/scopes', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const scopes = await prisma.roleGroupScope.findMany({
+      where: { roleKey: req.params.key },
+      include: { team: { select: { id: true, name: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(scopes);
+  } catch (err) { next(err); }
+});
+
+// PUT /api/roles/:key/scopes — { scopes: [{ teamId, folderIds, canEdit, canDelete, canShare }] }
+// Substitui a lista: ex.: Diretor vale no grupo Infra (todas as pastas, edita e
+// exclui) e no grupo RH (só a pasta Contratos, só edita)
+router.put('/:key/scopes', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const role = await prisma.role.findUnique({ where: { key: req.params.key } });
+    if (!role) return res.status(404).json({ error: 'Cargo não encontrado' });
+    if (role.isProtected) return res.status(400).json({ error: 'O Administrador já tem acesso total a todos os grupos' });
+    const list = Array.isArray(req.body?.scopes) ? req.body.scopes.slice(0, 200) : null;
+    if (!list) return res.status(400).json({ error: 'Envie a lista de grupos' });
+
+    const teamIds = [...new Set(list.map(sc => String(sc?.teamId || '')))];
+    if (teamIds.length !== list.length) return res.status(400).json({ error: 'O mesmo grupo aparece duas vezes' });
+    const teams = await prisma.team.findMany({ where: { id: { in: teamIds } }, select: { id: true } });
+    if (teams.length !== teamIds.length) return res.status(400).json({ error: 'Grupo não encontrado' });
+    const folders = await prisma.folder.findMany({ where: { teamId: { in: teamIds } }, select: { id: true, teamId: true } });
+
+    const data = [];
+    for (const sc of list) {
+      const allowed = new Set(folders.filter(f => f.teamId === sc.teamId).map(f => f.id));
+      const folderIds = Array.isArray(sc.folderIds) ? [...new Set(sc.folderIds.map(String))] : [];
+      if (folderIds.some(id => !allowed.has(id))) return res.status(400).json({ error: 'Escolha só pastas do próprio grupo' });
+      data.push({ roleKey: role.key, teamId: sc.teamId, folderIds, canEdit: sc.canEdit !== false, canDelete: !!sc.canDelete, canShare: !!sc.canShare });
+    }
+    await prisma.$transaction([
+      prisma.roleGroupScope.deleteMany({ where: { roleKey: role.key } }),
+      ...(data.length ? [prisma.roleGroupScope.createMany({ data })] : []),
+    ]);
+    invalidateRoleScopes();
+    // Quem perdeu pastas por causa do cargo deixa de receber as chaves delas
+    await pruneFolderKeys();
+    await createAuditLog(req.user.id, 'role.scopes_updated', role.key, 'Role', { groups: data.length }, req.ip);
+    res.json(await prisma.roleGroupScope.findMany({ where: { roleKey: role.key }, include: { team: { select: { id: true, name: true } } } }));
+  } catch (err) { next(err); }
+});
+
 // PUT /api/roles/:key/priority — admin only, troca de posição com uma role vizinha
 router.put('/:key/priority', authenticate, requireAdmin,
   [body('direction').isIn(['up', 'down'])],
@@ -170,6 +218,7 @@ router.delete('/:key', authenticate, requireAdmin, async (req, res, next) => {
     await prisma.folderPermission.deleteMany({ where: { role: role.key } });
     await prisma.role.delete({ where: { key: role.key } });
     invalidateRoleCaps();
+    invalidateRoleScopes();
     // Cargo mudou = pastas visíveis mudaram: tira cópias de chave de quem perdeu acesso
     await pruneFolderKeys();
 

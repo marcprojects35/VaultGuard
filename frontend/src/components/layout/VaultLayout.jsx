@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Shield, Vault, Users, FolderOpen, ScrollText, Palette, Server, Tag,
-  LogOut, Key, ChevronDown, Settings, Globe,
+  LogOut, Key, ChevronDown, Settings, Globe, Contrast, ShieldAlert,
   SlidersHorizontal, ShieldCheck, Mail, ChevronRight,
   Search, Upload, Download, Star, Inbox, HelpCircle, Send, Users2, Trash2, Database,
   PanelLeftClose, PanelLeftOpen,
@@ -115,11 +115,25 @@ export default function VaultLayout() {
 
   // Perfil e permissões do cargo atualizados (o admin pode ter mudado desde o login)
   const updateUser = useAuthStore(s => s.updateUser);
+  const inverted = useSettingsStore(s => s.inverted);
+  const setInverted = useSettingsStore(s => s.setInverted);
   useEffect(() => {
-    api.get('/auth/me').then(({ data }) => updateUser({
-      role: data.role, capabilities: data.capabilities, firstName: data.firstName, lastName: data.lastName,
-    })).catch(() => {});
+    api.get('/auth/me').then(({ data }) => {
+      updateUser({
+        role: data.role, capabilities: data.capabilities, firstName: data.firstName, lastName: data.lastName,
+        twoFactor: data.twoFactor,
+      });
+      // Preferência de cores salva na conta vale em qualquer computador
+      if (typeof data.themeInverted === 'boolean' && data.themeInverted !== useSettingsStore.getState().inverted) setInverted(data.themeInverted);
+    }).catch(() => {});
   }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleInverted = () => {
+    const next = !inverted;
+    setInverted(next);
+    api.put('/auth/me/preferences', { themeInverted: next }).catch(() => {});
+  };
+  const twoFactor = useAuthStore(s => s.user?.twoFactor);
+  const twoFactorPending = twoFactor?.required && !twoFactor.enabled && !twoFactor.blocking && twoFactor.deadline;
   const caps = useCaps();
 
   const handleLogout = () => { logout(); navigate('/login'); };
@@ -339,6 +353,19 @@ export default function VaultLayout() {
           borderTop: `1px solid ${sidebarBorder}`,
           display: 'flex', flexDirection: 'column', gap: '2px', flexShrink: 0,
         }}>
+          {/* Cores invertidas (escolha de cada pessoa) */}
+          <button type="button" onClick={toggleInverted} data-testid="toggle-theme"
+            title={inverted ? 'Voltar às cores normais' : 'Inverter as cores do tema'}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '9px', width: '100%',
+              padding: open ? '7px 10px' : '7px', justifyContent: open ? 'flex-start' : 'center',
+              borderRadius: '8px', background: 'transparent', border: 'none', cursor: 'pointer',
+              color: 'var(--color-text-muted)', fontSize: '0.8rem', fontWeight: 500,
+            }}>
+            <Contrast style={iconSize} />
+            {open && <span>{inverted ? 'Cores normais' : 'Inverter cores'}</span>}
+          </button>
+
           {/* Language selector */}
           <div style={{ position: 'relative' }}>
             <button
@@ -520,6 +547,22 @@ export default function VaultLayout() {
             background: 'rgba(var(--color-bg-rgb), var(--app-bg-overlay, 0.8))',
           }} />
         </>}
+        {twoFactorPending && location.pathname !== '/profile' && (
+          <div data-testid="2fa-banner" style={{
+            position: 'relative', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px',
+            background: 'rgba(245,158,11,0.12)', borderBottom: '1px solid rgba(245,158,11,0.35)', color: 'var(--color-text)', fontSize: '0.8rem',
+          }}>
+            <ShieldAlert style={{ width: 16, height: 16, color: '#f59e0b', flexShrink: 0 }} />
+            <span style={{ flex: 1 }}>
+              A verificação em duas etapas (2FA) é obrigatória para {twoFactor.sources.join(', ')}. Ative até{' '}
+              <b>{new Date(twoFactor.deadline).toLocaleDateString('pt-BR')}</b>; depois disso o acesso fica bloqueado até ativar.
+            </span>
+            <button type="button" onClick={() => navigate('/profile?tab=security')}
+              style={{ background: 'var(--color-primary)', color: 'var(--color-on-primary)', border: 'none', borderRadius: 8, padding: '5px 12px', fontWeight: 600, cursor: 'pointer' }}>
+              Ativar agora
+            </button>
+          </div>
+        )}
         <main
           key={location.pathname}
           className="page-enter"

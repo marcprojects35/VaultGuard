@@ -9,6 +9,7 @@
 #   ./run.sh trash.mjs       # lixeira, retenção e limpeza da auditoria
 #   ./run.sh fuzz.mjs        # todas as rotas da API com entradas inválidas (nenhum 500)
 #   ./run.sh ldap.mjs        # 2 servidores de AD: troca automática e manual (sobe 2 OpenLDAP no Docker)
+#   ./run.sh features.mjs    # 2FA por pessoa/grupo, política de senhas por grupo, cores invertidas, cargo no grupo, grupos do AD
 #
 # Cada execução usa um PostgreSQL descartável (container "vg-e2e-db", porta
 # 55432) e sobe o backend na porta 3901. Nada do ambiente real é tocado.

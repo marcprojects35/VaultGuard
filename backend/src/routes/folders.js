@@ -4,6 +4,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { prisma } from '../db.js';
 import { trashFolder } from '../services/trash.js';
+import { policyForFolder } from '../services/passwordPolicy.js';
 import { canAccessFolder, getAccessibleFolderIds, getUserPermissionsForFolder } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
@@ -62,7 +63,15 @@ router.get('/', authenticate, async (req, res, next) => {
     }
 
     // O que o usuário pode fazer em cada pasta (a interface esconde o resto)
-    for (const f of folders) f.myPermissions = await getUserPermissionsForFolder(uid, role, f.id);
+    // e a política de senhas do grupo que vale nela (o cofre confere ao salvar)
+    const teamPolicies = new Map((await prisma.team.findMany({
+      where: { id: { in: [...new Set(folders.map(f => f.teamId).filter(Boolean))] } },
+      select: { id: true, passwordPolicy: true },
+    })).map(t => [t.id, t.passwordPolicy]));
+    for (const f of folders) {
+      f.myPermissions = await getUserPermissionsForFolder(uid, role, f.id);
+      f.passwordPolicy = policyForFolder(f, teamPolicies.get(f.teamId));
+    }
     // Negação explícita para a pessoa (marcação dela sem "Ver") esconde a pasta
     folders = folders.filter(f => f.myPermissions.canView);
 

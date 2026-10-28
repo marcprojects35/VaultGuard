@@ -83,7 +83,7 @@ export default function DataRetentionPage() {
           description="Senhas e pastas excluídas ficam na Lixeira por este tempo, podendo ser restauradas. Depois disso são apagadas de vez do banco, com anexos e versões." />
         <RetentionField label="Registros de auditoria (logs)" testId="audit-days" value={form.auditRetentionDays} min={7}
           onChange={v => setForm(f => ({ ...f, auditRetentionDays: v }))}
-          description="Quem entrou, viu, criou, editou ou excluiu cada item. Registros mais antigos que este prazo são apagados automaticamente. Mínimo de 7 dias; 0 guarda para sempre." />
+          description="Quem entrou, viu, criou, editou ou excluiu cada item. Funciona como uma janela móvel: a plataforma guarda sempre os últimos dias definidos aqui e os registros mais antigos vão sendo sobrescritos pelos novos (padrão: 90 dias). Mínimo de 7 dias; 0 guarda tudo, sem sobrescrever." />
         <div className="flex items-center gap-3">
           <button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid="save-retention"
             className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
@@ -94,7 +94,7 @@ export default function DataRetentionPage() {
         </div>
         <p className="text-xs flex gap-1.5" style={{ color: 'var(--color-muted)' }}>
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-          A limpeza automática roda a cada hora. Diminuir um prazo apaga, na próxima rodada, tudo que já passou do novo prazo.
+          A rotação roda a cada hora. Diminuir um prazo faz a próxima rodada sobrescrever tudo que já passou do novo prazo; aumentar não traz de volta o que já foi sobrescrito.
         </p>
       </div>
 

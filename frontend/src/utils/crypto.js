@@ -134,3 +134,26 @@ export function generatePassword(options = {}) {
   }
   return password;
 }
+
+/** O que falta na senha para cumprir a política do grupo (lista vazia = ok) */
+export function policyProblems(password, policy) {
+  if (!policy?.enabled) return [];
+  const p = password || '';
+  const problems = [];
+  if (p.length < policy.minLength) problems.push(`mínimo de ${policy.minLength} caracteres (tem ${p.length})`);
+  if (policy.requireUppercase && !/[A-Z]/.test(p)) problems.push('uma letra maiúscula');
+  if (policy.requireNumbers && !/[0-9]/.test(p)) problems.push('um número');
+  if (policy.requireSymbols && !/[^A-Za-z0-9]/.test(p)) problems.push('um símbolo');
+  return problems;
+}
+
+/** Senha gerada já dentro da política (tamanho e tipos de caractere exigidos) */
+export function generatePolicyPassword(policy) {
+  const length = Math.max(20, policy?.enabled ? policy.minLength : 0);
+  for (let i = 0; i < 50; i++) {
+    const candidate = generatePassword({ length, uppercase: true, lowercase: true, numbers: true, symbols: true });
+    if (!policyProblems(candidate, policy).length && /[a-z]/.test(candidate)) return candidate;
+  }
+  return generatePassword({ length, uppercase: true, lowercase: true, numbers: true, symbols: true });
+}
+

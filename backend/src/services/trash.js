@@ -14,7 +14,7 @@ export async function getRetention() {
   const s = await prisma.systemSettings.findUnique({
     where: { id: 'singleton' }, select: { trashRetentionDays: true, auditRetentionDays: true },
   });
-  return { trashRetentionDays: s?.trashRetentionDays ?? 30, auditRetentionDays: s?.auditRetentionDays ?? 0 };
+  return { trashRetentionDays: s?.trashRetentionDays ?? 30, auditRetentionDays: s?.auditRetentionDays ?? 90 };
 }
 
 export async function trashCredential(cred, userId) {

@@ -18,6 +18,7 @@ router.post('/login',
 router.post('/logout', authenticate, authController.logout);
 router.post('/refresh', authController.refresh);
 router.get('/me', authenticate, authController.me);
+router.put('/me/preferences', authenticate, authController.updatePreferences);
 
 router.post('/2fa/setup', authenticate, authController.setup2FA);
 router.post('/2fa/verify', authenticate, authController.verify2FA);

@@ -18,12 +18,63 @@ function formFromSettings(settings) {
     maxLoginAttempts: settings.maxLoginAttempts ?? 5,
     lockoutDurationMin: policy.lockoutDurationMin ?? 15,
     require2FA: settings.require2FA ?? false,
+    twoFactorIssuer: settings.twoFactorConfig?.issuer ?? '',
+    twoFactorInstructions: settings.twoFactorConfig?.instructions ?? '',
+    twoFactorGraceDays: settings.twoFactorConfig?.graceDays ?? 0,
     allow2FARecovery: policy.allow2FARecovery ?? true,
     logFailedLogins: policy.logFailedLogins ?? true,
     alertOnNewDevice: policy.alertOnNewDevice ?? true,
     allowedIPs: policy.allowedIPs ?? '',
   };
 }
+
+// Fora do componente: declarados dentro, seriam recriados a cada tecla e o campo perderia o foco
+const Section = ({ icon: Icon, title, children, danger }) => (
+  <div
+    className="rounded-2xl p-6"
+    style={{
+      background: 'var(--color-surface)',
+      border: `1px solid ${danger ? '#ef444433' : 'var(--color-border)'}`,
+    }}
+  >
+    <div className="flex items-center gap-3 mb-5">
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center"
+        style={{ background: danger ? '#ef444422' : 'var(--color-surface-2)' }}
+      >
+        <Icon className="w-5 h-5" style={{ color: danger ? '#ef4444' : 'var(--color-primary)' }} />
+      </div>
+      <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+        {title}
+      </h2>
+    </div>
+    <div className="space-y-4">{children}</div>
+  </div>
+);
+
+const Toggle = ({ label, description, value, onChange, warn }) => (
+  <div className="flex items-start justify-between gap-4">
+    <div>
+      <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{label}</div>
+      {description && (
+        <div className="text-xs mt-0.5" style={{ color: warn ? '#f59e0b' : 'var(--color-text-muted)' }}>
+          {description}
+        </div>
+      )}
+    </div>
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none"
+      style={{ background: value ? 'var(--color-primary)' : 'var(--color-surface-2)' }}
+    >
+      <span
+        className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+        style={{ transform: value ? 'translateX(20px)' : 'translateX(0)' }}
+      />
+    </button>
+  </div>
+);
 
 export default function SettingsSecurityPage() {
   const currentSettings = useSettingsStore(s => s.settings);
@@ -58,53 +109,6 @@ export default function SettingsSecurityPage() {
   };
   const labelClass = 'block text-sm font-medium mb-1.5';
   const labelStyle = { color: 'var(--color-text-muted)' };
-
-  const Section = ({ icon: Icon, title, children, danger }) => (
-    <div
-      className="rounded-2xl p-6"
-      style={{
-        background: 'var(--color-surface)',
-        border: `1px solid ${danger ? '#ef444433' : 'var(--color-border)'}`,
-      }}
-    >
-      <div className="flex items-center gap-3 mb-5">
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: danger ? '#ef444422' : 'var(--color-surface-2)' }}
-        >
-          <Icon className="w-5 h-5" style={{ color: danger ? '#ef4444' : 'var(--color-primary)' }} />
-        </div>
-        <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
-          {title}
-        </h2>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </div>
-  );
-
-  const Toggle = ({ label, description, value, onChange, warn }) => (
-    <div className="flex items-start justify-between gap-4">
-      <div>
-        <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>{label}</div>
-        {description && (
-          <div className="text-xs mt-0.5" style={{ color: warn ? '#f59e0b' : 'var(--color-text-muted)' }}>
-            {description}
-          </div>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={() => onChange(!value)}
-        className="relative flex-shrink-0 w-11 h-6 rounded-full transition-colors duration-200 focus:outline-none"
-        style={{ background: value ? 'var(--color-primary)' : 'var(--color-surface-2)' }}
-      >
-        <span
-          className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
-          style={{ transform: value ? 'translateX(20px)' : 'translateX(0)' }}
-        />
-      </button>
-    </div>
-  );
 
   const strengthIndicator = () => {
     const len = form.minPasswordLength;
@@ -252,6 +256,34 @@ export default function SettingsSecurityPage() {
             onChange={v => set('require2FA', v)}
             warn
           />
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            Para exigir só de algumas pessoas ou de um grupo, use Usuários (editar a pessoa) ou Configurações › Grupos.
+          </p>
+          <div className="border-t" style={{ borderColor: 'var(--color-border)' }} />
+          <div>
+            <label className={labelClass} style={labelStyle}>Nome que aparece no app autenticador</label>
+            <input value={form.twoFactorIssuer} maxLength={40} data-testid="2fa-issuer"
+              onChange={e => set('twoFactorIssuer', e.target.value.replace(/:/g, ''))}
+              placeholder={currentSettings.siteName || 'VaultGuard'} className={inputClass} style={inputStyle} />
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              É o nome da conta no Google/Microsoft Authenticator. Vazio usa o nome do sistema. Vale para quem ativar a partir de agora.
+            </p>
+          </div>
+          <div>
+            <label className={labelClass} style={labelStyle}>Instruções mostradas ao ativar</label>
+            <textarea value={form.twoFactorInstructions} maxLength={1000} rows={3} data-testid="2fa-instructions-input"
+              onChange={e => set('twoFactorInstructions', e.target.value)}
+              placeholder="Ex.: Use o Microsoft Authenticator do celular corporativo. Dúvidas: ramal 2000."
+              className={`${inputClass} resize-none`} style={inputStyle} />
+          </div>
+          <div>
+            <label className={labelClass} style={labelStyle}>Prazo para ativar quando passar a ser obrigatório (dias)</label>
+            <input type="number" min="0" max="90" value={form.twoFactorGraceDays} data-testid="2fa-grace"
+              onChange={e => set('twoFactorGraceDays', e.target.value)} className={inputClass} style={inputStyle} />
+            <p className="text-xs mt-1" style={{ color: 'var(--color-text-muted)' }}>
+              0 = bloqueia na hora até ativar. Com prazo, a pessoa vê um aviso com a data e continua usando até lá.
+            </p>
+          </div>
           <div className="border-t" style={{ borderColor: 'var(--color-border)' }} />
           <Toggle
             label="Permitir códigos de recuperação"
@@ -290,7 +322,7 @@ export default function SettingsSecurityPage() {
 
       <div className="flex justify-end mt-6">
         <button
-          onClick={() => save(form)}
+          onClick={() => save({ ...form, twoFactorConfig: { issuer: form.twoFactorIssuer, instructions: form.twoFactorInstructions, graceDays: Number(form.twoFactorGraceDays) || 0 } })}
           disabled={isPending}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
           style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-accent))' }}

@@ -1,4 +1,5 @@
 import { prisma, WITH_DELETED } from '../db.js';
+import { memberSeesFolder, scopeKey } from './teamScopes.js';
 
 
 export const ORG_HOLDER = 'ORG';
@@ -24,6 +25,13 @@ export async function getFolderAudiences(folderIds) {
     }),
     prisma.teamMember.findMany({ where: { status: 'ACTIVE' }, select: { teamId: true, userId: true } }),
   ]);
+  // Cargo no grupo pode restringir as pastas que o membro vê (e recebe a chave)
+  const [scopes, teams] = await Promise.all([
+    prisma.roleGroupScope.findMany({ select: { roleKey: true, teamId: true, folderIds: true } }),
+    prisma.team.findMany({ select: { id: true, ownerId: true } }),
+  ]);
+  const scopeMap = new Map(scopes.map(sc => [scopeKey(sc.roleKey, sc.teamId), sc]));
+  const ownerOf = new Map(teams.map(t => [t.id, t.ownerId]));
 
   const teamMembers = new Map();
   for (const m of memberships) {
@@ -49,7 +57,10 @@ export async function getFolderAudiences(folderIds) {
     const members = f.teamId ? (teamMembers.get(f.teamId) || new Set()) : new Set();
     for (const u of users) {
       if (u.role === 'ADMINISTRADOR') continue;
-      if (f.visibleToAll || members.has(u.id)) { audience.add(u.id); continue; }
+      if (f.visibleToAll) { audience.add(u.id); continue; }
+      if (members.has(u.id) && memberSeesFolder({ isOwner: ownerOf.get(f.teamId) === u.id, scope: scopeMap.get(scopeKey(u.role, f.teamId)), folderId: f.id })) {
+        audience.add(u.id); continue;
+      }
       const userPerm = fPerms.find(p => p.userId === u.id);
       if (userPerm) { if (userPerm.canView) audience.add(u.id); continue; }
       const rolePerm = fPerms.find(p => p.role === u.role);

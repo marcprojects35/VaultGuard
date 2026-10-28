@@ -6,7 +6,10 @@ import { prisma } from '../db.js';
 import { createAuditLog } from '../services/audit.js';
 import { sendTeamInviteNotification } from '../services/email.js';
 import { pruneFolderKeys } from '../services/keys.js';
-import { requireCap, teamMemberPerms } from '../services/permissions.js';
+import { requireCap, teamMemberPerms, invalidateRoleScopes } from '../services/permissions.js';
+import { normalizePolicy } from '../services/passwordPolicy.js';
+import { getTwoFactorConfig } from '../services/twoFactor.js';
+import { Prisma } from '@prisma/client';
 
 const PERM_FIELDS = ['canEdit', 'canDelete', 'canShare'];
 const DEFAULT_FIELDS = { canEdit: 'memberCanEdit', canDelete: 'memberCanDelete', canShare: 'memberCanShare' };
@@ -247,6 +250,27 @@ router.put('/:id', authenticate,
         ...(req.body.description !== undefined && { description: String(req.body.description || '').slice(0, 500) || null }),
         ...(isAdmin ? pickDefaults(req.body) : {}),
       };
+      // Política das senhas guardadas nas pastas do grupo (só o admin)
+      if (isAdmin && req.body.passwordPolicy !== undefined) {
+        const teamFolders = await prisma.folder.findMany({ where: { teamId: team.id }, select: { id: true } });
+        try {
+          data.passwordPolicy = normalizePolicy(req.body.passwordPolicy, teamFolders.map(f => f.id));
+        } catch (e) {
+          return res.status(e.status || 400).json({ error: e.message });
+        }
+        if (data.passwordPolicy === null) data.passwordPolicy = Prisma.DbNull;
+      }
+      // 2FA obrigatório para os membros do grupo (só o admin)
+      if (isAdmin && typeof req.body.require2FA === 'boolean') {
+        // Sem prazo, quem liga e é membro sem 2FA ficaria trancado para fora na hora
+        if (req.body.require2FA && !team.require2FA && !req.user.totpEnabled) {
+          const isMember = await prisma.teamMember.findFirst({ where: { teamId: team.id, userId: req.user.id, status: 'ACTIVE' } });
+          const { graceDays } = await getTwoFactorConfig();
+          if (isMember && !graceDays) return res.status(400).json({ error: 'Você é membro deste grupo e ainda não usa 2FA. Ative o 2FA no seu perfil antes (ou defina um prazo em Configurações › Segurança).' });
+        }
+        data.require2FA = req.body.require2FA;
+        if (req.body.require2FA && !team.require2FA) data.require2FASince = new Date();
+      }
       if (isAdmin && req.body.ownerId && req.body.ownerId !== team.ownerId) {
         const [owner] = await activeUserIds([req.body.ownerId]);
         if (!owner) return res.status(400).json({ error: 'Dono inválido' });
@@ -311,10 +335,16 @@ router.get('/:id/members', authenticate, async (req, res, next) => {
     const userMap = Object.fromEntries(users.map(u => [u.id, u]));
 
     const team = await prisma.team.findUnique({ where: { id: req.params.id } });
-    res.json(members.map(m => ({
-      ...m, user: userMap[m.userId], isOwner: team?.ownerId === m.userId,
-      effective: team ? teamMemberPerms(team, m) : null,
-    })));
+    const scopes = new Map((await prisma.roleGroupScope.findMany({ where: { teamId: req.params.id } })).map(sc => [sc.roleKey, sc]));
+    res.json(members.map(m => {
+      const scope = scopes.get(userMap[m.userId]?.role) || null;
+      return {
+        ...m, user: userMap[m.userId], isOwner: team?.ownerId === m.userId,
+        // Cargo no grupo (Cargos e permissões › Onde vale), se houver
+        roleScope: scope ? { folderIds: scope.folderIds, canEdit: scope.canEdit, canDelete: scope.canDelete, canShare: scope.canShare } : null,
+        effective: team ? teamMemberPerms(team, m, scope) : null,
+      };
+    }));
   } catch (err) {
     next(err);
   }
@@ -362,6 +392,7 @@ router.delete('/:id', authenticate, async (req, res, next) => {
     }
 
     await prisma.team.delete({ where: { id: team.id } });
+    invalidateRoleScopes();
     await createAuditLog(req.user.id, 'team.delete', team.id, 'Team', { name: team.name }, req.ip);
     res.json({ message: 'Equipe excluída' });
   } catch (err) {

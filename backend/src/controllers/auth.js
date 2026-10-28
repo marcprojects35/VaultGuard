@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { twoFactorRequirement, getTwoFactorConfig } from '../services/twoFactor.js';
 import { getRoleCaps } from '../services/permissions.js';
 import jwt from 'jsonwebtoken';
 import { authenticator } from 'otplib';
@@ -40,7 +41,8 @@ async function logLoginFailure(userId, details, ip, ua) {
 
 // Emite a sessão em cookie httpOnly (o JWT nunca fica acessível ao JavaScript)
 async function startSession(req, res, user) {
-  const { sessionTimeout, require2FA } = await getSecuritySettings();
+  const { sessionTimeout } = await getSecuritySettings();
+  const twoFactor = await twoFactorRequirement(user);
   const token = jwt.sign(
     { userId: user.id, tv: user.tokenVersion ?? 0 },
     process.env.JWT_SECRET,
@@ -48,7 +50,9 @@ async function startSession(req, res, user) {
   );
   setSessionCookie(req, res, token, sessionTimeout * 60 * 1000);
   return {
-    requires2FASetup: require2FA && !user.totpEnabled,
+    // Dentro do prazo não força o setup: a pessoa só vê o aviso com a data
+    requires2FASetup: twoFactor.blocking,
+    twoFactor: { ...twoFactor, enabled: !!user.totpEnabled },
     requiresPasswordChange: await passwordChangeRequired(user),
   };
 }
@@ -348,15 +352,31 @@ export const refresh = async (req, res) => {
 
 export const me = async (req, res) => {
   const encryptionSalt = await ensureUserHasSalt(req.user.id);
-  const { require2FA } = await getSecuritySettings();
+  // Pasta pessoal sempre existe (ex.: conta criada antes ou importada do AD)
+  await ensureUserHasPersonalFolder(req.user.id, req.user.firstName);
+  const twoFactor = await twoFactorRequirement(req.user);
+  const { issuer, instructions } = await getTwoFactorConfig();
   res.json({
     ...buildSafeUser(req.user),
     encryptionSalt,
-    requires2FASetup: require2FA && !req.user.totpEnabled,
+    themeInverted: !!req.user.themeInverted,
+    requires2FASetup: twoFactor.blocking,
+    twoFactor: { ...twoFactor, enabled: !!req.user.totpEnabled, issuer, instructions },
     requiresPasswordChange: await passwordChangeRequired(req.user),
     // O que o cargo permite (a interface esconde o resto; o servidor sempre confere)
     capabilities: await getRoleCaps(req.user.role),
   });
+};
+
+// Preferências da própria pessoa (hoje: cores invertidas do tema)
+export const updatePreferences = async (req, res, next) => {
+  try {
+    if (typeof req.body?.themeInverted !== 'boolean') return res.status(400).json({ error: 'Informe themeInverted (true ou false)' });
+    const user = await prisma.user.update({ where: { id: req.user.id }, data: { themeInverted: req.body.themeInverted }, select: { themeInverted: true } });
+    res.json(user);
+  } catch (err) {
+    next(err);
+  }
 };
 
 export const setup2FA = async (req, res, next) => {
@@ -366,8 +386,9 @@ export const setup2FA = async (req, res, next) => {
       return res.status(400).json({ error: 'O 2FA já está ativo. Desative-o antes de configurar outro dispositivo.' });
     }
     const secret = authenticator.generateSecret();
-    const siteName = (await prisma.systemSettings.findUnique({ where: { id: 'singleton' } }))?.siteName || 'VaultGuard';
-    const otpauth = authenticator.keyuri(req.user.email, siteName, secret);
+    // Nome que aparece no app autenticador (Configurações › Segurança › 2FA)
+    const { issuer } = await getTwoFactorConfig();
+    const otpauth = authenticator.keyuri(req.user.email, issuer, secret);
     const qrCode = await QRCode.toDataURL(otpauth);
     await prisma.user.update({ where: { id: req.user.id }, data: { totpPendingSecret: secret } });
     res.json({ secret, qrCode });
@@ -399,8 +420,8 @@ export const disable2FA = async (req, res, next) => {
     const { token } = req.body;
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (user.totpEnabled) {
-      const { require2FA } = await getSecuritySettings();
-      if (require2FA) return res.status(403).json({ error: 'O 2FA é obrigatório nesta organização e não pode ser desativado.' });
+      const required = await twoFactorRequirement(user);
+      if (required.required) return res.status(403).json({ error: `O 2FA é obrigatório para ${required.sources.join(', ')} e não pode ser desativado.` });
       if (!token) return res.status(400).json({ error: 'Entre novamente para continuar' });
       if (checkTotp(user, token) === null) return res.status(400).json({ error: 'Código 2FA inválido' });
     }

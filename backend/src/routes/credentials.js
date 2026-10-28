@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { prisma } from '../db.js';
 import { trashCredential } from '../services/trash.js';
+import { getFolderPolicy, policyExpiry } from '../services/passwordPolicy.js';
 import { canAccessFolder, canAccessCredential, getAccessibleFolderIds, requireCap, attachCredentialPermissions } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
 import { notifyAdminAlert, notifyCredentialView } from '../services/notifications.js';
@@ -262,6 +263,9 @@ router.post('/', authenticate,
       const { folderId, customFields } = req.body;
       const canEdit = await canAccessFolder(req.user.id, req.user.role, folderId, 'canEdit');
       if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para criar ou editar senhas nesta pasta' });
+      // Pasta com política do grupo: a senha vence no prazo definido
+      const policy = await getFolderPolicy(folderId);
+      const expiresAt = policyExpiry(policy, req.body.expiresAt);
 
       const cred = await prisma.credential.create({
         data: {
@@ -275,7 +279,7 @@ router.post('/', authenticate,
           tags: req.body.tags || [],
           kind: kindOf(req.body.kind),
           strength: req.body.strength,
-          expiresAt: req.body.expiresAt ? new Date(req.body.expiresAt) : null,
+          expiresAt,
           ...(customFields?.length > 0 && {
             customFields: {
               create: customFields.map((f, i) => ({
@@ -340,6 +344,22 @@ router.put('/:id', authenticate,
         if (history.length > 10) {
           const toDelete = history.slice(10).map(h => h.id);
           await prisma.credentialHistory.deleteMany({ where: { id: { in: toDelete } } });
+        }
+      }
+
+      // Pasta com validade na política do grupo
+      const passwordChanged = !migrating && req.body.encryptedPass && req.body.encryptedPass !== cred.encryptedPass;
+      const policy = await getFolderPolicy(cred.folderId);
+      if (policy?.expireDays) {
+        const sameAsStored = (d) => d && cred.expiresAt && new Date(d).toISOString().slice(0, 10) === cred.expiresAt.toISOString().slice(0, 10);
+        if (passwordChanged) {
+          // Senha nova: o prazo conta de novo; só vale uma data mais cedo escolhida agora
+          const asked = sameAsStored(req.body.expiresAt) ? null : req.body.expiresAt;
+          req.body.expiresAt = policyExpiry(policy, asked).toISOString();
+        } else if (req.body.expiresAt !== undefined) {
+          // Sem trocar a senha não dá para tirar nem adiar o vencimento imposto
+          const asked = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+          if (!asked || (cred.expiresAt && asked > cred.expiresAt)) req.body.expiresAt = cred.expiresAt ? cred.expiresAt.toISOString() : policyExpiry(policy, null).toISOString();
         }
       }
 
@@ -560,6 +580,7 @@ router.post('/import', authenticate, requireCap('canImport', 'Seu cargo não pod
 
     const created = [];
     const errors = [];
+    const policy = await getFolderPolicy(folderId);
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -582,6 +603,7 @@ router.post('/import', authenticate, requireCap('canImport', 'Seu cargo não pod
               : (row.tags ? String(row.tags).split(';').map(t => t.trim()).filter(Boolean) : []),
             strength: 0,
             kind: kindOf(row.kind),
+            expiresAt: policyExpiry(policy, row.expiresAt),
             ...(row.customFields?.length > 0 && {
               customFields: {
                 create: row.customFields.map((f, i) => ({

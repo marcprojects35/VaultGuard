@@ -37,6 +37,7 @@ model Role {
 
   users             User[]
   folderPermissions FolderPermission[]
+  groupScopes       RoleGroupScope[]
 }
 
 model User {
@@ -62,6 +63,11 @@ model User {
   passwordHistory    String[]  @default([])
   // Incrementado para invalidar todos os JWTs emitidos (logout, troca de senha, etc.)
   tokenVersion    Int        @default(0)
+  // 2FA exigido só para esta pessoa (além do global e dos grupos) e desde quando
+  require2FA      Boolean    @default(false)
+  require2FASince DateTime?
+  // Tema escolhido pela pessoa: cores do admin ou a inversão delas
+  themeInverted   Boolean    @default(false)
   failedLoginAttempts Int    @default(0)
   lockedUntil     DateTime?
   apiToken        String?    @unique
@@ -102,6 +108,16 @@ model Team {
   memberCanEdit   Boolean @default(true)
   memberCanDelete Boolean @default(false)
   memberCanShare  Boolean @default(false)
+  // 2FA obrigatório para os membros
+  require2FA      Boolean   @default(false)
+  require2FASince DateTime?
+  // Política das senhas guardadas nas pastas do grupo:
+  // { enabled, minLength, requireUppercase, requireNumbers, requireSymbols, expireDays, folderIds: [] = todas }
+  passwordPolicy  Json?
+  // Grupo importado do Active Directory (sincroniza os membros)
+  adGroupDn       String?
+  adSyncedAt      DateTime?
+  roleScopes      RoleGroupScope[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -270,7 +286,11 @@ model SystemSettings {
   loginMessage    String?
   // Retenção (dias; 0 = sem limite): lixeira e registros de auditoria
   trashRetentionDays Int @default(30)
-  auditRetentionDays Int @default(0)
+  auditRetentionDays Int @default(90)
+  // 2FA: { issuer, instructions, graceDays } — nome no app autenticador, texto
+  // mostrado na ativação e dias de prazo antes de bloquear
+  twoFactorConfig Json?
+  require2FASince DateTime?
   // Fundo das telas internas: imagem e quanto a cor do tema a cobre (0-95%)
   appBackgroundUrl String?
   appOverlay      Int     @default(80)
@@ -420,4 +440,23 @@ model UserDevice {
 
   @@unique([userId, fingerprint])
   @@index([userId])
+}
+
+// O que um cargo faz dentro de um grupo (ex.: Diretor no grupo Infra): quais
+// pastas do grupo vê (vazio = todas) e o que pode fazer nelas. Vale para os
+// membros do grupo que têm esse cargo; o ajuste individual do membro prevalece.
+model RoleGroupScope {
+  id        String   @id @default(uuid())
+  roleKey   String
+  role      Role     @relation(fields: [roleKey], references: [key], onDelete: Cascade)
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  folderIds String[] @default([])
+  canEdit   Boolean  @default(true)
+  canDelete Boolean  @default(false)
+  canShare  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@unique([roleKey, teamId])
+  @@index([teamId])
 }

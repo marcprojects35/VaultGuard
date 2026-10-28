@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { getRoleCaps } from '../services/permissions.js';
+import { twoFactorRequirement } from '../services/twoFactor.js';
 import { prisma } from '../db.js';
 import { getSecuritySettings, passwordChangeRequired, isIpAllowed } from '../services/securitySettings.js';
 import { hashToken, readCookie, SESSION_COOKIE } from '../utils/tokens.js';
@@ -77,7 +78,7 @@ export const authenticate = async (req, res, next) => {
         return res.status(403).json({ error: `O token de API não tem a permissão "${needed}"` });
       }
 
-      if (security.require2FA && !apiToken.user.totpEnabled) {
+      if (!apiToken.user.totpEnabled && (await twoFactorRequirement(apiToken.user)).blocking) {
         return res.status(403).json({ error: '2FA obrigatório: ative o 2FA no perfil', code: '2FA_REQUIRED' });
       }
       if (await passwordChangeRequired(apiToken.user)) return res.status(403).json(PASSWORD_CHANGE_MSG);
@@ -113,7 +114,7 @@ export const authenticate = async (req, res, next) => {
     }
 
     const pendingAllowed = PENDING_ALLOWED.some(r => r.test(path));
-    if (security.require2FA && !user.totpEnabled && !pendingAllowed) {
+    if (!user.totpEnabled && !pendingAllowed && (await twoFactorRequirement(user)).blocking) {
       return res.status(403).json({ error: '2FA obrigatório: ative o 2FA no perfil', code: '2FA_REQUIRED' });
     }
     if (!pendingAllowed && await passwordChangeRequired(user)) {

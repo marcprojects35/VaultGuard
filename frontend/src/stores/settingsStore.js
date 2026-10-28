@@ -51,6 +51,49 @@ function luminance(rgb) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
+// Contraste WCAG entre duas cores (1 a 21)
+function contrast(a, b) {
+  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (l1 + 0.05) / (l2 + 0.05);
+}
+const BLACK = [17, 17, 17];
+const WHITE = [255, 255, 255];
+const bestText = (bg) => (contrast(bg, BLACK) >= contrast(bg, WHITE) ? BLACK : WHITE);
+
+/**
+ * Cores invertidas (escolha de cada pessoa): o fundo passa a ser a cor da marca
+ * e a cor da marca passa a ser o fundo. Preto com dourado vira dourado com
+ * preto; laranja com branco vira branco com laranja. Textos e bordas são
+ * recalculados para continuar legíveis.
+ */
+function invertedPalette(bgHex, primaryHex) {
+  const bg = parseHex(primaryHex);
+  let primary = parseHex(bgHex);
+  const text = bestText(bg);
+  // Cor da marca nova sem contraste com o fundo novo: usa a cor do texto
+  if (contrast(primary, bg) < 3) primary = text;
+  const toward = text === BLACK ? WHITE : BLACK; // cartões se destacam do fundo
+  return {
+    '--color-bg': toHex(bg),
+    '--color-bg-secondary': toHex(mix(bg, text, 0.06)),
+    '--color-surface': toHex(mix(bg, toward, 0.16)),
+    '--color-surface-2': toHex(mix(bg, toward, 0.09)),
+    '--color-surface-hover': toHex(mix(bg, text, 0.1)),
+    '--color-border': toHex(mix(bg, text, 0.22)),
+    '--color-text': toHex(text),
+    '--color-text-muted': toHex(mix(text, bg, 0.28)),
+    '--color-muted': toHex(mix(text, bg, 0.45)),
+    '--color-primary': toHex(primary),
+    '--color-accent': toHex(mix(primary, bg, 0.22)),
+    '--color-primary-light': toHex(mix(primary, bg, 0.15)),
+    '--color-primary-hover': toHex(mix(primary, bg, 0.3)),
+    '--color-primary-rgb': primary.join(', '),
+    '--color-accent-rgb': mix(primary, bg, 0.22).map(Math.round).join(', '),
+    '--color-on-primary': toHex(bestText(primary)),
+    theme: text === BLACK ? 'light' : 'dark',
+  };
+}
+
 export function normalizeHex(hex, fallback) {
   return toHex(parseHex(hex, fallback));
 }
@@ -72,6 +115,14 @@ export const useSettingsStore = create((set, get) => ({
     defaultLanguage: 'pt-BR',
   },
   loaded: false,
+  // Cores invertidas: escolha da pessoa (guardada na conta; o navegador lembra para a tela de login)
+  inverted: (() => { try { return localStorage.getItem('vg-theme-inverted') === 'true'; } catch { return false; } })(),
+
+  setInverted: (value) => {
+    try { localStorage.setItem('vg-theme-inverted', value ? 'true' : 'false'); } catch { /* sem armazenamento */ }
+    set({ inverted: !!value });
+    get().applyTheme(get().settings);
+  },
 
   loadSettings: async () => {
     try {
@@ -147,6 +198,14 @@ export const useSettingsStore = create((set, get) => ({
       // Regras do tema claro/escuro (index.css) seguem o fundo real
       root.setAttribute('data-theme', lightBg ? 'light' : 'dark');
     }
+
+    // Cores invertidas (preferência da pessoa): parte da paleta já calculada
+    if (get().inverted) {
+      const { theme, ...inv } = invertedPalette(root.style.getPropertyValue('--color-bg'), root.style.getPropertyValue('--color-primary'));
+      Object.entries(inv).forEach(([k, v]) => root.style.setProperty(k, v));
+      root.setAttribute('data-theme', theme);
+    }
+    root.setAttribute('data-inverted', get().inverted ? 'true' : 'false');
 
     // Canais do fundo final, para camadas translúcidas sobre a imagem de fundo
     root.style.setProperty('--app-bg-overlay', String(Math.min(95, Math.max(0, Number(settings.appOverlay ?? 80))) / 100));

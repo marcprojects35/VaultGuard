@@ -177,6 +177,21 @@ function ldapStr(value) {
   return String(value);
 }
 
+// objectGUID do AD em hex. Diretórios sem esse atributo (OpenLDAP, FreeIPA)
+// devolvem lista vazia: vira null, senão todos teriam o mesmo GUID ""
+function guidOf(entry) {
+  const raw = Array.isArray(entry?.objectGUID) ? entry.objectGUID[0] : entry?.objectGUID;
+  if (!raw || !raw.length) return null;
+  const hex = Buffer.from(raw).toString('hex');
+  return hex || null;
+}
+
+// Atributo multivalorado como lista de strings
+function ldapList(value) {
+  if (value === null || value === undefined || value === '') return [];
+  return (Array.isArray(value) ? value : [value]).map(String).filter(Boolean);
+}
+
 // ── Normalizar Bind DN ────────────────────────────────────────────────────────
 // AD não aceita bind simples com nome de usuário puro (ex: "svc-vault") — exige DN
 // completo (CN=...), UPN (usuario@dominio) ou down-level (DOMINIO\usuario).
@@ -345,7 +360,7 @@ export async function authenticateWithAD(login, password, ip, ua) {
     const firstName = ldapStr(entry.givenName) || ldapStr(entry.cn) || login;
     const lastName = ldapStr(entry.sn);
     const ldapDn = entry.dn.toString();
-    const ldapGuid = entry.objectGUID ? Buffer.from(entry.objectGUID).toString('hex') : null;
+    const ldapGuid = guidOf(entry);
 
     // 6. Resolver role pelos grupos
     const groups = extractGroups(entry);
@@ -462,7 +477,7 @@ async function syncAllUsersFromADOnServer(cfg) {
         const firstName = ldapStr(entry.givenName) || username;
         const lastName = ldapStr(entry.sn);
         const ldapDn = entry.dn.toString();
-        const ldapGuid = entry.objectGUID ? Buffer.from(entry.objectGUID).toString('hex') : null;
+        const ldapGuid = guidOf(entry);
         const groups = extractGroups(entry);
         const role = resolveRole(groups, cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR', priorityMap);
 
@@ -607,7 +622,7 @@ async function fetchADGroupsOnServer(cfg) {
     const filter = cfg.groupFilter || '(objectClass=group)';
     const { searchEntries } = await client.search(cfg.baseDn, {
       scope: 'sub', filter,
-      attributes: ['dn', 'cn', 'description'],
+      attributes: ['dn', 'cn', 'description', 'member'],
       sizeLimit: 500,
     });
     await client.unbind();
@@ -615,6 +630,7 @@ async function fetchADGroupsOnServer(cfg) {
       dn: e.dn?.toString(),
       cn: ldapStr(e.cn),
       description: ldapStr(e.description),
+      memberCount: ldapList(e.member).length,
     }));
   } catch (err) {
     logger.error('LDAP fetchGroups error', { error: err.message });
@@ -634,4 +650,170 @@ export async function fetchUsersForPreview(cfg) {
 
 export async function fetchADGroups(cfg) {
   return withLdapServer(normalizeLdapConfig(cfg), (serverCfg) => fetchADGroupsOnServer(serverCfg));
+}
+
+// ── Importar grupos do AD como grupos do VaultGuard ──────────────────────────
+// Cada grupo do AD vira um grupo com o mesmo nome, com as pessoas de dentro
+// (criadas/vinculadas como usuários do AD). Na sincronização, só os membros que
+// vieram do AD (invitedById = AD_MEMBER) entram e saem; quem o admin colocou à
+// mão continua. Grupos dentro de grupos não são expandidos.
+export const AD_MEMBER = 'ad-sync';
+const USER_ATTRS = ['dn', 'sAMAccountName', 'userPrincipalName', 'uid', 'mail', 'givenName', 'sn', 'cn',
+  'userAccountControl', 'memberOf', 'objectGUID', 'objectClass'];
+
+// Membros do grupo. O AD entrega grupos grandes em partes (member;range=0-1499):
+// busca as partes até o fim (até ~100 mil membros)
+async function getGroupMembers(client, groupDn) {
+  const { searchEntries: [group] } = await client.search(groupDn, { scope: 'base', filter: '(objectClass=*)', attributes: ['cn', 'member'] });
+  if (!group) throw new Error('Grupo não encontrado no AD');
+  let members = ldapList(group.member);
+  let rangeKey = Object.keys(group).find(k => /^member;range=/i.test(k));
+  for (let i = 0; rangeKey && i < 70; i++) {
+    members = members.concat(ldapList(group[rangeKey]));
+    const end = rangeKey.split('-').pop();
+    if (end === '*') break;
+    const next = Number(end) + 1;
+    const { searchEntries: [part] } = await client.search(groupDn, { scope: 'base', filter: '(objectClass=*)', attributes: [`member;range=${next}-*`] });
+    rangeKey = part && Object.keys(part).find(k => /^member;range=/i.test(k));
+    if (!rangeKey) break;
+    if (rangeKey.endsWith('-*')) { members = members.concat(ldapList(part[rangeKey])); break; }
+    group[rangeKey] = part[rangeKey];
+  }
+  return { cn: ldapStr(group.cn) || groupDn, members };
+}
+
+async function importADGroupsOnServer(cfg, dns, adminUserId) {
+  const client = createClient(cfg);
+  const results = [];
+  let rolesChanged = false;
+  try {
+    await maybeStartTLS(client, cfg);
+    await client.bind(normalizeBindDn(cfg.bindDn, cfg.domain), cfg.bindPassword);
+    const priorityMap = await getRolePriorityMap();
+
+    for (const groupDn of dns) {
+      const r = { dn: groupDn, name: null, members: 0, added: 0, removed: 0, created: false, skipped: [], disabled: 0 };
+      try {
+        const group = await getGroupMembers(client, groupDn);
+        r.name = group.cn;
+        const memberDns = new Set(group.members.map(d => d.toLowerCase()));
+
+        const activeIds = [];
+        // Quem não deu para ler agora (erro, sem e-mail, conflito) não sai do grupo
+        const keepIds = new Set();
+        for (const memberDn of group.members) {
+          let entry;
+          try {
+            ({ searchEntries: [entry] } = await client.search(memberDn, { scope: 'base', filter: '(objectClass=*)', attributes: USER_ATTRS, explicitBufferAttributes: ['objectGUID'] }));
+          } catch {
+            r.skipped.push(memberDn);
+            const known = await prisma.user.findFirst({ where: { ldapDn: { equals: memberDn, mode: 'insensitive' } }, select: { id: true } });
+            if (known) keepIds.add(known.id);
+            continue;
+          }
+          const classes = ldapList(entry?.objectClass).map(c => c.toLowerCase());
+          if (!entry || classes.includes('group') || classes.includes('groupofnames')) { r.skipped.push(memberDn); continue; }
+          const email = (ldapStr(entry.mail) || ldapStr(entry.userPrincipalName)).toLowerCase();
+          const username = (ldapStr(entry.sAMAccountName) || ldapStr(entry.uid)).toLowerCase();
+          if (!email || !username) { r.skipped.push(memberDn); continue; }
+          const ldapDn = entry.dn.toString();
+          const ldapGuid = guidOf(entry);
+          const active = isAdUserActive(entry);
+          const role = resolveRole(extractGroups(entry), cfg.roleGroupMap, cfg.defaultRole || 'AUXILIAR', priorityMap);
+          const data = {
+            email, username, ldapDn, ldapGuid, authSource: 'ldap',
+            firstName: ldapStr(entry.givenName) || ldapStr(entry.cn) || username,
+            lastName: ldapStr(entry.sn),
+          };
+          let user;
+          try {
+            const existing = await findLdapMatch({ ldapDn, ldapGuid, email });
+            if (existing) {
+              const newRole = cfg.syncGroups !== false ? role : existing.role;
+              user = await prisma.user.update({
+                where: { id: existing.id },
+                data: {
+                  ...data, role: newRole,
+                  // Desativado no AD desativa aqui (e derruba as sessões); reativar é decisão do admin
+                  ...(!active && existing.status === 'ACTIVE' ? { status: 'INACTIVE', tokenVersion: { increment: 1 } } : {}),
+                },
+              });
+              if (existing.role !== newRole) {
+                rolesChanged = true;
+                if (newRole !== 'ADMINISTRADOR') await prisma.orgKeyGrant.deleteMany({ where: { userId: user.id } });
+              }
+            } else {
+              user = await prisma.user.create({ data: { ...data, role, status: active ? 'ACTIVE' : 'INACTIVE' } });
+            }
+          } catch (e) {
+            r.skipped.push(`${email}: ${e.message}`);
+            const known = await prisma.user.findFirst({ where: { email }, select: { id: true } });
+            if (known) keepIds.add(known.id);
+            continue;
+          }
+          if (user.status !== 'ACTIVE') { r.disabled++; continue; }
+          activeIds.push(user.id);
+        }
+        r.members = activeIds.length;
+
+        let team = await prisma.team.findFirst({ where: { adGroupDn: groupDn } });
+        if (!team) {
+          team = await prisma.team.create({
+            data: {
+              name: r.name, description: 'Importado do Active Directory', ownerId: adminUserId, adGroupDn: groupDn,
+              members: { create: { userId: adminUserId, status: 'ACTIVE', invitedById: adminUserId, respondedAt: new Date() } },
+            },
+          });
+          r.created = true;
+        }
+        const current = await prisma.teamMember.findMany({ where: { teamId: team.id }, include: { user: { select: { ldapDn: true, status: true } } } });
+        const now = new Date();
+        for (const userId of activeIds) {
+          const m = current.find(c => c.userId === userId);
+          if (!m) {
+            await prisma.teamMember.create({ data: { teamId: team.id, userId, status: 'ACTIVE', invitedById: AD_MEMBER, respondedAt: now } });
+            r.added++;
+          } else if (m.status !== 'ACTIVE') {
+            await prisma.teamMember.update({ where: { id: m.id }, data: { status: 'ACTIVE', respondedAt: now } });
+            r.added++;
+          }
+        }
+        // Sai só quem veio do AD e não está mais na lista de membros do grupo no AD
+        // (ou foi desativado lá). Lista vazia com membros do AD aqui = leitura suspeita: não remove ninguém
+        const adMembersHere = current.filter(c => c.invitedById === AD_MEMBER && c.userId !== team.ownerId);
+        if (!group.members.length && adMembersHere.length) {
+          r.skipped.push('O AD devolveu o grupo sem membros: ninguém foi removido. Confira o grupo e sincronize de novo.');
+        } else {
+          const gone = adMembersHere.filter(c => !keepIds.has(c.userId) && !activeIds.includes(c.userId)
+            && (!c.user?.ldapDn || !memberDns.has(c.user.ldapDn.toLowerCase()) || c.user.status !== 'ACTIVE'));
+          if (gone.length) {
+            await prisma.teamMember.deleteMany({ where: { id: { in: gone.map(g => g.id) } } });
+            r.removed = gone.length;
+          }
+        }
+        // O nome só vem do AD na criação: se o admin renomeou, fica o nome dele
+        await prisma.team.update({ where: { id: team.id }, data: { adSyncedAt: now } });
+        r.teamId = team.id;
+        r.name = team.name;
+      } catch (e) {
+        r.error = explainLdapError(e);
+      }
+      results.push(r);
+    }
+  } finally {
+    try { await client.unbind(); } catch { /* ignore */ }
+  }
+  if (rolesChanged || results.some(r => r.removed || r.disabled)) await pruneFolderKeys();
+  return results;
+}
+
+export async function importADGroups(cfg, dns, adminUserId) {
+  return withLdapServer(normalizeLdapConfig(cfg), (serverCfg) => importADGroupsOnServer(serverCfg, dns, adminUserId));
+}
+
+/** Sincroniza os grupos já importados (botão e sincronização geral do AD) */
+export async function resyncADGroups(cfg, adminUserId) {
+  const teams = await prisma.team.findMany({ where: { adGroupDn: { not: null } }, select: { adGroupDn: true, ownerId: true } });
+  if (!teams.length) return [];
+  return importADGroups(cfg, teams.map(t => t.adGroupDn), adminUserId || teams[0].ownerId);
 }

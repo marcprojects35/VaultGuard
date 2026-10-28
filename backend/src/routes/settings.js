@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { twoFactorRequirement, invalidateTwoFactorConfig } from '../services/twoFactor.js';
 import multer from 'multer';
 import sharp from 'sharp';
 import path from 'path';
@@ -95,6 +96,7 @@ router.put('/', authenticate, requireAdmin, async (req, res, next) => {
     });
 
     invalidateSecuritySettings();
+    invalidateTwoFactorConfig();
     const safe = publicSettings(settings);
     res.json(safe);
   } catch (err) {
@@ -128,6 +130,7 @@ router.put('/general', authenticate, requireAdmin, async (req, res, next) => {
     });
 
     invalidateSecuritySettings();
+    invalidateTwoFactorConfig();
     const safe = publicSettings(settings);
     res.json(safe);
   } catch (err) {
@@ -139,7 +142,7 @@ router.put('/general', authenticate, requireAdmin, async (req, res, next) => {
 router.get('/security', authenticate, requireAdmin, async (req, res, next) => {
   try {
     const s = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
-    res.json({ require2FA: s?.require2FA ?? false, maxLoginAttempts: s?.maxLoginAttempts ?? 5, passwordPolicy: s?.passwordPolicy || {} });
+    res.json({ require2FA: s?.require2FA ?? false, twoFactorConfig: { issuer: '', instructions: '', graceDays: 0, ...(s?.twoFactorConfig || {}) }, maxLoginAttempts: s?.maxLoginAttempts ?? 5, passwordPolicy: s?.passwordPolicy || {} });
   } catch (err) {
     next(err);
   }
@@ -193,6 +196,22 @@ router.put('/security', authenticate, requireAdmin, async (req, res, next) => {
         return res.status(400).json({ error: 'Ative o 2FA na sua conta antes de exigi-lo de todos.' });
       }
       data.require2FA = !!req.body.require2FA;
+      // O prazo para ativar conta a partir de quando passou a ser exigido
+      const before = await prisma.systemSettings.findUnique({ where: { id: 'singleton' }, select: { require2FA: true } });
+      if (data.require2FA && !before?.require2FA) data.require2FASince = new Date();
+    }
+    if (req.body.twoFactorConfig !== undefined) {
+      const c = req.body.twoFactorConfig || {};
+      const issuer = String(c.issuer ?? '').trim();
+      // ":" separa conta e emissor no app autenticador
+      if (issuer.length > 40 || /[:]/.test(issuer)) return res.status(400).json({ error: 'Nome no app autenticador: até 40 caracteres, sem ":"' });
+      const graceDays = Number(c.graceDays ?? 0);
+      if (!Number.isInteger(graceDays) || graceDays < 0 || graceDays > 90) return res.status(400).json({ error: 'Prazo para ativar o 2FA: de 0 a 90 dias' });
+      data.twoFactorConfig = { issuer, instructions: String(c.instructions ?? '').trim().slice(0, 1000), graceDays };
+      // Tirar o prazo bloquearia na hora quem já é obrigado e não ativou — inclusive você
+      if (graceDays === 0 && !req.user.totpEnabled && (await twoFactorRequirement(req.user)).required) {
+        return res.status(400).json({ error: 'Sem prazo, seu próprio acesso seria bloqueado: o 2FA já é obrigatório para você. Ative o 2FA no seu perfil antes.' });
+      }
     }
 
     const settings = await prisma.systemSettings.upsert({
@@ -202,6 +221,7 @@ router.put('/security', authenticate, requireAdmin, async (req, res, next) => {
     });
 
     invalidateSecuritySettings();
+    invalidateTwoFactorConfig();
     const safe = publicSettings(settings);
     res.json(safe);
   } catch (err) {

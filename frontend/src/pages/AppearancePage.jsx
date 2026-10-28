@@ -236,7 +236,7 @@ function AppearanceForm() {
           {[['dark', 'Escuro', Moon], ['light', 'Claro', Sun]].map(([mode, label, Icon]) => {
             const active = form.themeMode === mode;
             return (
-              <button key={mode} type="button" onClick={() => set('themeMode', mode)} data-testid={`theme-${mode}`}
+              <button key={mode} type="button" onClick={() => setForm(f => ({ ...f, themeMode: mode, bgColor: '', surfaceColor: '' }))} data-testid={`theme-${mode}`}
                 className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-all"
                 style={{
                   borderColor: active ? 'var(--color-primary)' : 'var(--color-border)',
@@ -248,6 +248,10 @@ function AppearanceForm() {
             );
           })}
         </div>
+        <p className="text-xs mt-3" style={{ color: 'var(--color-muted)' }}>
+          Escuro e Claro trocam o fundo do sistema (e tiram o fundo personalizado). Cada pessoa ainda pode usar “Inverter cores” no menu:
+          o fundo vira a cor principal e a cor principal vira o fundo — preto com dourado vira dourado com preto.
+        </p>
       </div>
 
       {/* Identidade */}

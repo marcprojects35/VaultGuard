@@ -74,7 +74,7 @@ router.get('/', authenticate, requireAdmin, async (req, res, next) => {
       },
       select: {
         id: true, email: true, username: true, firstName: true, lastName: true,
-        role: true, status: true, totpEnabled: true, lastLogin: true, avatar: true,
+        role: true, status: true, totpEnabled: true, require2FA: true, lastLogin: true, avatar: true,
         createdAt: true, updatedAt: true
       },
       orderBy: [{ role: 'asc' }, { firstName: 'asc' }]
@@ -186,6 +186,15 @@ router.put('/:id', authenticate, async (req, res, next) => {
         const current = await prisma.user.findUnique({ where: { id: req.params.id }, select: { status: true } });
         if (current && current.status !== req.body.status) updateData.tokenVersion = { increment: 1 };
       }
+      // 2FA exigido só desta pessoa
+      if (typeof req.body.require2FA === 'boolean') {
+        if (req.body.require2FA && isSelf && !req.user.totpEnabled) {
+          return res.status(400).json({ error: 'Ative o 2FA no seu perfil antes de exigi-lo da sua própria conta.' });
+        }
+        const current = await prisma.user.findUnique({ where: { id: req.params.id }, select: { require2FA: true } });
+        updateData.require2FA = req.body.require2FA;
+        if (req.body.require2FA && !current?.require2FA) updateData.require2FASince = new Date();
+      }
     }
 
     const user = await prisma.user.update({
@@ -193,7 +202,7 @@ router.put('/:id', authenticate, async (req, res, next) => {
       data: updateData,
       select: {
         id: true, email: true, username: true, firstName: true, lastName: true,
-        role: true, status: true, avatar: true, updatedAt: true
+        role: true, status: true, avatar: true, updatedAt: true, require2FA: true, totpEnabled: true,
       }
     });
 

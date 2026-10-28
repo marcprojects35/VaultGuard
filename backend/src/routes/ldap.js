@@ -15,6 +15,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import {
   testConnection, fetchADGroups, syncAllUsersFromAD, fetchUsersForPreview, linkUsersFromAD,
   normalizeLdapConfig, serverConfig, getLdapStatus, checkAllServers, setInUse, SERVER_FIELDS,
+  importADGroups, resyncADGroups,
 } from '../services/ldap.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
@@ -190,7 +191,9 @@ router.post('/groups', authenticate, requireAdmin, async (req, res, next) => {
     }
 
     const groups = await fetchADGroups(cfg);
-    res.json(groups);
+    // Marca os que já viraram grupo no VaultGuard
+    const imported = new Map((await prisma.team.findMany({ where: { adGroupDn: { not: null } }, select: { id: true, adGroupDn: true } })).map(t => [t.adGroupDn, t.id]));
+    res.json(groups.map(g => ({ ...g, importedTeamId: imported.get(g.dn) || null })));
   } catch (err) {
     logger.error('LDAP fetch groups error', { error: err.message });
     if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.message?.includes('connect')) {
@@ -198,6 +201,34 @@ router.post('/groups', authenticate, requireAdmin, async (req, res, next) => {
     }
     next(err);
   }
+});
+
+// ── POST /api/ldap/groups/import — { dns: [...] } cria/atualiza grupos com os membros
+router.post('/groups/import', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const dns = Array.isArray(req.body?.dns) ? [...new Set(req.body.dns.map(String))].slice(0, 200) : [];
+    if (!dns.length) return res.status(400).json({ error: 'Selecione ao menos um grupo do AD' });
+    const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+    if (!settings?.ldapEnabled || !settings?.ldapConfig) return res.status(400).json({ error: 'Ative e salve o Active Directory antes de importar grupos' });
+    const results = await importADGroups(settings.ldapConfig, dns, req.user.id);
+    await createAuditLog(req.user.id, 'ldap.groups_imported', null, 'Team',
+      { groups: results.map(r => ({ name: r.name, members: r.members, added: r.added, removed: r.removed, error: r.error })) }, req.ip);
+    res.json({ results });
+  } catch (err) {
+    if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT') return res.status(503).json({ error: 'Não foi possível conectar ao Active Directory' });
+    next(err);
+  }
+});
+
+// ── POST /api/ldap/groups/resync — atualiza os membros dos grupos já importados
+router.post('/groups/resync', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    const settings = await prisma.systemSettings.findUnique({ where: { id: 'singleton' } });
+    if (!settings?.ldapEnabled || !settings?.ldapConfig) return res.status(400).json({ error: 'Active Directory desativado' });
+    const results = await resyncADGroups(settings.ldapConfig, req.user.id);
+    await createAuditLog(req.user.id, 'ldap.groups_imported', null, 'Team', { resync: true, groups: results.length }, req.ip);
+    res.json({ results });
+  } catch (err) { next(err); }
 });
 
 // ── POST /api/ldap/sync ───────────────────────────────────────────────────────
@@ -220,6 +251,9 @@ router.post('/sync', authenticate, requireAdmin, async (req, res, next) => {
       .then(async result => {
         // Cargos e status podem ter mudado: revisa quem ainda deve ter cada chave
         await pruneFolderKeys().catch(err => logger.error('pruneFolderKeys after LDAP sync failed', { error: err.message }));
+        // Grupos importados do AD acompanham a sincronização geral
+        const groupResults = await resyncADGroups(settings.ldapConfig, req.user.id).catch(err => { logger.error('AD groups resync failed', { error: err.message }); return []; });
+        if (groupResults.length) result.groups = groupResults.length;
         syncState = { running: false, lastRun: new Date().toISOString(), lastResult: result };
         createAuditLog(req.user.id, 'ldap.sync_completed', 'User', null, result, req.ip);
         logger.info('LDAP sync completed', result);

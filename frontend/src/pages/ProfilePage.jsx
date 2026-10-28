@@ -404,7 +404,19 @@ export default function ProfilePage() {
               </div>
             ) : (
               <div>
-                <p className="text-sm text-[var(--color-text-muted)] mb-4">Proteja sua conta com um app autenticador (Google Authenticator, Authy, etc.)</p>
+                <p className="text-sm text-[var(--color-text-muted)] mb-2">Proteja sua conta com um app autenticador (Google Authenticator, Microsoft Authenticator, Authy etc.)</p>
+                {user?.twoFactor?.required && (
+                  <p className="text-xs mb-2 px-3 py-2 rounded-lg" data-testid="2fa-required-note" style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', color: 'var(--color-text)' }}>
+                    Obrigatório para {user.twoFactor.sources?.join(', ')}
+                    {user.twoFactor.deadline && !user.twoFactor.blocking ? ` — ative até ${new Date(user.twoFactor.deadline).toLocaleDateString('pt-BR')}.` : '.'}
+                  </p>
+                )}
+                {user?.twoFactor?.instructions && (
+                  <p className="text-sm mb-3 whitespace-pre-line" data-testid="2fa-instructions" style={{ color: 'var(--color-text)' }}>{user.twoFactor.instructions}</p>
+                )}
+                {user?.twoFactor?.issuer && (
+                  <p className="text-xs text-[var(--color-muted)] mb-4">No app, a conta vai aparecer como <b>{user.twoFactor.issuer}</b>.</p>
+                )}
                 {twoFaStep === 'setup' && twoFaData ? (
                   <div className="space-y-4">
                     <div className="flex gap-4 items-start">

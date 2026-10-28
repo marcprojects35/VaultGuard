@@ -20,6 +20,7 @@ function UserModal({ user: editUser, roles, onClose }) {
     password: '',
     role: editUser?.role || roles[roles.length - 1]?.key || 'AUXILIAR',
     status: editUser?.status || 'ACTIVE',
+    require2FA: !!editUser?.require2FA,
   });
 
   const mutation = useMutation({
@@ -98,6 +99,18 @@ function UserModal({ user: editUser, roles, onClose }) {
               </select>
             </div>
           </div>
+          {isEdit && (
+            <label className="flex items-start gap-3 mt-4 p-3 rounded-xl cursor-pointer" style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+              <input type="checkbox" checked={form.require2FA} data-testid="user-require-2fa"
+                onChange={e => setForm(f => ({ ...f, require2FA: e.target.checked }))} className="mt-0.5 w-4 h-4" />
+              <span>
+                <span className="text-sm block" style={{ color: 'var(--color-text)' }}>Exigir 2FA desta pessoa</span>
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                  {editUser.totpEnabled ? 'Ela já usa 2FA; marcado, não poderá desligar.' : 'Ela terá de ativar o app autenticador (no prazo de Configurações › Segurança).'}
+                </span>
+              </span>
+            </label>
+          )}
         </div>
 
         <div className="flex gap-3 mt-5">

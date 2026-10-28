@@ -1,7 +1,22 @@
 import { prisma } from '../db.js';
+import { memberSeesFolder } from './teamScopes.js';
 
 
 const NONE = { canView: false, canEdit: false, canDelete: false, canShare: false };
+
+// Regras de cargo no grupo (poucas linhas, lidas a cada pasta): cache curto,
+// limpo quando o admin altera (roles.js) ou um grupo é excluído
+let scopeCache = null;
+let scopeAt = 0;
+export function invalidateRoleScopes() { scopeCache = null; }
+async function getRoleScope(roleKey, teamId) {
+  if (!scopeCache || Date.now() - scopeAt > 30000) {
+    const all = await prisma.roleGroupScope.findMany();
+    scopeCache = new Map(all.map(sc => [`${sc.roleKey}:${sc.teamId}`, sc]));
+    scopeAt = Date.now();
+  }
+  return scopeCache.get(`${roleKey}:${teamId}`) || null;
+}
 const ALL = { canView: true, canEdit: true, canDelete: true, canShare: true };
 
 // Capacidades do cargo (Configurações > Cargos). Cache curto: são lidas em toda
@@ -31,14 +46,22 @@ export function requireCap(cap, message) {
   };
 }
 
-/** Permissões do membro nas pastas do grupo: dono tem todas; os demais seguem o padrão do grupo ou o ajuste individual */
-export function teamMemberPerms(team, member) {
+/**
+ * Permissões do membro nas pastas do grupo. Dono tem todas. Para os demais,
+ * nesta ordem: ajuste individual do membro, o cargo dele no grupo (scope) e o
+ * padrão do grupo. Com scope restrito a algumas pastas, as outras ficam fora.
+ */
+export function teamMemberPerms(team, member, scope = null, folderId = undefined) {
   if (team.ownerId === member.userId) return { ...ALL };
+  if (folderId !== undefined && !memberSeesFolder({ isOwner: false, scope, folderId })) return { ...NONE };
+  const base = scope
+    ? { canEdit: scope.canEdit, canDelete: scope.canDelete, canShare: scope.canShare }
+    : { canEdit: team.memberCanEdit, canDelete: team.memberCanDelete, canShare: team.memberCanShare };
   return {
     canView: true,
-    canEdit: member.canEdit ?? team.memberCanEdit,
-    canDelete: member.canDelete ?? team.memberCanDelete,
-    canShare: member.canShare ?? team.memberCanShare,
+    canEdit: member.canEdit ?? base.canEdit,
+    canDelete: member.canDelete ?? base.canDelete,
+    canShare: member.canShare ?? base.canShare,
   };
 }
 
@@ -61,7 +84,8 @@ async function rawFolderPermissions(userId, userRole, folder) {
         where: { id: folder.teamId },
         select: { ownerId: true, memberCanEdit: true, memberCanDelete: true, memberCanShare: true },
       });
-      if (team) result = teamMemberPerms(team, membership);
+      const scope = await getRoleScope(userRole, folder.teamId);
+      if (team) result = teamMemberPerms(team, membership, scope, folder.id);
     }
   }
 
@@ -136,15 +160,24 @@ export async function getAccessibleFolderIds(userId, userRole) {
     select: { teamId: true }
   });
   const teamIds = memberships.map(m => m.teamId);
-  const visible = await prisma.folder.findMany({
-    where: {
-      OR: [
-        { visibleToAll: true },
-        ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
-      ]
-    },
-    select: { id: true }
-  });
+  const [visibleRaw, scopes, teams] = await Promise.all([
+    prisma.folder.findMany({
+      where: {
+        OR: [
+          { visibleToAll: true },
+          ...(teamIds.length > 0 ? [{ teamId: { in: teamIds } }] : []),
+        ]
+      },
+      select: { id: true, teamId: true, visibleToAll: true }
+    }),
+    teamIds.length ? prisma.roleGroupScope.findMany({ where: { roleKey: userRole, teamId: { in: teamIds } } }) : [],
+    teamIds.length ? prisma.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, ownerId: true } }) : [],
+  ]);
+  // Cargo no grupo pode limitar as pastas do grupo que a pessoa vê
+  const scopeByTeam = new Map(scopes.map(sc => [sc.teamId, sc]));
+  const ownerOf = new Map(teams.map(t => [t.id, t.ownerId]));
+  const visible = visibleRaw.filter(f => f.visibleToAll || !f.teamId
+    || memberSeesFolder({ isOwner: ownerOf.get(f.teamId) === userId, scope: scopeByTeam.get(f.teamId), folderId: f.id }));
 
   const ids = new Set([
     ...perms.map(p => p.folderId),

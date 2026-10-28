@@ -466,6 +466,15 @@ Permissões podem ser definidas **por cargo** (todos os usuários daquele nível
 | `canDelete` | Excluir credenciais |
 | `canShare` | Compartilhar credenciais com outros usuários |
 
+### Grupos, cargos e políticas
+
+- **Cargos e permissões**: cada cargo liga/desliga editar, excluir, compartilhar, criar grupos, importar, exportar e tokens de API. É o teto: nenhuma pasta ou grupo libera além disso.
+- **Onde vale o cargo** (botão ao lado do lápis): o cargo pode ter regra própria em cada grupo — ex.: *Diretor do grupo Infra* vê todas as pastas e exclui; *Diretor do grupo RH* vê só a pasta Contratos e só edita. Ordem de precedência: ajuste individual do membro › cargo no grupo › padrão do grupo. Pastas fora da regra não aparecem e a chave delas não é entregue à pessoa.
+- **Política de senhas por grupo**: tamanho mínimo, maiúscula, número, símbolo e validade em dias, para todas as pastas do grupo ou só as escolhidas. O cofre não deixa salvar fora da regra e o gerador já cria no tamanho certo (o servidor não vê a senha, então a regra é conferida no cofre; a validade é aplicada no servidor). Senha vencida aparece num aviso no topo do cofre com o botão **Gerar nova**.
+- **2FA**: obrigatório para todos, para uma pessoa (Usuários) ou para os membros de um grupo (Grupos). Em Configurações › Segurança o admin define o nome que aparece no app autenticador, as instruções mostradas na ativação e o prazo em dias antes de bloquear (com aviso e data limite para a pessoa).
+- **Grupos do AD**: Grupos › Importar do AD cria um grupo com o mesmo nome e as pessoas de dentro. Sincronizar (botão ou sincronização geral do AD) acompanha entradas e saídas no AD; quem o admin colocou à mão continua.
+- **Cores invertidas**: cada pessoa pode inverter as cores no menu (o fundo vira a cor principal e vice-versa). A escolha fica salva na conta.
+
 ---
 
 ## Extensão Chrome
