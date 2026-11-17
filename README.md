@@ -1,3 +1,16 @@
+<div align="center">
+
+<img src="https://capsule-render.vercel.app/api?type=waving&color=1a1b27&height=160&section=header&text=VaultGuard&fontSize=48&fontColor=58a6ff&animation=fadeIn&fontAlignY=38&desc=Corporate+Password+Manager&descAlignY=58&descSize=16&descColor=8b949e" width="100%"/>
+
+[![CI](https://github.com/marcprojects35/VaultGuard/actions/workflows/ci.yml/badge.svg)](https://github.com/marcprojects35/VaultGuard/actions/workflows/ci.yml)
+![Node.js](https://img.shields.io/badge/Node.js-20_LTS-339933?style=flat&logo=node.js&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat&logo=docker&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue?style=flat)
+![AES-256](https://img.shields.io/badge/encryption-AES--256--GCM-brightgreen?style=flat)
+
+</div>
+
 # VaultGuard — Cofre de Senhas Corporativo
 
 Sistema completo de gerenciamento de credenciais para empresas, com criptografia AES-256-GCM, integração nativa com Active Directory/LDAP, controle de acesso granular por cargo, auditoria completa e extensão Chrome com autofill automático.
