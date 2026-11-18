@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { prisma } from '../db.js';
+import { verifyAuditChain } from '../services/audit.js';
 
 const router = Router();
+
+// GET /api/audit/verify — confere se algum registro foi alterado ou removido
+router.get('/verify', authenticate, requireAdmin, async (req, res, next) => {
+  try {
+    res.json(await verifyAuditChain());
+  } catch (err) { next(err); }
+});
 
 router.get('/', authenticate, requireAdmin, async (req, res, next) => {
   try {

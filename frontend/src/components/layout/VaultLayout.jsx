@@ -20,6 +20,8 @@ const W_OPEN   = 248;
 const W_CLOSED = 64;
 
 /* ── Single nav item ─────────────────────────── */
+const VAULT_IDLE_MS = 15 * 60 * 1000;
+
 function NavItem({ to, icon, label, open, exact = false }) {
   return (
     <NavLink
@@ -135,6 +137,18 @@ export default function VaultLayout() {
   const twoFactor = useAuthStore(s => s.user?.twoFactor);
   const twoFactorPending = twoFactor?.required && !twoFactor.enabled && !twoFactor.blocking && twoFactor.deadline;
   const caps = useCaps();
+
+  // Cofre aberto sem uso por 15 minutos: tranca e descarta as chaves da memória
+  const lockVault = useVaultStore(s => s.lock);
+  useEffect(() => {
+    if (!vaultUnlocked) return undefined;
+    let timer;
+    const reset = () => { clearTimeout(timer); timer = setTimeout(lockVault, VAULT_IDLE_MS); };
+    const events = ['pointerdown', 'keydown', 'scroll', 'visibilitychange'];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true, capture: true }));
+    reset();
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, reset, { capture: true })); };
+  }, [vaultUnlocked, lockVault]);
 
   const handleLogout = () => { logout(); navigate('/login'); };
 

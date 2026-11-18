@@ -74,6 +74,8 @@ model User {
   lastLogin       DateTime?
   avatar          String?
   encryptionSalt  String?
+  // Iterações do PBKDF2 usadas para cifrar a chave privada desta pessoa
+  kdfIterations   Int        @default(210000)
   // Par de chaves RSA-OAEP do usuário: pública em SPKI/base64, privada cifrada
   // no cliente (AES-GCM com chave derivada da senha). O servidor nunca vê a privada.
   publicKey           String?
@@ -390,6 +392,12 @@ model AuditLog {
   ipAddress    String?
   userAgent    String?
   createdAt    DateTime @default(now())
+  // Encadeamento à prova de adulteração: cada registro assina o anterior.
+  // actorId guarda quem fez mesmo depois de a conta ser excluída.
+  actorId      String?
+  chainSeq     Int?     @unique
+  prevHash     String?
+  hash         String?
 
   @@index([userId])
   @@index([action])

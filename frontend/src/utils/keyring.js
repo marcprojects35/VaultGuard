@@ -11,7 +11,7 @@ import {
   aesEncryptBytes, aesDecryptBytes, aesEncryptString, aesDecryptString, isV2, legacyDecrypt,
   generateUserKeyPair, exportPublicKey, exportPrivateKey, importPrivateKey,
   sealPrivateKey, openPrivateKey, rsaWrap, rsaUnwrap, hybridSeal, hybridOpen,
-  b64ToBytes, bytesToB64,
+  b64ToBytes, bytesToB64, KDF_ITERATIONS, LEGACY_KDF_ITERATIONS,
 } from './vaultCrypto.js';
 
 export const ORG_HOLDER = 'ORG';
@@ -56,27 +56,40 @@ export class Keyring {
   async unlock(password, { allowCreate = true } = {}) {
     const me = await this.api.get('/keys/me');
     if (!me.encryptionSalt) throw keyError('NO_SALT');
-    const kek = await deriveKek(password, me.encryptionSalt, true);
+    // this.kek só abre conteúdo legado (v:1), cifrado sempre com o valor antigo
+    const legacyKek = await deriveKek(password, me.encryptionSalt, true, LEGACY_KDF_ITERATIONS);
+    const iterations = me.kdfIterations || LEGACY_KDF_ITERATIONS;
 
     let privateKey;
     if (!me.publicKey) {
       if (!allowCreate) throw keyError('NO_KEYS', 'Abra o cofre web uma vez para gerar suas chaves');
       const pair = await generateUserKeyPair();
       const publicKey = await exportPublicKey(pair.publicKey);
-      await this.api.put('/keys/me', { publicKey, encryptedPrivateKey: await sealPrivateKey(pair.privateKey, kek) });
+      const sealKek = await deriveKek(password, me.encryptionSalt);
+      await this.api.put('/keys/me', { publicKey, encryptedPrivateKey: await sealPrivateKey(pair.privateKey, sealKek), kdfIterations: KDF_ITERATIONS });
+      me.kdfIterations = KDF_ITERATIONS;
       me.publicKey = publicKey;
       privateKey = pair.privateKey;
     } else {
       try {
-        privateKey = await openPrivateKey(me.encryptedPrivateKey, kek, true);
+        const openKek = iterations === LEGACY_KDF_ITERATIONS ? legacyKek : await deriveKek(password, me.encryptionSalt, false, iterations);
+        privateKey = await openPrivateKey(me.encryptedPrivateKey, openKek, true);
       } catch {
         throw keyError('KEY_DECRYPT_FAILED');
+      }
+      // Chave ainda no valor antigo: recifra com o atual. Se falhar, tenta no próximo desbloqueio
+      if (iterations < KDF_ITERATIONS) {
+        try {
+          const sealKek = await deriveKek(password, me.encryptionSalt);
+          await this.api.put('/keys/me/private', { encryptedPrivateKey: await sealPrivateKey(privateKey, sealKek), password, kdfIterations: KDF_ITERATIONS });
+          me.kdfIterations = KDF_ITERATIONS;
+        } catch { /* continua funcionando com o valor antigo */ }
       }
     }
 
     this.lock();
     this.me = me;
-    this.kek = kek;
+    this.kek = legacyKek;
     this.privateKey = privateKey;
 
     if (me.isAdmin && me.orgWrappedKey) {
@@ -92,7 +105,7 @@ export class Keyring {
     const me = await this.api.get('/keys/me');
     let privateKey;
     try {
-      privateKey = await openPrivateKey(me.encryptedPrivateKey, await deriveKek(oldPassword, me.encryptionSalt), true);
+      privateKey = await openPrivateKey(me.encryptedPrivateKey, await deriveKek(oldPassword, me.encryptionSalt, false, me.kdfIterations || LEGACY_KDF_ITERATIONS), true);
     } catch {
       throw keyError('KEY_DECRYPT_FAILED', 'Senha anterior incorreta');
     }
@@ -100,6 +113,7 @@ export class Keyring {
     await this.api.put('/keys/me/private', {
       encryptedPrivateKey: await sealPrivateKey(privateKey, kek),
       password: currentPassword,
+      kdfIterations: KDF_ITERATIONS,
     });
     await this.unlock(currentPassword);
   }
@@ -113,6 +127,7 @@ export class Keyring {
       publicKey: await exportPublicKey(pair.publicKey),
       encryptedPrivateKey: await sealPrivateKey(pair.privateKey, kek),
       password,
+      kdfIterations: KDF_ITERATIONS,
     });
     await this.unlock(password);
   }

@@ -30,6 +30,8 @@ services:
     environment:
       DATABASE_URL: postgresql://vaultguard:${DB_PASSWORD:?Defina DB_PASSWORD no .env (rode install.sh)}@postgres:5432/vaultguard
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no .env (openssl rand -hex 64)}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Defina DATA_ENCRYPTION_KEY no .env (openssl rand -hex 32)}
+      DATA_ENCRYPTION_KEY_OLD: ${DATA_ENCRYPTION_KEY_OLD:-}
       NODE_ENV: production
       PORT: 3001
       # Sem proxy na frente: não confiar em X-Forwarded-For vindo do cliente

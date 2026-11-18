@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { parseKdfIterations } from '../utils/tokens.js';
 import { prisma, WITH_DELETED } from '../db.js';
 import { authenticate } from '../middleware/auth.js';
 import { canAccessFolder, getAccessibleFolderIds } from '../services/permissions.js';
@@ -37,6 +38,7 @@ router.get('/me', async (req, res, next) => {
       userId: req.user.id,
       isAdmin: isAdmin(req.user),
       encryptionSalt: req.user.encryptionSalt,
+      kdfIterations: req.user.kdfIterations,
       publicKey: req.user.publicKey,
       encryptedPrivateKey: req.user.encryptedPrivateKey,
       orgPublicKey: orgKey?.publicKey || null,
@@ -54,7 +56,7 @@ router.put('/me', async (req, res, next) => {
     }
     const updated = await prisma.user.updateMany({
       where: { id: req.user.id, publicKey: null },
-      data: { publicKey, encryptedPrivateKey },
+      data: { publicKey, encryptedPrivateKey, kdfIterations: parseKdfIterations(req.body.kdfIterations) },
     });
     if (updated.count === 0) return res.status(409).json({ error: 'Chaves já registradas' });
     await createAuditLog(req.user.id, 'keys.created', null, null, null, req.ip);
@@ -69,7 +71,7 @@ router.put('/me/private', async (req, res, next) => {
     if (!isKeyString(encryptedPrivateKey)) return res.status(400).json({ error: 'encryptedPrivateKey obrigatório' });
     if (!req.user.publicKey) return res.status(409).json({ error: 'Usuário ainda não tem chaves' });
     if (!(await verifyUserPassword(req.user, password))) return res.status(400).json({ error: 'Senha incorreta' });
-    await prisma.user.update({ where: { id: req.user.id }, data: { encryptedPrivateKey } });
+    await prisma.user.update({ where: { id: req.user.id }, data: { encryptedPrivateKey, kdfIterations: parseKdfIterations(req.body.kdfIterations) } });
     await createAuditLog(req.user.id, 'keys.rewrapped', null, null, null, req.ip);
     res.json({ ok: true });
   } catch (err) { next(err); }
@@ -84,7 +86,7 @@ router.post('/me/reset', async (req, res, next) => {
     }
     if (!(await verifyUserPassword(req.user, password))) return res.status(400).json({ error: 'Senha incorreta' });
     await wipeUserKeys(req.user.id);
-    await prisma.user.update({ where: { id: req.user.id }, data: { publicKey, encryptedPrivateKey } });
+    await prisma.user.update({ where: { id: req.user.id }, data: { publicKey, encryptedPrivateKey, kdfIterations: parseKdfIterations(req.body.kdfIterations) } });
     await createAuditLog(req.user.id, 'keys.reset', null, null, null, req.ip);
     notifyAdminAlert('chaves de usuário descartadas', `${req.user.email} gerou chaves novas (conteúdo da pasta pessoal perdido).`);
     res.json({ ok: true });

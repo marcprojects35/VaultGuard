@@ -32,3 +32,11 @@ export function setSessionCookie(req, res, token, maxAgeMs) {
 export function clearSessionCookie(req, res) {
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: req.secure, sameSite: 'strict', path: '/api' });
 }
+
+// Iterações do PBKDF2 informadas pelo cliente ao cifrar a chave privada.
+// Cliente antigo não informa: foi cifrado com o valor antigo.
+export const LEGACY_KDF_ITERATIONS = 210000;
+export function parseKdfIterations(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= LEGACY_KDF_ITERATIONS && n <= 10000000 ? n : LEGACY_KDF_ITERATIONS;
+}

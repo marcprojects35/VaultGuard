@@ -327,6 +327,9 @@ sep
 echo
 
 JWT_SECRET=$(gen_secret)
+# Reinstalação mantém a chave: sem ela os segredos já cifrados no banco se perdem
+DATA_ENCRYPTION_KEY=$(grep -E '^DATA_ENCRYPTION_KEY=' .env 2>/dev/null | cut -d= -f2 | tr -d '"' || true)
+[ -n "$DATA_ENCRYPTION_KEY" ] || DATA_ENCRYPTION_KEY=$(openssl rand -hex 32)
 DB_PASSWORD=$(gen_password)
 
 # Determina a URL pública (HTTPS preferido se habilitado)
@@ -358,6 +361,7 @@ DB_PASSWORD="${DB_PASSWORD}"
 
 # ── JWT (NÃO altere após instalar) ───────────────────────────────────────────
 JWT_SECRET="${JWT_SECRET}"
+DATA_ENCRYPTION_KEY="${DATA_ENCRYPTION_KEY}"
 
 # ── Ambiente ──────────────────────────────────────────────────────────────────
 NODE_ENV=production

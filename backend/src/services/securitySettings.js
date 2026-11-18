@@ -31,7 +31,7 @@ export async function getSecuritySettings() {
     maxLoginAttempts: s?.maxLoginAttempts > 0 ? s.maxLoginAttempts : 5,
     lockoutMinutes: Number(policy.lockoutDurationMin) > 0 ? Number(policy.lockoutDurationMin) : 15,
     passwordPolicy: {
-      minLength: Number(policy.minLength) > 0 ? Number(policy.minLength) : 8,
+      minLength: Math.max(Number(policy.minLength) || 0, 12),
       requireUppercase: !!policy.requireUppercase,
       requireNumbers: !!policy.requireNumbers,
       requireSymbols: !!policy.requireSymbols,

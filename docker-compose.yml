@@ -3,6 +3,10 @@ services:
     image: postgres:16-alpine
     container_name: vaultguard-db
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
     environment:
       POSTGRES_DB: vaultguard
       POSTGRES_USER: vaultguard
@@ -24,9 +28,15 @@ services:
       dockerfile: backend/Dockerfile
     container_name: vaultguard-api
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    logging: *logging
     environment:
       DATABASE_URL: postgresql://vaultguard:${DB_PASSWORD:?Defina DB_PASSWORD no .env (rode install.sh)}@postgres:5432/vaultguard
       JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET no .env (openssl rand -hex 64)}
+      DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?Defina DATA_ENCRYPTION_KEY no .env (openssl rand -hex 32)}
+      DATA_ENCRYPTION_KEY_OLD: ${DATA_ENCRYPTION_KEY_OLD:-}
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 3001
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
@@ -52,6 +62,10 @@ services:
     image: nginx:alpine
     container_name: vaultguard-nginx
     restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, NET_BIND_SERVICE, SETGID, SETUID]
+    logging: *logging
     ports:
       - "${HTTP_PORT:-80}:80"
     volumes:

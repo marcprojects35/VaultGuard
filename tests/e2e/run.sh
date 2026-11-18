@@ -20,6 +20,7 @@ export OUT_DIR="$HERE/.out"
 mkdir -p "$OUT_DIR"
 
 DB_PORT=${E2E_DB_PORT:-55432}
+export DATA_ENCRYPTION_KEY=${DATA_ENCRYPTION_KEY:-$(openssl rand -hex 32)}
 export DATABASE_URL="postgresql://vg:e2e@127.0.0.1:${DB_PORT}/vg"
 
 docker ps --format '{{.Names}}' | grep -q '^vg-e2e-db$' || {

@@ -26,6 +26,8 @@ import keysRoutes from './routes/keys.js';
 import trashRoutes from './routes/trash.js';
 import dataRoutes from './routes/data.js';
 import { purgeExpiredTrash, purgeExpiredAudit } from './services/trash.js';
+import { dataKey } from './services/secretBox.js';
+import { migrateSecrets } from './services/migrateSecrets.js';
 import { getLdapConfig, checkAllServers } from './services/ldap.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { ipAllowlist } from './middleware/auth.js';
@@ -42,6 +44,14 @@ const PORT = process.env.PORT || 3001;
 const JWT_SECRET = process.env.JWT_SECRET || '';
 if (JWT_SECRET.length < 32 || /changeme|troque/i.test(JWT_SECRET)) {
   logger.error('JWT_SECRET ausente, curto (<32) ou com valor de exemplo. Gere um com: openssl rand -hex 64');
+  process.exit(1);
+}
+
+// Sem a chave não dá para abrir os segredos guardados no banco
+try {
+  dataKey();
+} catch (err) {
+  logger.error(err.message);
   process.exit(1);
 }
 
@@ -67,7 +77,15 @@ app.use(helmet({
     },
   },
   crossOriginEmbedderPolicy: false,
+  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+  referrerPolicy: { policy: 'no-referrer' },
 }));
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  // Respostas da API carregam dados sensíveis: nada de cache no navegador ou proxy
+  if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 
 // CORS — só o próprio frontend. A extensão usa host_permissions, que não
 // passam por CORS, então nenhuma origem chrome-extension:// precisa ser liberada.
@@ -166,7 +184,7 @@ app.use('/api/data', dataRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', version: '1.0.0', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok' });
 });
 
 // Serve frontend in production
@@ -178,6 +196,9 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.use(errorHandler);
+
+// Segredos de instalações antigas são cifrados antes de aceitar conexões
+await migrateSecrets();
 
 app.listen(PORT, '0.0.0.0', () => {
   logger.info(`VaultGuard backend running on port ${PORT}`);

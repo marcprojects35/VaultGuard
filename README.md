@@ -603,11 +603,11 @@ Configuráveis em **Configurações → E-mail** (SMTP ou Microsoft 365 via Grap
 
 ## Atualizando uma instalação existente
 
-1. Confira o `.env`: `JWT_SECRET` (mínimo 32 caracteres, sem valor de exemplo), `DB_PASSWORD` e `ADMIN_PASSWORD` são obrigatórios — sem eles o Compose e o servidor não sobem.
+1. Confira o `.env`: `JWT_SECRET` (mínimo 32 caracteres, sem valor de exemplo), `DB_PASSWORD`, `ADMIN_PASSWORD` e `DATA_ENCRYPTION_KEY` (`openssl rand -hex 32`) são obrigatórios — sem eles o Compose e o servidor não sobem. **Guarde uma cópia da `DATA_ENCRYPTION_KEY` fora do servidor**: sem ela não se leem o 2FA e as senhas do AD e do e-mail.
 2. `docker compose up -d --build` — as migrations rodam sozinhas.
 3. **Um administrador deve entrar primeiro**: o navegador dele cria a chave da organização e as chaves das pastas. Até isso acontecer, os demais veem "aguardando".
 4. Todos os usuários precisam entrar de novo (a sessão passou para cookie). Cada um gera o próprio par de chaves no primeiro acesso.
-5. Extensão: recarregue `extension/dist/` em `chrome://extensions`. Os tokens existentes continuam válidos (com leitura e escrita).
+5. Extensão: recarregue `extension/dist/` em `chrome://extensions` (a versão 1.4.0 é obrigatória: a antiga não abre chaves já migradas para 600.000 iterações). Os tokens existentes continuam válidos (com leitura e escrita).
 6. Usuários do AD cujo e-mail coincide com uma conta local veem um erro no login até o admin vinculá-los em **Active Directory → Vincular usuários**.
 
 ---

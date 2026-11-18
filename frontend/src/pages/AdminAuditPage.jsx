@@ -52,6 +52,16 @@ export default function AdminAuditPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('');
+  const [integrity, setIntegrity] = useState(null);
+  const verifyChain = async () => {
+    setIntegrity({ running: true });
+    try {
+      const { data } = await api.get('/audit/verify');
+      setIntegrity(data);
+    } catch (e) {
+      setIntegrity({ ok: false, reason: e.response?.data?.error || 'Não foi possível verificar' });
+    }
+  };
   const limit = 20;
 
   const { data, isLoading } = useQuery({
@@ -92,10 +102,25 @@ export default function AdminAuditPage() {
           <h1 className="text-2xl font-bold text-[var(--color-text)] flex items-center gap-2"><Activity size={24} className="text-[var(--color-primary)]" /> Log de Auditoria</h1>
           <p className="text-[var(--color-text-muted)] text-sm mt-1">Histórico completo de ações no sistema</p>
         </div>
+        <div className="flex items-center gap-2">
+        <button onClick={verifyChain} disabled={integrity?.running} data-testid="verify-audit" className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm transition-colors disabled:opacity-50">
+          {integrity?.running ? 'Verificando...' : 'Verificar integridade'}
+        </button>
         <button onClick={exportCSV} className="flex items-center gap-2 px-4 py-2 bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-hover)] border border-[var(--color-border)] text-[var(--color-text-muted)] rounded-lg text-sm transition-colors">
           <Download size={14} /> Exportar CSV
         </button>
+        </div>
       </div>
+
+      {integrity && !integrity.running && (
+        <div data-testid="audit-integrity" className="text-sm px-4 py-3 rounded-lg" style={integrity.ok
+          ? { background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', color: 'var(--color-text)' }
+          : { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', color: 'var(--color-text)' }}>
+          {integrity.ok
+            ? `Íntegro: ${integrity.checked} registro(s) conferido(s), nenhum alterado ou removido.${integrity.legacy ? ` ${integrity.legacy} registro(s) anteriores a esta proteção não entram na conferência.` : ''}`
+            : `Atenção: ${integrity.reason}${integrity.brokenAt ? ` no registro nº ${integrity.brokenAt}` : ''}. Investigue como incidente de segurança.`}
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="flex gap-3">

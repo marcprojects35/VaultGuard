@@ -21,7 +21,11 @@ const uploadDir = path.join(__dirname, '../../uploads');
 // Remove segredos (SMTP, senha da conta de serviço do AD) e a whitelist de
 // IPs (mapa da rede interna) antes de responder
 function publicSettings(settings) {
-  const { smtpConfig, ldapConfig, ...safe } = settings;
+  // Esta rota é pública (marca da tela de login): nada que ajude a planejar um ataque
+  const {
+    smtpConfig, ldapConfig, passwordPolicy, maxLoginAttempts, require2FA, require2FASince,
+    twoFactorConfig, ldapEnabled, allowSelfReg, auditRetentionDays, ...safe
+  } = settings;
   if (safe.passwordPolicy) {
     const { allowedIPs, ...policy } = safe.passwordPolicy;
     safe.passwordPolicy = policy;
@@ -158,7 +162,7 @@ router.put('/security', authenticate, requireAdmin, async (req, res, next) => {
     const int = (v, min, max) => { const n = parseInt(v, 10); return Number.isInteger(n) && n >= min && n <= max ? n : null; };
 
     const passwordPolicy = {
-      minLength: int(pick('minPasswordLength', 'minLength', 10), 6, 128),
+      minLength: int(pick('minPasswordLength', 'minLength', 12), 12, 128),
       requireUppercase: !!pick('requireUppercase', 'requireUppercase', true),
       requireNumbers: !!pick('requireNumbers', 'requireNumbers', true),
       requireSymbols: !!pick('requireSymbols', 'requireSymbols', true),

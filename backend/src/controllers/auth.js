@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { parseKdfIterations } from '../utils/tokens.js';
 import { twoFactorRequirement, getTwoFactorConfig } from '../services/twoFactor.js';
 import { getRoleCaps } from '../services/permissions.js';
 import jwt from 'jsonwebtoken';
@@ -462,6 +463,7 @@ export const changePassword = async (req, res, next) => {
     // A chave privada precisa vir re-cifrada com a senha nova (o salt não muda),
     // senão o usuário perderia acesso às próprias chaves
     const { encryptedPrivateKey } = req.body;
+    const kdfIterations = parseKdfIterations(req.body.kdfIterations);
     if (user.publicKey && (typeof encryptedPrivateKey !== 'string' || !encryptedPrivateKey)) {
       return res.status(400).json({ error: 'Desbloqueie o cofre antes de trocar a senha' });
     }
@@ -474,7 +476,7 @@ export const changePassword = async (req, res, next) => {
         passwordHash: hash, tokenVersion: { increment: 1 },
         passwordChangedAt: new Date(), mustChangePassword: false,
         passwordHistory: [user.passwordHash, ...(user.passwordHistory || [])].filter(Boolean).slice(0, 24),
-        ...(user.publicKey && { encryptedPrivateKey }),
+        ...(user.publicKey && { encryptedPrivateKey, kdfIterations }),
       },
     });
     await createAuditLog(req.user.id, 'user.password_changed', null, null, null, req.ip);
@@ -516,7 +518,7 @@ export const generateRecoveryCodes = async (req, res, next) => {
       const hex = randomBytes(5).toString('hex');
       return `${hex.slice(0, 5)}-${hex.slice(5)}`;
     });
-    const hashes = await Promise.all(codes.map(c => bcrypt.hash(c, 10)));
+    const hashes = await Promise.all(codes.map(c => bcrypt.hash(c, 12)));
     await prisma.user.update({ where: { id: user.id }, data: { totpRecoveryCodes: hashes, totpLastStep: step } });
     await createAuditLog(user.id, 'user.2fa_recovery_codes_generated', null, null, null, req.ip);
     res.json({ codes });

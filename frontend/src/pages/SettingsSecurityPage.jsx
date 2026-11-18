@@ -9,7 +9,7 @@ import { useSettingsStore } from '../stores/settingsStore.js';
 function formFromSettings(settings) {
   const policy = settings.passwordPolicy || {};
   return {
-    minPasswordLength: policy.minLength ?? 10,
+    minPasswordLength: Math.max(policy.minLength ?? 12, 12),
     requireUppercase: policy.requireUppercase ?? true,
     requireNumbers: policy.requireNumbers ?? true,
     requireSymbols: policy.requireSymbols ?? true,

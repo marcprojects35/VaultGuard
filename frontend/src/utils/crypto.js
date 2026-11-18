@@ -3,7 +3,7 @@
  * A criptografia das credenciais fica em vaultCrypto.js / keyring.js.
  */
 
-import { bytesToB64 } from './vaultCrypto.js';
+import { bytesToB64, KDF_ITERATIONS, LEGACY_KDF_ITERATIONS } from './vaultCrypto.js';
 
 const ALGO = 'AES-GCM';
 const KEY_LENGTH = 256;
@@ -23,7 +23,7 @@ export async function encryptVault(data, passphrase) {
     'raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
   );
   const key = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations: KDF_ITERATIONS, hash: 'SHA-256' },
     keyMaterial,
     { name: ALGO, length: KEY_LENGTH },
     false,
@@ -37,7 +37,8 @@ export async function encryptVault(data, passphrase) {
   );
 
   return JSON.stringify({
-    v: 1,
+    v: 2,
+    iterations: KDF_ITERATIONS,
     salt: btoa(String.fromCharCode(...salt)),
     iv: btoa(String.fromCharCode(...iv)),
     ciphertext: bytesToB64(new Uint8Array(ciphertext)),
@@ -53,7 +54,10 @@ export async function decryptVault(encryptedJson, passphrase) {
     throw new Error('Arquivo inválido');
   }
 
-  if (parsed.v !== 1) throw new Error('Formato de arquivo não suportado');
+  if (parsed.v !== 1 && parsed.v !== 2) throw new Error('Formato de arquivo não suportado');
+  // v:1 = backups antigos, feitos com o valor anterior
+  const iterations = parsed.v === 2 ? parsed.iterations : LEGACY_KDF_ITERATIONS;
+  if (!Number.isInteger(iterations) || iterations < LEGACY_KDF_ITERATIONS || iterations > 10000000) throw new Error('Arquivo inválido');
 
   const salt = Uint8Array.from(atob(parsed.salt), c => c.charCodeAt(0));
   const iv = Uint8Array.from(atob(parsed.iv), c => c.charCodeAt(0));
@@ -63,7 +67,7 @@ export async function decryptVault(encryptedJson, passphrase) {
     'raw', enc.encode(passphrase), { name: 'PBKDF2' }, false, ['deriveKey']
   );
   const key = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
     keyMaterial,
     { name: ALGO, length: KEY_LENGTH },
     false,

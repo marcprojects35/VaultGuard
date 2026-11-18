@@ -16,7 +16,10 @@
 
 const AES = 'AES-GCM';
 const RSA = { name: 'RSA-OAEP', hash: 'SHA-256' };
-const PBKDF2_ITERATIONS = 210000;
+// OWASP: mínimo de 600.000 para PBKDF2-SHA256. O valor antigo continua sendo lido
+// (chaves ainda não migradas e conteúdo legado v:1)
+export const KDF_ITERATIONS = 600000;
+export const LEGACY_KDF_ITERATIONS = 210000;
 
 // ─── base64 ──────────────────────────────────────────────────────────────────
 
@@ -42,12 +45,12 @@ function hexToBytes(hex) {
 
 // ─── KEK (derivada da senha) ─────────────────────────────────────────────────
 
-export async function deriveKek(password, hexSalt, extractable = false) {
+export async function deriveKek(password, hexSalt, extractable = false, iterations = KDF_ITERATIONS) {
   const material = await crypto.subtle.importKey(
     'raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
   );
   return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: hexToBytes(hexSalt), iterations: PBKDF2_ITERATIONS, hash: 'SHA-256' },
+    { name: 'PBKDF2', salt: hexToBytes(hexSalt), iterations, hash: 'SHA-256' },
     material,
     { name: AES, length: 256 },
     extractable,

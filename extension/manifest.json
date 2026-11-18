@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VaultGuard",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Cofre de senhas corporativo — acesso rápido e autofill seguro",
   "icons": {
     "16": "icons/icon16.png",
@@ -28,8 +28,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]

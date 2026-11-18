@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../utils/api';
 import { useAuthStore } from '../stores/authStore';
+import { KDF_ITERATIONS } from '../utils/vaultCrypto.js';
 import { keyring, useVaultStore } from '../stores/vaultStore.js';
 
 export default function ProfilePage() {
@@ -75,7 +76,7 @@ export default function ProfilePage() {
         await unlockVault(data.currentPassword).catch(() => {});
       }
       const encryptedPrivateKey = keyring.isUnlocked ? await keyring.sealForNewPassword(data.newPassword) : undefined;
-      return api.post('/auth/change-password', { ...data, encryptedPrivateKey });
+      return api.post('/auth/change-password', { ...data, encryptedPrivateKey, kdfIterations: KDF_ITERATIONS });
     },
     onSuccess: () => {
       toast.success('Senha alterada!');
