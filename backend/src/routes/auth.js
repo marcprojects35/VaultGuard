@@ -3,15 +3,17 @@ import { body } from 'express-validator';
 import * as authController from '../controllers/auth.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import { loginBotGuard } from '../services/botGuard.js';
 
 const router = Router();
 
 router.post('/login',
   [
-    body('login').notEmpty().trim(),
+    body('login').isString().notEmpty().trim(),
     body('password').notEmpty(),
   ],
   validate,
+  loginBotGuard,
   authController.login
 );
 
@@ -19,6 +21,7 @@ router.post('/logout', authenticate, authController.logout);
 router.post('/refresh', authController.refresh);
 router.get('/me', authenticate, authController.me);
 router.put('/me/preferences', authenticate, authController.updatePreferences);
+router.get('/me/data-export', authenticate, authController.exportMyData);
 
 router.post('/2fa/setup', authenticate, authController.setup2FA);
 router.post('/2fa/verify', authenticate, authController.verify2FA);

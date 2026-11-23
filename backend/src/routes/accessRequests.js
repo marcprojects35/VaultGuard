@@ -80,7 +80,7 @@ router.post('/', authenticate,
       }
 
       const request = await prisma.accessRequest.create({
-        data: { userId: req.user.id, folderId, message: message || null }
+        data: { userId: req.user.id, folderId, message: message ? String(message).slice(0, 1000) : null }
       });
 
       await createAuditLog(req.user.id, 'access_request.create', request.id, 'AccessRequest',

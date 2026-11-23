@@ -68,6 +68,8 @@ export function invalidateSecuritySettings() {
 export async function checkPasswordPolicy(password) {
   const { passwordPolicy: p } = await getSecuritySettings();
   const pw = String(password || '');
+  // O bcrypt ignora o que passa de 72 bytes: senha maior daria falsa segurança
+  if (Buffer.byteLength(pw, 'utf8') > 72) return 'A senha deve ter no máximo 72 caracteres';
   if (pw.length < p.minLength) return `A senha deve ter pelo menos ${p.minLength} caracteres`;
   if (p.requireUppercase && !/[A-Z]/.test(pw)) return 'A senha deve ter ao menos uma letra maiúscula';
   if (p.requireNumbers && !/[0-9]/.test(pw)) return 'A senha deve ter ao menos um número';

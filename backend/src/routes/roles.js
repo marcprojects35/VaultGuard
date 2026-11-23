@@ -47,7 +47,7 @@ router.get('/', authenticate, async (req, res, next) => {
 
 // POST /api/roles — admin only
 router.post('/', authenticate, requireAdmin,
-  [body('label').notEmpty().trim()],
+  [body('label').isString().notEmpty().trim().isLength({ max: 60 }), body('color').optional({ values: 'null' }).matches(/^#[0-9a-f]{6}$/i)],
   validate,
   async (req, res, next) => {
     try {
@@ -84,7 +84,7 @@ router.post('/', authenticate, requireAdmin,
 
 // PUT /api/roles/:key — admin only: nome, cor e permissões (key é imutável)
 router.put('/:key', authenticate, requireAdmin,
-  [body('label').optional().trim().notEmpty()],
+  [body('label').optional().isString().trim().notEmpty().isLength({ max: 60 }), body('color').optional({ values: 'null' }).matches(/^#[0-9a-f]{6}$/i)],
   validate,
   async (req, res, next) => {
     try {

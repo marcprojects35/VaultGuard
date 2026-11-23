@@ -24,6 +24,7 @@ import FavoritesPage from './pages/FavoritesPage.jsx';
 import SecurityDashboardPage from './pages/SecurityDashboardPage.jsx';
 import AccessRequestPage from './pages/AccessRequestPage.jsx';
 import TeamsPage from './pages/TeamsPage.jsx';
+import PrivacyPage from './pages/PrivacyPage.jsx';
 import AdminGroupsPage from './pages/AdminGroupsPage.jsx';
 import TrashPage from './pages/TrashPage.jsx';
 import DataRetentionPage from './pages/DataRetentionPage.jsx';
@@ -64,6 +65,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/privacidade" element={<PrivacyPage />} />
       <Route path="/" element={<PrivateRoute><VaultLayout /></PrivateRoute>}>
         <Route index element={<VaultPage />} />
         <Route path="profile" element={<ProfilePage />} />

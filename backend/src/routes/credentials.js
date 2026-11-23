@@ -4,6 +4,7 @@ import { authenticate } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { prisma } from '../db.js';
 import { trashCredential } from '../services/trash.js';
+import { checkCredentialBody, credentialProblem } from '../middleware/inputRules.js';
 import { getFolderPolicy, policyExpiry } from '../services/passwordPolicy.js';
 import { canAccessFolder, canAccessCredential, getAccessibleFolderIds, requireCap, attachCredentialPermissions } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
@@ -213,7 +214,7 @@ router.get('/:id', authenticate, async (req, res, next) => {
     const cred = await prisma.credential.findUnique({
       where: { id: req.params.id },
       include: {
-        folder: true,
+        folder: { select: { id: true, name: true, color: true, isPersonal: true, teamId: true } },
         customFields: { orderBy: { sortOrder: 'asc' } },
         attachments: {
           select: { id: true, fileName: true, mimeType: true, size: true, createdAt: true }
@@ -252,12 +253,13 @@ router.get('/:id', authenticate, async (req, res, next) => {
 // POST /api/credentials
 router.post('/', authenticate,
   [
-    body('title').notEmpty().trim(),
+    body('title').isString().notEmpty().trim(),
     body('folderId').notEmpty(),
     body('encryptedPass').notEmpty(),
     body('wrappedKey').isString().notEmpty(),
   ],
   validate,
+  checkCredentialBody,
   async (req, res, next) => {
     try {
       const { folderId, customFields } = req.body;
@@ -305,8 +307,9 @@ router.post('/', authenticate,
 
 // PUT /api/credentials/:id
 router.put('/:id', authenticate,
-  [body('title').optional().trim()],
+  [body('title').optional().isString().trim()],
   validate,
+  checkCredentialBody,
   async (req, res, next) => {
     try {
       const cred = await prisma.credential.findUnique({ where: { id: req.params.id } });
@@ -468,8 +471,11 @@ router.get('/:id/shares', authenticate, async (req, res, next) => {
     const canAccess = await canAccessCredential(req.user.id, req.user.role, cred);
     if (!canAccess) return res.status(403).json({ error: 'Você não tem acesso a este item' });
 
+    // Quem pode compartilhar vê todos; quem só recebeu vê apenas o próprio
+    const manages = await canAccessFolder(req.user.id, req.user.role, cred.folderId, 'canShare');
     const shares = await prisma.credentialShare.findMany({
-      where: { credentialId: req.params.id }
+      where: { credentialId: req.params.id, ...(manages ? {} : { sharedWithId: req.user.id }) },
+      select: { id: true, credentialId: true, sharedWithId: true, sharedById: true, canEdit: true, expiresAt: true, createdAt: true },
     });
 
     const userIds = [...new Set([...shares.map(s => s.sharedWithId), ...shares.map(s => s.sharedById)])];
@@ -584,7 +590,9 @@ router.post('/import', authenticate, requireCap('canImport', 'Seu cargo não pod
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      if (!row.title) { errors.push({ row: i + 1, error: 'Título obrigatório' }); continue; }
+      if (!row || !row.title) { errors.push({ row: i + 1, error: 'Título obrigatório' }); continue; }
+      const rowProblem = credentialProblem(row);
+      if (rowProblem) { errors.push({ row: i + 1, error: rowProblem }); continue; }
       // Só aceita conteúdo já cifrado no cliente
       if (typeof row.wrappedKey !== 'string' || !row.wrappedKey) { errors.push({ row: i + 1, error: 'Linha sem chave de criptografia' }); continue; }
 
@@ -616,7 +624,9 @@ router.post('/import', authenticate, requireCap('canImport', 'Seu cargo não pod
         });
         created.push(cred.id);
       } catch (e) {
-        errors.push({ row: i + 1, error: e.message });
+        // Detalhe técnico fica no log; a tela recebe só o número da linha
+        console.error('Import row failed', e.code || e.name);
+        errors.push({ row: i + 1, error: 'Não foi possível importar esta linha' });
       }
     }
 

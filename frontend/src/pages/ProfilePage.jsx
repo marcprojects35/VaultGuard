@@ -310,6 +310,26 @@ export default function ProfilePage() {
       {/* Tab: Segurança */}
       {activeTab === 'security' && (
         <div className="space-y-5">
+          <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider">Meus dados (LGPD)</h2>
+              <p className="text-xs text-[var(--color-muted)] mt-1">
+                Baixe uma cópia dos seus dados pessoais. Veja a <a href="/privacidade" className="underline">Política de Privacidade</a>.
+              </p>
+            </div>
+            <button type="button" data-testid="export-my-data" className="px-4 py-2 rounded-lg text-sm border border-[var(--color-border)] text-[var(--color-text-muted)]"
+              onClick={async () => {
+                try {
+                  const { data } = await api.get('/auth/me/data-export');
+                  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+                  const a = document.createElement('a');
+                  a.href = url; a.download = 'meus-dados.json'; a.click();
+                  URL.revokeObjectURL(url);
+                } catch { toast.error('Não foi possível gerar o arquivo'); }
+              }}>
+              Baixar meus dados
+            </button>
+          </div>
           <div className="bg-[var(--color-surface-2)] border border-[var(--color-border)] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-[var(--color-text-muted)] uppercase tracking-wider mb-4 flex items-center gap-2">
               <Lock size={14} /> Trocar Senha

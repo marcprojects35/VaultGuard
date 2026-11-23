@@ -254,7 +254,7 @@ async function searchUser(client, cfg, login) {
 
   // Filtro flexível: sAMAccountName, userPrincipalName ou uid (OpenLDAP)
   const filter = cfg.userFilter
-    ? cfg.userFilter.replace('{login}', escapedLogin)
+    ? cfg.userFilter.replaceAll('{login}', () => escapedLogin)
     : `(|(sAMAccountName=${escapedLogin})(userPrincipalName=${escapedLogin})(uid=${escapedLogin})(mail=${escapedLogin}))`;
 
   const attributes = [
@@ -746,7 +746,7 @@ async function importADGroupsOnServer(cfg, dns, adminUserId) {
               user = await prisma.user.create({ data: { ...data, role, status: active ? 'ACTIVE' : 'INACTIVE' } });
             }
           } catch (e) {
-            r.skipped.push(`${email}: ${e.message}`);
+            r.skipped.push(`${email}: ${e.code === 'LOCAL_ACCOUNT_CONFLICT' ? e.message : 'não foi possível vincular'}`);
             const known = await prisma.user.findFirst({ where: { email }, select: { id: true } });
             if (known) keepIds.add(known.id);
             continue;

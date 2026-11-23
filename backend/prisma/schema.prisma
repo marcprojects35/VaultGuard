@@ -292,6 +292,8 @@ model SystemSettings {
   // 2FA: { issuer, instructions, graceDays } — nome no app autenticador, texto
   // mostrado na ativação e dias de prazo antes de bloquear
   twoFactorConfig Json?
+  // Controlador e encarregado (DPO) exibidos na Política de Privacidade
+  privacyConfig   Json?
   require2FASince DateTime?
   // Fundo das telas internas: imagem e quanto a cor do tema a cobre (0-95%)
   appBackgroundUrl String?

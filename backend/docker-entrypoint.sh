@@ -13,7 +13,7 @@ echo "=== VaultGuard startup ==="
 # Aguarda o banco aceitar conexões (segurança extra além do healthcheck)
 MAX_RETRIES=10
 RETRY=0
-until npx prisma migrate deploy 2>&1; do
+until node node_modules/prisma/build/index.js migrate deploy 2>&1; do
     RETRY=$((RETRY + 1))
     if [ $RETRY -ge $MAX_RETRIES ]; then
         echo "ERRO: migrations falharam após $MAX_RETRIES tentativas. Verifique a conexão com o banco."
@@ -24,6 +24,11 @@ until npx prisma migrate deploy 2>&1; do
 done
 
 echo "Migrations aplicadas."
+
+# A partir daqui a aplicação usa um papel sem privilégios de administrador do banco
+DATABASE_URL="$(node src/prisma/dbRoles.js)"
+export DATABASE_URL
+echo "Banco: papel restrito e RLS aplicados."
 
 # Seed (idempotente — seguro rodar sempre)
 node src/prisma/seed.js 2>&1 || echo "Seed já aplicado ou erro não-fatal ignorado."

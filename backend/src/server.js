@@ -66,8 +66,8 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      fontSrc: ["'self'", 'data:'],
       imgSrc: ["'self'", 'data:', 'blob:'],
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
@@ -82,6 +82,8 @@ app.use(helmet({
 }));
 app.use((req, res, next) => {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
+  // Sistema interno: nada de indexação por buscadores
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
   // Respostas da API carregam dados sensíveis: nada de cache no navegador ou proxy
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
@@ -97,8 +99,11 @@ app.use(cors({
 }));
 
 app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: false }));
+// Corpo pequeno por padrão; só anexos, importação e chaves recebem volumes maiores
+const jsonSmall = express.json({ limit: '1mb' });
+const jsonLarge = express.json({ limit: '20mb' });
+app.use((req, res, next) => (/^\/api\/(attachments|credentials\/import|keys)(\/|$)/.test(req.path) ? jsonLarge : jsonSmall)(req, res, next));
+app.use(express.urlencoded({ extended: false, limit: '100kb' }));
 
 // Parâmetros de query são sempre texto simples: ?a[]=x ou ?a[b]=x chegariam
 // como array/objeto e iriam direto para as consultas do Prisma
@@ -115,7 +120,7 @@ app.use((req, res, next) => {
 });
 
 // Static uploads
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), { dotfiles: 'deny', index: false, redirect: false }));
 
 // Rate limiting
 // Tentativas de senha/código: por conta (login digitado ou sessão) e IP, para uma
@@ -158,7 +163,8 @@ const apiLimiter = rateLimit({
 // Teto por IP (folgado), para trocar de token a cada requisição não driblar o limite
 const ipLimiter = rateLimit({ windowMs: 60 * 1000, max: 1500, message: { error: 'Muitas requisições. Aguarde alguns segundos.' } });
 
-app.use(['/api/auth/login', '/api/auth/2fa/validate', '/api/auth/refresh', '/api/auth/verify-password',
+app.use(['/api/auth/login', '/api/auth/2fa/validate', '/api/auth/2fa/verify', '/api/auth/2fa/disable',
+  '/api/auth/2fa/recovery-codes', '/api/auth/change-password', '/api/auth/refresh', '/api/auth/verify-password',
   '/api/keys/me/private', '/api/keys/me/reset'], authIpLimiter, authLimiter);
 app.use('/api', ipLimiter, apiLimiter);
 app.use('/api', ipAllowlist);

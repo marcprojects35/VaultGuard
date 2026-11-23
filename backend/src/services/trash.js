@@ -224,7 +224,11 @@ export async function purgeExpiredTrash() {
 
 /** Apaga registros de auditoria mais antigos que a data (fica registrado quem apagou) */
 export async function purgeAuditLogs(before, userId = null, reason = 'manual', ip = null) {
-  const { count } = await prisma.auditLog.deleteMany({ where: { createdAt: { lt: before } } });
+  // A auditoria é imutável no banco (RLS): só apaga nesta transação, com a marca da retenção
+  const [, { count }] = await prisma.$transaction([
+    prisma.$queryRaw`SELECT set_config('app.audit_purge', 'on', true)`,
+    prisma.auditLog.deleteMany({ where: { createdAt: { lt: before } } }),
+  ]);
   if (count) await createAuditLog(userId, 'audit.purge', null, 'Audit', { removed: count, before: before.toISOString(), reason }, ip);
   return count;
 }

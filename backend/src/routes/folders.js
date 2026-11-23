@@ -4,12 +4,28 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { prisma } from '../db.js';
 import { trashFolder } from '../services/trash.js';
+import { folderProblem } from '../middleware/inputRules.js';
 import { policyForFolder } from '../services/passwordPolicy.js';
 import { canAccessFolder, getAccessibleFolderIds, getUserPermissionsForFolder } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
 
 const router = Router();
+
+// Subpasta só dentro de pasta do mesmo tipo e dono, e nunca dentro de si mesma
+async function parentProblem(parentId, folder) {
+  if (parentId === undefined || parentId === null) return null;
+  let parent = await prisma.folder.findUnique({ where: { id: parentId } });
+  if (!parent) return 'Pasta superior não encontrada';
+  const sameScope = parent.isPersonal === !!folder.isPersonal && (parent.ownerId ?? null) === (folder.ownerId ?? null)
+    && (parent.teamId ?? null) === (folder.teamId ?? null) && !!parent.visibleToAll === !!folder.visibleToAll;
+  if (!sameScope) return 'A pasta superior precisa ser do mesmo tipo';
+  for (let i = 0; parent && i < 50; i++) {
+    if (folder.id && parent.id === folder.id) return 'Uma pasta não pode ficar dentro de si mesma';
+    parent = parent.parentId ? await prisma.folder.findUnique({ where: { id: parent.parentId } }) : null;
+  }
+  return null;
+}
 
 // GET /api/folders — tree of folders accessible to user
 router.get('/', authenticate, async (req, res, next) => {
@@ -151,7 +167,7 @@ router.get('/admin-all', authenticate, async (req, res, next) => {
 // POST /api/folders — pasta pessoal (qualquer usuário), de equipe (membro ACTIVE
 // do time) ou corporativa/visível-a-todos (só admin)
 router.post('/', authenticate,
-  [body('name').notEmpty().trim()],
+  [body('name').isString().notEmpty().trim()],
   validate,
   async (req, res, next) => {
     try {
@@ -193,6 +209,9 @@ router.post('/', authenticate,
         auditAction = 'folder.create_corporate';
       }
 
+      const problem = folderProblem(req.body) || await parentProblem(data.parentId, data);
+      if (problem) return res.status(400).json({ error: problem });
+
       const folder = await prisma.folder.create({ data });
       await createAuditLog(req.user.id, auditAction, folder.id, 'Folder', { name: folder.name }, req.ip);
       res.status(201).json(folder);
@@ -204,7 +223,7 @@ router.post('/', authenticate,
 
 // PUT /api/folders/:id
 router.put('/:id', authenticate,
-  [body('name').optional().trim()],
+  [body('name').optional().isString().trim()],
   validate,
   async (req, res, next) => {
     try {
@@ -221,6 +240,9 @@ router.put('/:id', authenticate,
       if (!isAdmin && !isOwner) {
         return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
       }
+
+      const problem = folderProblem(req.body) || await parentProblem(req.body.parentId, folder);
+      if (problem) return res.status(400).json({ error: problem });
 
       const updated = await prisma.folder.update({
         where: { id: req.params.id },

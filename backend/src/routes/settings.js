@@ -30,6 +30,7 @@ function publicSettings(settings) {
     const { allowedIPs, ...policy } = safe.passwordPolicy;
     safe.passwordPolicy = policy;
   }
+  safe.privacyRetention = { auditDays: auditRetentionDays ?? 90, trashDays: safe.trashRetentionDays ?? 30 };
   return safe;
 }
 
@@ -119,6 +120,17 @@ router.put('/general', authenticate, requireAdmin, async (req, res, next) => {
       const email = String(req.body.supportEmail || '').trim();
       if (email && !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) return res.status(400).json({ error: 'E-mail de suporte inválido' });
       data.supportEmail = email || null;
+    }
+    // Dados do controlador mostrados na Política de Privacidade (LGPD art. 9º e 41)
+    if (req.body.privacyConfig !== undefined) {
+      const p = req.body.privacyConfig || {};
+      const text = (k, max) => String(p[k] ?? '').trim().slice(0, max);
+      const dpoEmail = text('dpoEmail', 200);
+      if (dpoEmail && !/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(dpoEmail)) return res.status(400).json({ error: 'E-mail do encarregado inválido' });
+      data.privacyConfig = {
+        controllerName: text('controllerName', 200), cnpj: text('cnpj', 30), address: text('address', 300),
+        dpoName: text('dpoName', 200), dpoEmail, policyUpdatedAt: new Date().toISOString().slice(0, 10),
+      };
     }
     if (req.body.sessionTimeout !== undefined) {
       // Minutos; valor inválido quebraria a emissão do JWT
@@ -380,7 +392,18 @@ const IMAGE_KINDS = {
 };
 
 // Arquivo .ico (o sharp não lê esse formato): cabeçalho 00 00 01 00 + quantidade de imagens
-const isIco = (buf) => buf.length > 6 && buf.readUInt16LE(0) === 0 && buf.readUInt16LE(2) === 1 && buf.readUInt16LE(4) > 0;
+const isIco = (buf) => {
+  if (buf.length < 22 || buf.readUInt16LE(0) !== 0 || buf.readUInt16LE(2) !== 1) return false;
+  const count = buf.readUInt16LE(4);
+  if (count < 1 || count > 32 || buf.length < 6 + count * 16) return false;
+  // Cada imagem precisa estar inteira dentro do arquivo
+  for (let i = 0; i < count; i++) {
+    const size = buf.readUInt32LE(6 + i * 16 + 8);
+    const offset = buf.readUInt32LE(6 + i * 16 + 12);
+    if (size === 0 || offset < 6 + count * 16 || offset + size > buf.length) return false;
+  }
+  return true;
+};
 
 // Apaga o arquivo anterior — só nomes gerados aqui, nunca um caminho arbitrário vindo do banco
 async function removeUpload(url) {
@@ -412,7 +435,7 @@ for (const [kind, cfg] of Object.entries(IMAGE_KINDS)) {
         ext = 'ico';
       } else {
         try {
-          output = await cfg.process(sharp(req.file.buffer, { animated: false })).toBuffer();
+          output = await cfg.process(sharp(req.file.buffer, { animated: false, limitInputPixels: 40000000 })).toBuffer();
         } catch {
           return res.status(400).json({ error: 'Imagem inválida ou formato não suportado. Use PNG, JPG, WEBP, GIF ou SVG.' });
         }

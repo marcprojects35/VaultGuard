@@ -43,7 +43,7 @@ router.get('/all', authenticate, async (req, res, next) => {
 
 // POST /api/tokens
 router.post('/', authenticate, requireCap('canUseApiTokens', 'Seu cargo não pode usar tokens de API'),
-  [body('name').notEmpty().trim()],
+  [body('name').isString().notEmpty().trim().isLength({ max: 100 })],
   validate,
   async (req, res, next) => {
     try {

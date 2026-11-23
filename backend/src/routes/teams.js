@@ -89,7 +89,7 @@ router.get('/', authenticate, async (req, res, next) => {
 // POST /api/teams — quem tem a permissão do cargo cria e vira dono. O admin pode
 // escolher outro dono e já incluir membros (entram direto, sem convite).
 router.post('/', authenticate, requireCap('canCreateTeams', 'Seu cargo não pode criar grupos'),
-  [body('name').notEmpty().trim().isLength({ max: 100 })],
+  [body('name').isString().notEmpty().trim().isLength({ max: 100 })],
   validate,
   async (req, res, next) => {
     try {
@@ -106,7 +106,7 @@ router.post('/', authenticate, requireCap('canCreateTeams', 'Seu cargo não pode
       const team = await prisma.team.create({
         data: {
           name: req.body.name,
-          description: req.body.description || null,
+          description: String(req.body.description || '').slice(0, 500) || null,
           ownerId,
           ...(isAdmin ? pickDefaults(req.body) : {}),
           members: {
@@ -236,7 +236,7 @@ async function addMany(req, res) {
 // PUT /api/teams/:id — dono ou admin: nome/descrição; só o admin: permissões
 // padrão dos membros e troca de dono
 router.put('/:id', authenticate,
-  [body('name').optional().trim().notEmpty().isLength({ max: 100 })],
+  [body('name').optional().isString().trim().notEmpty().isLength({ max: 100 })],
   validate,
   async (req, res, next) => {
     try {

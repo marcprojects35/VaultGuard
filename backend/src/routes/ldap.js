@@ -15,7 +15,7 @@ import { authenticate, requireAdmin } from '../middleware/auth.js';
 import {
   testConnection, fetchADGroups, syncAllUsersFromAD, fetchUsersForPreview, linkUsersFromAD,
   normalizeLdapConfig, serverConfig, getLdapStatus, checkAllServers, setInUse, SERVER_FIELDS,
-  importADGroups, resyncADGroups,
+  importADGroups, resyncADGroups, explainLdapError,
 } from '../services/ldap.js';
 import { createAuditLog } from '../services/audit.js';
 import { pruneFolderKeys } from '../services/keys.js';
@@ -177,7 +177,7 @@ router.post('/test', authenticate, requireAdmin, async (req, res, next) => {
     res.json(await testConnection(testCfg));
   } catch (err) {
     logger.error('LDAP test route error', { error: err.message });
-    res.json({ success: false, message: err.message });
+    res.json({ success: false, message: explainLdapError(err) });
   }
 });
 
@@ -197,7 +197,7 @@ router.post('/groups', authenticate, requireAdmin, async (req, res, next) => {
   } catch (err) {
     logger.error('LDAP fetch groups error', { error: err.message });
     if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.message?.includes('connect')) {
-      return res.status(503).json({ error: `Não foi possível conectar ao servidor LDAP: ${err.message}` });
+      return res.status(503).json({ error: `Não foi possível conectar ao servidor LDAP: ${explainLdapError(err)}` });
     }
     next(err);
   }
@@ -309,7 +309,7 @@ router.post('/users/preview', authenticate, requireAdmin, async (req, res, next)
   } catch (err) {
     logger.error('LDAP preview error', { error: err.message });
     if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.message?.includes('connect')) {
-      return res.status(503).json({ error: `Não foi possível conectar ao servidor LDAP: ${err.message}` });
+      return res.status(503).json({ error: `Não foi possível conectar ao servidor LDAP: ${explainLdapError(err)}` });
     }
     next(err);
   }

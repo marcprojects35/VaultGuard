@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Eye, EyeOff, Lock, Mail, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -7,6 +7,15 @@ import api from '../utils/api.js';
 import { useAuthStore } from '../stores/authStore.js';
 import { useVaultStore } from '../stores/vaultStore.js';
 import { useSettingsStore } from '../stores/settingsStore.js';
+
+// Prova de trabalho: acha um número cujo SHA-256 comece com 16 bits zerados (cerca de 1 segundo)
+async function solveBotChallenge(challenge) {
+  const enc = new TextEncoder();
+  for (let i = 0; ; i++) {
+    const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(`${challenge}:${i}`)));
+    if (hash[0] === 0 && hash[1] === 0) return String(i);
+  }
+}
 
 export default function LoginPage() {
   const { t } = useTranslation();
@@ -24,6 +33,7 @@ export default function LoginPage() {
   const [useRecovery, setUseRecovery] = useState(false);
   const codeReady = useRecovery ? form.totp.trim().length >= 10 : form.totp.length === 6;
 
+  const trapRef = useRef(null);
   const logoSrc = settings.logoUrl || '/logo.png';
   // Fundo personalizado (Aparência): imagem da empresa com uma camada escura por cima para manter a leitura
   const bgImage = settings.loginBackgroundUrl;
@@ -52,7 +62,16 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await api.post('/auth/login', { login: form.login, password: form.password });
+      const body = { login: form.login, password: form.password, website: trapRef.current?.value || undefined };
+      let data;
+      try {
+        ({ data } = await api.post('/auth/login', body));
+      } catch (err) {
+        if (err.response?.data?.code !== 'BOT_CHECK') throw err;
+        // Muitas tentativas desta rede: o navegador resolve um desafio antes de tentar de novo
+        const { challenge } = err.response.data;
+        ({ data } = await api.post('/auth/login', { ...body, botChallenge: challenge, botSolution: await solveBotChallenge(challenge) }));
+      }
       if (data.requires2FA) {
         setTempToken(data.tempToken);
         setStep('2fa');
@@ -211,6 +230,9 @@ export default function LoginPage() {
             </p>
 
             <form onSubmit={handleCredentials} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+              {/* Armadilha para robôs: invisível para pessoas */}
+              <input ref={trapRef} name="website" type="text" tabIndex={-1} autoComplete="off" aria-hidden="true"
+                style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }} />
               {/* Username */}
               <div>
                 <label style={{
@@ -465,6 +487,10 @@ export default function LoginPage() {
           </>
         )}
       </div>
+
+      <Link to="/privacidade" data-testid="privacy-link" style={{ position: 'relative', marginTop: '1.25rem', fontSize: '0.75rem', color: headerMuted, textDecoration: 'underline', textUnderlineOffset: '3px' }}>
+        Política de Privacidade
+      </Link>
 
       {/* Footer: contato de suporte configurado em Configurações → Geral */}
       {settings.supportEmail && <p className="animate-slideUp delay-300" style={{

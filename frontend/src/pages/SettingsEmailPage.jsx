@@ -62,6 +62,30 @@ const NOTIFICATION_EVENTS = [
   },
 ];
 
+// Fora do componente: declarado dentro, o campo perderia o foco a cada tecla
+const Section = ({ icon: Icon, title, children, faded }) => (
+  <div
+    className="rounded-2xl p-6 transition-opacity"
+    style={{
+      background: 'var(--color-surface)',
+      border: '1px solid var(--color-border)',
+      opacity: faded ? 0.45 : 1,
+      pointerEvents: faded ? 'none' : undefined,
+    }}
+  >
+    <div className="flex items-center gap-3 mb-5">
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center"
+        style={{ background: 'var(--color-surface-2)' }}>
+        <Icon className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
+      </div>
+      <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+        {title}
+      </h2>
+    </div>
+    <div className="space-y-4">{children}</div>
+  </div>
+);
+
 export default function SettingsEmailPage() {
   const [provider, setProvider] = useState('smtp');
   const [emailEnabled, setEmailEnabled] = useState(true);
@@ -194,28 +218,6 @@ export default function SettingsEmailPage() {
   const labelStyle = { color: 'var(--color-text-muted)' };
 
   /* ── Sub-components ── */
-  const Section = ({ icon: Icon, title, children, faded }) => (
-    <div
-      className="rounded-2xl p-6 transition-opacity"
-      style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        opacity: faded ? 0.45 : 1,
-        pointerEvents: faded ? 'none' : undefined,
-      }}
-    >
-      <div className="flex items-center gap-3 mb-5">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: 'var(--color-surface-2)' }}>
-          <Icon className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
-        </div>
-        <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
-          {title}
-        </h2>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </div>
-  );
 
   const Toggle = ({ label, description, value, onChange, disabled }) => (
     <div className={`flex items-start justify-between gap-4 ${disabled ? 'opacity-40' : ''}`}>

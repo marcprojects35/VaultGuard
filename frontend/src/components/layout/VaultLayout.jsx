@@ -611,6 +611,7 @@ export default function VaultLayout() {
               Marco
             </a>
           </span>
+          <a href="/privacidade" style={{ marginLeft: 12, fontSize: '0.75rem', color: 'var(--color-muted)', textDecoration: 'underline' }}>Privacidade</a>
         </footer>
       </div>
 

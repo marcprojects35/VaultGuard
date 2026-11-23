@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { SlidersHorizontal, Save, Globe, Clock, Monitor, RefreshCw, Mail } from 'lucide-react';
+import { SlidersHorizontal, Save, Globe, Clock, Monitor, RefreshCw, Mail, ShieldCheck } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import api from '../utils/api.js';
@@ -20,6 +20,27 @@ export default function SettingsGeneralPage() {
   return loaded ? <GeneralForm /> : null;
 }
 
+// Fora do componente: declarado dentro, o campo perderia o foco a cada tecla
+const Section = ({ icon: Icon, title, children }) => (
+  <div
+    className="rounded-2xl p-6"
+    style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+  >
+    <div className="flex items-center gap-3 mb-5">
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center"
+        style={{ background: 'var(--color-surface-2)' }}
+      >
+        <Icon className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
+      </div>
+      <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
+        {title}
+      </h2>
+    </div>
+    <div className="space-y-4">{children}</div>
+  </div>
+);
+
 function GeneralForm() {
   const updateSettings = useSettingsStore(s => s.updateSettings);
   const currentSettings = useSettingsStore(s => s.settings);
@@ -30,6 +51,13 @@ function GeneralForm() {
     defaultLanguage: currentSettings.defaultLanguage || 'pt-BR',
     sessionTimeout: currentSettings.sessionTimeout || 480,
     supportEmail: currentSettings.supportEmail || '',
+    privacyConfig: {
+      controllerName: currentSettings.privacyConfig?.controllerName || '',
+      cnpj: currentSettings.privacyConfig?.cnpj || '',
+      address: currentSettings.privacyConfig?.address || '',
+      dpoName: currentSettings.privacyConfig?.dpoName || '',
+      dpoEmail: currentSettings.privacyConfig?.dpoEmail || '',
+    },
   });
 
   const { mutate: save, isPending } = useMutation({
@@ -41,6 +69,7 @@ function GeneralForm() {
         defaultLanguage: form.defaultLanguage,
         sessionTimeout: form.sessionTimeout,
         supportEmail: form.supportEmail || null,
+        privacyConfig: form.privacyConfig,
       });
       toast.success('Configurações gerais salvas!');
     },
@@ -59,25 +88,6 @@ function GeneralForm() {
   const labelClass = 'block text-sm font-medium mb-1.5';
   const labelStyle = { color: 'var(--color-text-muted)' };
 
-  const Section = ({ icon: Icon, title, children }) => (
-    <div
-      className="rounded-2xl p-6"
-      style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-    >
-      <div className="flex items-center gap-3 mb-5">
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center"
-          style={{ background: 'var(--color-surface-2)' }}
-        >
-          <Icon className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
-        </div>
-        <h2 className="text-base font-semibold" style={{ color: 'var(--color-text)' }}>
-          {title}
-        </h2>
-      </div>
-      <div className="space-y-4">{children}</div>
-    </div>
-  );
 
 
 
@@ -175,6 +185,21 @@ function GeneralForm() {
               Aparece na tela de login e no botão "Suporte" do menu. Vazio = não exibe.
             </p>
           </div>
+        </Section>
+
+        {/* LGPD */}
+        <Section icon={ShieldCheck} title="Privacidade (LGPD)">
+          <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+            Estes dados aparecem na <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="underline">Política de Privacidade</a>, pública. A LGPD exige identificar o controlador e o encarregado (DPO).
+          </p>
+          {[['controllerName', 'Razão social do controlador', 'Empresa Exemplo Ltda.'], ['cnpj', 'CNPJ', '00.000.000/0001-00'], ['address', 'Endereço', 'Rua Exemplo, 100 — Cidade/UF'],
+            ['dpoName', 'Encarregado de dados (DPO)', 'Nome do encarregado'], ['dpoEmail', 'E-mail do encarregado', 'privacidade@suaempresa.com']].map(([key, label, ph]) => (
+            <div key={key}>
+              <label className={labelClass} style={labelStyle}>{label}</label>
+              <input className={inputClass} style={inputStyle} value={form.privacyConfig[key]} placeholder={ph} data-testid={`privacy-${key}`}
+                onChange={e => set('privacyConfig', { ...form.privacyConfig, [key]: e.target.value })} />
+            </div>
+          ))}
         </Section>
       </div>
 

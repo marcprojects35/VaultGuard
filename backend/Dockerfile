@@ -23,9 +23,10 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libvips42 openssl curl \
-    && rm -rf /var/lib/apt/lists/*
+# O sharp já traz o próprio libvips; o sistema só precisa do essencial, atualizado
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    openssl curl \
+    && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app .
@@ -34,6 +35,9 @@ RUN test -d /frontend/dist && test -f /frontend/dist/index.html || (echo "ERROR:
 
 COPY backend/docker-entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && mkdir -p uploads logs
+# Em produção não se instala nada: sem npm, menos código e menos falhas conhecidas
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 EXPOSE 3001
 

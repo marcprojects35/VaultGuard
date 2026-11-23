@@ -26,12 +26,12 @@ function generateSalt() {
 const signTempToken = (userId) =>
   jwt.sign({ userId, temp: true }, process.env.JWT_SECRET, { expiresIn: '5m' });
 
+// Lista fechada: campo novo no banco não sai na resposta sem ser incluído aqui
 function buildSafeUser(user) {
-  const {
-    passwordHash, totpSecret, totpPendingSecret, totpLastStep, totpRecoveryCodes, passwordHistory,
-    failedLoginAttempts, lockedUntil, tokenVersion, encryptedPrivateKey, ...safe
-  } = user;
-  return { ...safe, recoveryCodesLeft: totpRecoveryCodes?.length || 0 };
+  const fields = ['id', 'email', 'username', 'firstName', 'lastName', 'role', 'status', 'avatar', 'totpEnabled',
+    'authSource', 'lastLogin', 'mustChangePassword', 'passwordChangedAt', 'themeInverted', 'createdAt'];
+  const safe = Object.fromEntries(fields.filter(f => user[f] !== undefined).map(f => [f, user[f]]));
+  return { ...safe, recoveryCodesLeft: user.totpRecoveryCodes?.length || 0 };
 }
 
 // Respeita a opção "Registrar logins com falha" da tela de segurança
@@ -225,6 +225,10 @@ export const login = async (req, res, next) => {
     }
 
     const valid = await bcrypt.compare(password, user.passwordHash);
+    // Hash antigo com custo menor é refeito no login
+    if (valid && bcrypt.getRounds(user.passwordHash) < 12) {
+      await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(password, 12) } });
+    }
     if (!valid) {
       await registerFailedAttempt(user, ip);
       await logLoginFailure(user.id, { reason: 'wrong_password' }, ip, ua);
@@ -375,6 +379,34 @@ export const updatePreferences = async (req, res, next) => {
     if (typeof req.body?.themeInverted !== 'boolean') return res.status(400).json({ error: 'Informe themeInverted (true ou false)' });
     const user = await prisma.user.update({ where: { id: req.user.id }, data: { themeInverted: req.body.themeInverted }, select: { themeInverted: true } });
     res.json(user);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// LGPD art. 18: a pessoa recebe uma cópia dos próprios dados pessoais. Senhas e
+// chaves ficam de fora: são cifradas e não servem para identificá-la
+export const exportMyData = async (req, res, next) => {
+  try {
+    const id = req.user.id;
+    const [memberships, devices, tokens, activity, requests] = await Promise.all([
+      prisma.teamMember.findMany({ where: { userId: id }, select: { status: true, createdAt: true, team: { select: { name: true } } } }),
+      prisma.userDevice.findMany({ where: { userId: id } }),
+      prisma.apiToken.findMany({ where: { userId: id }, select: { name: true, createdAt: true, lastUsed: true, expiresAt: true } }),
+      prisma.auditLog.findMany({ where: { actorId: id }, orderBy: { createdAt: 'desc' }, take: 5000, select: { action: true, createdAt: true, ipAddress: true, userAgent: true } }),
+      prisma.accessRequest.findMany({ where: { userId: id }, select: { status: true, message: true, createdAt: true } }),
+    ]);
+    await createAuditLog(id, 'user.data_export', id, 'User', null, req.ip);
+    res.setHeader('Content-Disposition', 'attachment; filename="meus-dados.json"');
+    res.json({
+      geradoEm: new Date().toISOString(),
+      perfil: buildSafeUser(req.user),
+      grupos: memberships.map(m => ({ grupo: m.team?.name, situacao: m.status, desde: m.createdAt })),
+      dispositivos: devices.map(({ userId, ...d }) => d),
+      tokensDeApi: tokens,
+      pedidosDeAcesso: requests,
+      atividade: activity,
+    });
   } catch (err) {
     next(err);
   }

@@ -3,12 +3,14 @@ import { authenticate } from '../middleware/auth.js';
 import { prisma } from '../db.js';
 import { canAccessFolder, canAccessCredential } from '../services/permissions.js';
 import { createAuditLog } from '../services/audit.js';
+import { fileNameProblem } from '../middleware/inputRules.js';
 
 const router = Router();
 
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 // Anexos chegam cifrados no cliente (JSON com iv + ciphertext em base64)
 const MAX_PAYLOAD_CHARS = Math.ceil(MAX_SIZE_BYTES * 4 / 3) + 1024;
+const MAX_PER_CREDENTIAL = 20;
 
 // GET /api/attachments/:credentialId — list attachments (metadata only)
 router.get('/:credentialId', authenticate, async (req, res, next) => {
@@ -41,7 +43,13 @@ router.post('/:credentialId', authenticate, async (req, res, next) => {
     if (!canEdit) return res.status(403).json({ error: 'Você não tem permissão para editar aqui' });
 
     const { fileName, mimeType, data, size } = req.body;
-    if (!fileName || typeof data !== 'string' || !data) return res.status(400).json({ error: 'fileName and data are required' });
+    if (typeof data !== 'string' || !data) return res.status(400).json({ error: 'Arquivo vazio' });
+    const nameProblem = fileNameProblem(fileName);
+    if (nameProblem) return res.status(400).json({ error: nameProblem });
+    if (mimeType !== undefined && !/^[\w.+-]{1,60}\/[\w.+-]{1,80}$/.test(String(mimeType))) return res.status(400).json({ error: 'Tipo de arquivo inválido' });
+    if (await prisma.attachment.count({ where: { credentialId: cred.id } }) >= MAX_PER_CREDENTIAL) {
+      return res.status(409).json({ error: `Limite de ${MAX_PER_CREDENTIAL} anexos por senha` });
+    }
 
     if (data.length > MAX_PAYLOAD_CHARS) {
       return res.status(413).json({ error: 'Arquivo muito grande (máximo 5 MB)' });

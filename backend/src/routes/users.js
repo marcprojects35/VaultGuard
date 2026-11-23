@@ -89,10 +89,10 @@ router.get('/', authenticate, requireAdmin, async (req, res, next) => {
 router.post('/', authenticate, requireAdmin,
   [
     body('email').isEmail().normalizeEmail(),
-    body('username').notEmpty().trim().isLength({ min: 3 }),
+    body('username').isString().notEmpty().trim().isLength({ min: 3 }),
     body('password').isLength({ min: 8 }),
-    body('firstName').notEmpty().trim(),
-    body('lastName').notEmpty().trim(),
+    body('firstName').isString().notEmpty().trim().isLength({ max: 100 }),
+    body('lastName').isString().notEmpty().trim().isLength({ max: 100 }),
     body('role').custom(async (value) => {
       const role = await prisma.role.findUnique({ where: { key: value } });
       if (!role) throw new Error('Classificação inválida');
@@ -151,12 +151,15 @@ router.put('/:id', authenticate, async (req, res, next) => {
     if (!isSelf && !isAdmin) return res.status(403).json({ error: 'Você não tem permissão para esta ação' });
 
     const updateData = {};
-    if (req.body.firstName) updateData.firstName = req.body.firstName;
-    if (req.body.lastName) updateData.lastName = req.body.lastName;
+    for (const key of ['firstName', 'lastName']) {
+      if (req.body[key] === undefined || req.body[key] === '') continue;
+      if (typeof req.body[key] !== 'string' || req.body[key].length > 100) return res.status(400).json({ error: 'Nome inválido (até 100 caracteres)' });
+      updateData[key] = req.body[key].trim();
+    }
     if (req.body.avatar !== undefined) {
       const avatar = req.body.avatar;
       if (avatar !== null && avatar !== '' &&
-          !(typeof avatar === 'string' && /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar))) {
+          !(typeof avatar === 'string' && avatar.length <= 400000 && /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(avatar))) {
         return res.status(400).json({ error: 'Avatar inválido' });
       }
       updateData.avatar = avatar || null;

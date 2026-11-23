@@ -9,6 +9,8 @@
 #   ./run.sh trash.mjs       # lixeira, retenção e limpeza da auditoria
 #   ./run.sh fuzz.mjs        # todas as rotas da API com entradas inválidas (nenhum 500)
 #   ./run.sh ldap.mjs        # 2 servidores de AD: troca automática e manual (sobe 2 OpenLDAP no Docker)
+#   ./run.sh security.mjs    # criptografia, auditoria imutável, cabeçalhos
+#   ./run.sh hardening.mjs   # acesso indevido, mass assignment, uploads, robôs, RLS, LGPD
 #   ./run.sh features.mjs    # 2FA por pessoa/grupo, política de senhas por grupo, cores invertidas, cargo no grupo, grupos do AD
 #
 # Cada execução usa um PostgreSQL descartável (container "vg-e2e-db", porta
@@ -38,7 +40,10 @@ docker exec vg-e2e-db psql -U vg -d vg -qc "DROP SCHEMA public CASCADE; CREATE S
 cd "$ROOT/backend"
 npx prisma migrate deploy >/dev/null 2>&1 || { echo "migrations falharam"; exit 1; }
 ADMIN_PASSWORD='Adm1n!Test#2026' node src/prisma/seed.js >/dev/null 2>&1
-JWT_SECRET=$(openssl rand -hex 32) PORT=3901 NODE_ENV=production TRUST_PROXY=0 FRONTEND_URL=http://127.0.0.1:3901 \
+# A aplicação roda com o papel restrito, como em produção (RLS valendo)
+APP_DATABASE_URL=$(node src/prisma/dbRoles.js) || { echo "papel restrito falhou"; exit 1; }
+export APP_DATABASE_URL
+DATABASE_URL="$APP_DATABASE_URL" JWT_SECRET=$(openssl rand -hex 32) PORT=3901 NODE_ENV=production TRUST_PROXY=0 FRONTEND_URL=http://127.0.0.1:3901 \
   node src/server.js > "$OUT_DIR/server.log" 2>&1 &
 SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
